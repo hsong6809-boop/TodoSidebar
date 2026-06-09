@@ -56,7 +56,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `每日任务-Setup-3.1.0.exe`
+2. 运行 `每日任务-Setup-3.2.0.exe`
 3. 按照向导完成安装
 
 ### 首次使用
@@ -162,7 +162,14 @@ public static string AnonKey { get; set; } = "your-anon-key";
 在 Supabase 控制台的 SQL Editor 中执行 `Database/init.sql` 脚本。
 
 ## 📝 更新日志
-
+### v3.2.0 (2026-06-09)
+ - ✨ 新增手动同步按钮（上传/下载）
+ - ✨ 新增今日已完成任务显示
+ - ✨ 新增卸载时询问是否保留数据
+ - 🎨 侧边栏底部显示今日已完成任务
+ - 🎨 同步按钮同时显示在侧边栏和完整模式
+ - 🐛 修复 UI 线程死锁导致界面不显示的问题
+ - 
 ### v3.1.0 (2026-06-09)
 - ✨ 新增 Supabase 云同步功能
 - ✨ 新增记住登录功能
