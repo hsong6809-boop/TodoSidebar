@@ -1,0 +1,92 @@
+Todo Sidebar 项目说明
+====================
+
+项目位置：C:\Users\ADMIN\miclaw\project\TodoSidebar
+
+项目介绍
+--------
+这是一个基于 WPF (.NET 8.0) 的 Todo 任务管理应用，具有两种模式：
+1. 完整模式（FullWindow）- 可添加、删除、完成任务
+2. 侧边栏模式（MainWindow）- 只能完成任务，自动隐藏在屏幕左侧
+
+核心功能：
+- 每日任务管理
+- 截止日期任务管理
+- 每周任务管理（可折叠）
+- 历史完成任务记录
+- 里程碑管理
+- 任务优先级（高/中/低）
+- 任务计数器
+
+技术栈：
+- .NET 8.0 WPF
+- SQLite 本地存储
+- CommunityToolkit.Mvvm (MVVM 框架)
+- Win32 API (毛玻璃效果)
+
+当前问题
+--------
+1. 毛玻璃效果实现错误
+   - 当前代码在窗口上叠加了 BlurEffect，但窗口背景没有正确设置为透明
+   - 导致原有界面和毛玻璃效果重叠，界面完全看不清
+   - 需要正确实现 Windows 10/11 的 Acrylic 毛玻璃效果
+
+2. 配色方案未完全应用
+   - 新的深色毛玻璃配色方案（#15152A 等）没有正确应用到所有控件
+   - 部分控件仍然使用旧的配色
+
+3. 窗口样式问题
+   - WindowStyle="None" 和 AllowsTransparency="True" 的组合可能导致渲染问题
+   - 需要正确处理窗口 chrome
+
+需要解决的问题
+--------------
+1. 正确实现毛玻璃效果
+   - 使用 DwmExtendFrameIntoClientArea 和 DwmSetWindowAttribute API
+   - 设置窗口背景为 Transparent
+   - 移除 XAML 中的 BlurEffect（这是 WPF 的模糊效果，不是系统毛玻璃）
+   - 参考 Windows 11 的 Acrylic 效果实现
+
+2. 修复配色方案
+   - 确保所有控件使用新的配色（GlassBrush, CardBrush 等）
+   - 移除旧的配色引用
+
+3. 窗口透明度处理
+   - 确保窗口背景真正透明
+   - 毛玻璃效果由系统渲染，不是 WPF 的模糊滤镜
+
+4. 数据库迁移
+   - 已添加 Priority 列的迁移逻辑
+   - 需要测试迁移是否正常工作
+
+5. 动画效果
+   - 侧边栏展开/收起动画
+   - 卡片出现/消失动画
+   - 按钮悬停效果
+
+相关文件
+--------
+- App.xaml / App.xaml.cs - 应用入口
+- FullWindow.xaml / FullWindow.xaml.cs - 完整模式窗口
+- MainWindow.xaml / MainWindow.xaml.cs - 侧边栏模式窗口
+- ViewModels/MainViewModel.cs - 主视图模型
+- Models/TaskItem.cs - 任务模型（包含优先级）
+- Models/Milestone.cs - 里程碑模型
+- Services/DatabaseService.cs - 数据库服务
+- Services/TaskService.cs - 任务业务逻辑
+- Helpers/BlurHelper.cs - 毛玻璃效果辅助类
+- Converters/BoolToVisibilityConverter.cs - 布尔转可见性转换器
+
+启动方式
+--------
+桌面快捷方式：C:\Users\ADMIN\Desktop\启动Todo.bat（启动完整模式）
+开机自启动：使用 --sidebar 参数启动侧边栏模式
+
+编译命令
+--------
+cd C:\Users\ADMIN\miclaw\project\TodoSidebar
+dotnet build
+
+运行命令
+--------
+.\bin\Debug\net8.0-windows\TodoSidebar.exe

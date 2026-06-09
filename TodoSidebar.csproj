@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>TodoSidebar</RootNamespace>
+    <AssemblyName>TodoSidebar</AssemblyName>
+    <Nullable>enable</Nullable>
+    <Version>1.0.0</Version>
+    <AssemblyTitle>TodoSidebar</AssemblyTitle>
+    <Description>Todo 任务管理侧边栏</Description>
+    <Company>TodoSidebar</Company>
+    <Product>TodoSidebar</Product>
+    <ApplicationIcon>todo.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Supabase" Version="1.0.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,416 @@
+<Application x:Class="TodoSidebar.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:TodoSidebar.Converters">
+    <Application.Resources>
+        <!-- ========== 全局字体设置 ========== -->
+        <FontFamily x:Key="PrimaryFont">Microsoft YaHei UI, PingFang SC, Segoe UI, sans-serif</FontFamily>
+        <FontFamily x:Key="MonoFont">Cascadia Code, Consolas, monospace</FontFamily>
+        
+        <!-- 全局样式覆盖 -->
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="FontFamily" Value="{StaticResource PrimaryFont}"/>
+        </Style>
+        
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVis"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVis"/>
+        <converters:SubTaskCompletionToStrikethrough x:Key="SubTaskStrike"/>
+        <converters:SubTaskCompletionToForeground x:Key="SubTaskForeground"/>
+        <converters:SubTaskProgressToWidth x:Key="SubTaskProgressWidth"/>
+        
+        <!-- 毛玻璃背景色（半透明，桌面可见） - 更柔和的蓝灰色调 -->
+        <SolidColorBrush x:Key="GlassBrush" Color="#CCF8F9FE"/>
+        <SolidColorBrush x:Key="GlassLightBrush" Color="#E6F0F2F8"/>
+
+        <!-- 卡片背景 - 更透明的白色 -->
+        <SolidColorBrush x:Key="CardBrush" Color="#F5FFFFFF"/>
+        <SolidColorBrush x:Key="CardHoverBrush" Color="#FFFAFBFF"/>
+        <SolidColorBrush x:Key="DeadlineCardBrush" Color="#FFFBF5F0"/>
+
+        <!-- 强调色 - 更现代的紫色 -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#6366F1"/>
+        <SolidColorBrush x:Key="AccentLightBrush" Color="#818CF8"/>
+
+        <!-- 状态色 - 更柔和 -->
+        <SolidColorBrush x:Key="SuccessBrush" Color="#10B981"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#EF4444"/>
+        <SolidColorBrush x:Key="WarningBrush" Color="#F59E0B"/>
+
+        <!-- 文字色 - 更好的对比度 -->
+        <SolidColorBrush x:Key="TextBrush" Color="#1E293B"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#64748B"/>
+
+        <!-- 边框色 - 更细腻 -->
+        <SolidColorBrush x:Key="BorderBrush" Color="#1A000000"/>
+
+        <!-- 优先级颜色 - 与状态色保持一致 -->
+        <SolidColorBrush x:Key="PriorityHighBrush" Color="#EF4444"/>
+        <SolidColorBrush x:Key="PriorityMediumBrush" Color="#F59E0B"/>
+        <SolidColorBrush x:Key="PriorityLowBrush" Color="#10B981"/>
+
+        <!-- 任务类型颜色 - 与强调色保持一致 -->
+        <SolidColorBrush x:Key="TypeDailyBrush" Color="#6366F1"/>
+        <SolidColorBrush x:Key="TypeDeadlineBrush" Color="#EF4444"/>
+        <SolidColorBrush x:Key="TypeWeeklyBrush" Color="#10B981"/>
+
+        <!-- ========== 按钮样式 ========== -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource AccentLightBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.95" ScaleY="0.95"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SuccessButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource SuccessBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource DangerBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ========== Tab 样式 ========== -->
+        <Style x:Key="TabRadioButton" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ========== 输入框样式 ========== -->
+        <Style x:Key="GlassTextBox" TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="false" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#5B5FE9" BlurRadius="15" ShadowDepth="0" Opacity="0.3"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ========== ListBox 样式 ========== -->
+        <Style x:Key="GlassListBox" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="Transparent"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#14000000"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ========== 通用任务卡片模板 ========== -->
+        <DataTemplate x:Key="TaskCardTemplate">
+            <Border Background="{DynamicResource CardBrush}"
+                    CornerRadius="10"
+                    Padding="16,12"
+                    Margin="0,4"
+                    BorderThickness="0,0,4,0"
+                    BorderBrush="{Binding TypeColor, FallbackValue=#5B5FE9}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="{Binding PriorityColor, FallbackValue={StaticResource AccentBrush}}"
+                                    CornerRadius="4"
+                                    Width="8"
+                                    Height="8"
+                                    Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding Title}" 
+                                       Foreground="{DynamicResource TextBrush}"
+                                       FontSize="15"
+                                       FontWeight="Medium"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="16,4,0,0">
+                            <TextBlock Text="{Binding PriorityIcon, StringFormat='优先级: {0}'}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" 
+                                       FontSize="12"/>
+                            <!-- 子任务进度 -->
+                            <TextBlock Text="{Binding SubTasksProgressText}"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       FontSize="11"
+                                       Margin="8,0,0,0"
+                                       FontWeight="SemiBold"
+                                       Visibility="{Binding HasSubTasks, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Content="✓" 
+                                Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource SuccessButton}"
+                                Padding="10,6"
+                                Margin="4,0"/>
+                        <Button Content="×" 
+                                Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource DangerButton}"
+                                Padding="10,6"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- ========== 截止任务卡片模板 ========== -->
+        <DataTemplate x:Key="DeadlineTaskCardTemplate">
+            <Border Background="{DynamicResource CardBrush}"
+                    CornerRadius="10"
+                    Padding="16,12"
+                    Margin="0,4"
+                    BorderThickness="0,0,4,0"
+                    BorderBrush="{StaticResource TypeDeadlineBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="{Binding PriorityColor, FallbackValue={StaticResource AccentBrush}}"
+                                    CornerRadius="4"
+                                    Width="8"
+                                    Height="8"
+                                    Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding Title}" 
+                                       Foreground="{DynamicResource TextBrush}"
+                                       FontSize="15"
+                                       FontWeight="Medium"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="16,4,0,0">
+                            <TextBlock Text="{Binding Deadline, StringFormat='截止: {0:yyyy/MM/dd}'}"
+                                       Foreground="{DynamicResource WarningBrush}" 
+                                       FontSize="12"/>
+                            <!-- 子任务进度 -->
+                            <TextBlock Text="{Binding SubTasksProgressText}"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       FontSize="11"
+                                       Margin="8,0,0,0"
+                                       FontWeight="SemiBold"
+                                       Visibility="{Binding HasSubTasks, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Content="✓" 
+                                Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource SuccessButton}"
+                                Padding="10,6"
+                                Margin="4,0"/>
+                        <Button Content="×" 
+                                Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource DangerButton}"
+                                Padding="10,6"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- ========== 历史任务卡片模板 ========== -->
+        <DataTemplate x:Key="HistoryTaskCardTemplate">
+            <Border Background="{DynamicResource CardBrush}"
+                    CornerRadius="10"
+                    Padding="16,12"
+                    Margin="0,4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}" 
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   TextDecorations="Strikethrough"
+                                   FontSize="15"/>
+                        <TextBlock Text="{Binding CompletedAt, StringFormat='完成于: {0:yyyy/MM/dd HH:mm}'}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" 
+                                   FontSize="12"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Content="↩ 恢复" 
+                            Command="{Binding DataContext.RestoreHistoryTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}"
+                            Style="{StaticResource PrimaryButton}"
+                            Padding="12,6"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- ========== 里程碑卡片模板 ========== -->
+        <DataTemplate x:Key="MilestoneCardTemplate">
+            <Border Background="{DynamicResource CardBrush}"
+                    CornerRadius="10"
+                    Padding="16,12"
+                    Margin="0,4"
+                    BorderThickness="0,0,4,0"
+                    BorderBrush="{DynamicResource WarningBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}" 
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   FontSize="16"/>
+                        <TextBlock Text="{Binding Description}" 
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="300"
+                                   Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding TargetDate, StringFormat='目标日期: {0:yyyy/MM/dd}'}"
+                                   Foreground="{DynamicResource WarningBrush}" 
+                                   FontSize="12"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Content="✓" 
+                                Command="{Binding DataContext.CompleteMilestoneCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource SuccessButton}"
+                                Padding="10,6"
+                                Margin="4,0"/>
+                        <Button Content="×" 
+                                Command="{Binding DataContext.DeleteMilestoneCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource DangerButton}"
+                                Padding="10,6"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Application.Resources>
+</Application>
