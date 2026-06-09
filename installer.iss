@@ -1,7 +1,7 @@
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 AppName=TodoSidebar
-AppVersion=1.0.0
+AppVersion=3.2.1
 AppPublisher=TodoSidebar
 AppPublisherURL=https://github.com/TodoSidebar
 DefaultDirName={autopf}\TodoSidebar

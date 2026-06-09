@@ -74,6 +74,11 @@ namespace TodoSidebar.Models
         /// 最后同步时间
         /// </summary>
         public DateTime? LastSyncedAt { get; set; }
+        
+        /// <summary>
+        /// 是否已软删除
+        /// </summary>
+        public bool IsDeleted { get; set; } = false;
 
         private string? _subTasksJson;
         public string? SubTasksJson

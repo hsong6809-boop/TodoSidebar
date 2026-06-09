@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:TodoSidebar.ViewModels"
         xmlns:helpers="clr-namespace:TodoSidebar.Helpers"
-        Title="Todo Sidebar - 完整模式"
+        Title="TodoSidebar"
         Width="450"
         Height="700"
         WindowStartupLocation="CenterScreen"
@@ -22,6 +22,62 @@
             <Setter Property="Padding" Value="8,6"/>
             <Setter Property="FontSize" Value="13"/>
         </Style>
+
+        <!-- 头部图标按钮样式 -->
+        <Style x:Key="HeaderIconButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="8"
+                                Width="{TemplateBinding Width}"
+                                Height="{TemplateBinding Height}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="#18000000"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 工具栏文字按钮样式 -->
+        <Style x:Key="ToolbarTextButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="#12000000"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border Background="{DynamicResource GlassBrush}"
@@ -36,59 +92,90 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- 顶部栏 -->
+            <!-- 顶部栏（可拖动） -->
             <Border Grid.Row="0" 
                     Background="{DynamicResource GlassLightBrush}"
-                    Padding="20,16"
+                    Padding="0"
                     CornerRadius="12,12,0,0"
                     BorderThickness="0,0,0,1"
-                    BorderBrush="{DynamicResource BorderBrush}">
-                <Grid>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="📋" FontSize="20" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <TextBlock Text="Todo 完整模式" 
-                                   FontSize="20" 
-                                   FontWeight="Bold"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Content="📊" 
-                                Click="StatisticsButton_Click"
-                                Style="{StaticResource PrimaryButton}"
-                                Padding="8,6"
-                                Margin="0,0,8,0"
-                                ToolTip="数据统计"/>
-                        <Button Content="⚙️" 
-                                Click="SettingsButton_Click"
-                                Style="{StaticResource PrimaryButton}"
-                                Padding="8,6"
-                                Margin="0,0,8,0"
-                                ToolTip="设置"/>
-                        <Button Content="🚪" 
-                                Click="LogoutButton_Click"
-                                Style="{StaticResource PrimaryButton}"
-                                Padding="8,6"
-                                Margin="0,0,8,0"
-                                ToolTip="退出登录"/>
-                        <Button Content="⬆️" 
-                                Command="{Binding UploadCommand}"
-                                Style="{StaticResource PrimaryButton}"
-                                Padding="8,6"
-                                Margin="0,0,8,0"
-                                ToolTip="上传到云端"/>
-                        <Button Content="⬇️" 
-                                Command="{Binding DownloadCommand}"
-                                Style="{StaticResource PrimaryButton}"
-                                Padding="8,6"
-                                Margin="0,0,8,0"
-                                ToolTip="退出登录"/>
-                        <Button Content="◀ 收起" 
-                                Click="CollapseToSidebar_Click"
-                                Style="{StaticResource PrimaryButton}"
-                                Padding="12,8"/>
-                    </StackPanel>
-                </Grid>
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    Cursor="SizeAll"
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <DockPanel>
+                    <!-- 工具栏（底部，先渲染放在DockPanel底部） -->
+                    <Border DockPanel.Dock="Bottom"
+                            Background="Transparent"
+                            Padding="16,6"
+                            BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource BorderBrush}">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="⬆ 同步上传"
+                                    Style="{StaticResource ToolbarTextButton}"
+                                    Command="{Binding UploadCommand}"
+                                    ToolTip="上传到云端"/>
+                            <Button Content="⬇ 同步下载"
+                                    Style="{StaticResource ToolbarTextButton}"
+                                    Command="{Binding DownloadCommand}"
+                                    ToolTip="从云端下载"
+                                    Margin="4,0,0,0"/>
+                            <Border Width="1" Height="16"
+                                    Background="{DynamicResource BorderBrush}"
+                                    Margin="8,0"
+                                    VerticalAlignment="Center"/>
+                            <Button Content="📊 统计"
+                                    Style="{StaticResource ToolbarTextButton}"
+                                    Click="StatisticsButton_Click"
+                                    ToolTip="数据统计"/>
+                            <Button Content="⚙ 设置"
+                                    Style="{StaticResource ToolbarTextButton}"
+                                    Click="SettingsButton_Click"
+                                    ToolTip="设置"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 标题行 -->
+                    <Border Background="Transparent" Padding="20,14">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <Border Background="{DynamicResource AccentBrush}"
+                                        CornerRadius="10"
+                                        Width="36"
+                                        Height="36"
+                                        Margin="0,0,12,0">
+                                    <TextBlock Text="✓"
+                                               Foreground="White"
+                                               FontSize="18"
+                                               FontWeight="Bold"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="TodoSidebar"
+                                               FontSize="17"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                    <TextBlock FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run Text="共 "/>
+                                        <Run Text="{Binding CurrentTasksCount, Mode=OneWay}" FontWeight="SemiBold"/>
+                                        <Run Text=" 项待办"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Button Content="🚪"
+                                        Style="{StaticResource HeaderIconButton}"
+                                        Click="LogoutButton_Click"
+                                        ToolTip="退出登录"/>
+                                <Button Content="◀"
+                                        Style="{StaticResource HeaderIconButton}"
+                                        Click="CollapseToSidebar_Click"
+                                        ToolTip="收起为侧边栏"
+                                        Margin="2,0,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DockPanel>
             </Border>
 
             <!-- Tab 切换 -->

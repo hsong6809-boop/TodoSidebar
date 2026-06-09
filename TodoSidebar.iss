@@ -5,7 +5,7 @@
 ;   3. 点击 编译 -> 编译 即可生成安装包
 
 #define MyAppName "每日任务"
-#define MyAppVersion "3.2.0"
+#define MyAppVersion "3.2.1"
 #define MyAppPublisher "TodoSidebar"
 #define MyAppExeName "TodoSidebar.exe"
 

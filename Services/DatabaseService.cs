@@ -135,7 +135,8 @@ namespace TodoSidebar.Services
                 { "SubTasksJson", "TEXT" },
                 { "SyncId", "TEXT" },
                 { "IsDirty", "INTEGER DEFAULT 1" },
-                { "LastSyncedAt", "TEXT" }
+                { "LastSyncedAt", "TEXT" },
+                { "IsDeleted", "INTEGER DEFAULT 0" }
             };
 
             foreach (var column in columnsToCheck)
@@ -219,9 +220,25 @@ namespace TodoSidebar.Services
 
         public void DeleteTask(int id)
         {
+            // 软删除：标记 IsDeleted + IsDirty，同步时会上传到云端
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "DELETE FROM Tasks WHERE Id = @id";
+            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1 WHERE Id = @id";
             cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        /// 彻底删除已软删除且已同步的任务（定期清理用）
+        /// </summary>
+        public void PurgeDeletedTasks(int daysOld = 30)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = $@"
+                DELETE FROM Tasks
+                WHERE IsDeleted = 1
+                  AND IsDirty = 0
+                  AND LastSyncedAt IS NOT NULL
+                  AND LastSyncedAt < datetime('now', '-{daysOld} days')";
             cmd.ExecuteNonQuery();
         }
 
@@ -230,7 +247,7 @@ namespace TodoSidebar.Services
             var tasks = new List<TaskItem>();
             using var cmd = _connection!.CreateCommand();
             
-            var sql = "SELECT * FROM Tasks WHERE 1=1";
+            var sql = "SELECT * FROM Tasks WHERE IsDeleted = 0";
             if (type.HasValue)
             {
                 sql += " AND Type = @type";
@@ -257,7 +274,7 @@ namespace TodoSidebar.Services
             var tasks = new List<TaskItem>();
             using var cmd = _connection!.CreateCommand();
             
-            var sql = "SELECT * FROM Tasks WHERE IsCompleted = 1";
+            var sql = "SELECT * FROM Tasks WHERE IsCompleted = 1 AND IsDeleted = 0";
             if (fromDate.HasValue)
             {
                 sql += " AND CompletedAt >= @fromDate";
@@ -299,7 +316,8 @@ namespace TodoSidebar.Services
                 SubTasksJson = reader.IsDBNull(reader.GetOrdinal("SubTasksJson")) ? null : reader.GetString(reader.GetOrdinal("SubTasksJson")),
                 SyncId = reader.IsDBNull(reader.GetOrdinal("SyncId")) ? null : reader.GetString(reader.GetOrdinal("SyncId")),
                 IsDirty = reader.IsDBNull(reader.GetOrdinal("IsDirty")) ? true : reader.GetInt32(reader.GetOrdinal("IsDirty")) == 1,
-                LastSyncedAt = reader.IsDBNull(reader.GetOrdinal("LastSyncedAt")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("LastSyncedAt")))
+                LastSyncedAt = reader.IsDBNull(reader.GetOrdinal("LastSyncedAt")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("LastSyncedAt"))),
+                IsDeleted = reader.IsDBNull(reader.GetOrdinal("IsDeleted")) ? false : reader.GetInt32(reader.GetOrdinal("IsDeleted")) == 1
             };
         }
 
@@ -330,7 +348,7 @@ namespace TodoSidebar.Services
             var tasks = new List<TaskItem>();
             using var cmd = _connection!.CreateCommand();
             
-            var sql = "SELECT * FROM Tasks WHERE (Title LIKE @keyword OR Description LIKE @keyword OR Tags LIKE @keyword)";
+            var sql = "SELECT * FROM Tasks WHERE IsDeleted = 0 AND (Title LIKE @keyword OR Description LIKE @keyword OR Tags LIKE @keyword)";
             cmd.Parameters.AddWithValue("@keyword", $"%{keyword}%");
             
             if (type.HasValue)
@@ -361,7 +379,7 @@ namespace TodoSidebar.Services
         {
             var tasks = new List<TaskItem>();
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT * FROM Tasks ORDER BY SortOrder, CreatedAt DESC";
+            cmd.CommandText = "SELECT * FROM Tasks WHERE IsDeleted = 0 ORDER BY SortOrder, CreatedAt DESC";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -470,6 +488,7 @@ namespace TodoSidebar.Services
                         Tags = @tags,
                         SortOrder = @sortOrder,
                         SubTasksJson = @subTasksJson,
+                        IsDeleted = @isDeleted,
                         IsDirty = 0,
                         LastSyncedAt = @syncedAt
                     WHERE SyncId = @syncId
@@ -486,6 +505,7 @@ namespace TodoSidebar.Services
                 cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                 cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                 cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
                 cmd.ExecuteNonQuery();
             }
@@ -494,8 +514,8 @@ namespace TodoSidebar.Services
                 // 插入新任务
                 using var cmd = _connection!.CreateCommand();
                 cmd.CommandText = @"
-                    INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt)
-                    VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt)
+                    INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted)
+                    VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted)
                 ";
                 cmd.Parameters.AddWithValue("@title", task.Title);
                 cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -509,6 +529,7 @@ namespace TodoSidebar.Services
                 cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                 cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@syncId", task.SyncId);
+                cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                 cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
                 cmd.ExecuteNonQuery();
             }

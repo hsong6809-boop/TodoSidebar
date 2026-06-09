@@ -32,6 +32,11 @@ namespace TodoSidebar
             // AllowsTransparency="True" 模式，无需 DWM 调用
         }
 
+        private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DragMove();
+        }
+
         private void CollapseToSidebar_Click(object sender, RoutedEventArgs e)
         {
             // 关闭完整窗口，打开侧边栏窗口

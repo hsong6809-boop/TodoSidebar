@@ -148,7 +148,7 @@
                             <Button Content="⤢"
                                     Style="{StaticResource IconButton}"
                                     Click="ExpandFullMode_Click"
-                                    ToolTip="展开完整模式"
+                                    ToolTip="展开主窗口"
                                     Margin="4,0,0,0"/>
                             <Button Content="◀"
                                     Style="{StaticResource IconButton}"

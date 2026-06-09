@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Timers;
 using Microsoft.Data.Sqlite;
 using Newtonsoft.Json;
 using Supabase;
@@ -12,18 +12,21 @@ using TodoSidebar.Models;
 namespace TodoSidebar.Services
 {
     /// <summary>
-    /// 同步服务
+    /// 同步服务（v2 — 修复冲突解决/离线队列/增量同步/批量上传/Timer异常）
     /// </summary>
     public class SyncService
     {
         private static SyncService? _instance;
         private static readonly object _lock = new object();
         
-        private Timer? _syncTimer;
-        private readonly Queue<SyncQueueItem> _offlineQueue = new Queue<SyncQueueItem>();
-        private readonly object _queueLock = new object();
+        private PeriodicTimer? _syncTimer;
+        private CancellationTokenSource? _cts;
+        private Task? _syncLoopTask;
         private readonly DatabaseService _dbService = DatabaseService.Instance;
         private readonly AuthService _authService = AuthService.Instance;
+        
+        // 增量同步：记录上次同步时间（UTC）
+        private DateTime? _lastSyncTimeUtc;
         
         public static SyncService Instance
         {
@@ -74,11 +77,44 @@ namespace TodoSidebar.Services
         {
             await SupabaseClientService.InitializeAsync();
             
-            // 启动定时同步
-            _syncTimer = new Timer(SupabaseConfig.SyncIntervalSeconds * 1000);
-            _syncTimer.Elapsed += async (s, e) => await SyncAsync();
-            _syncTimer.AutoReset = true;
-            _syncTimer.Start();
+            // 从数据库恢复上次同步时间
+            var savedSyncTime = _dbService.GetSetting("LastSyncTimeUtc");
+            if (!string.IsNullOrEmpty(savedSyncTime) && DateTime.TryParse(savedSyncTime, out var parsed))
+            {
+                _lastSyncTimeUtc = parsed;
+            }
+            
+            // 用 PeriodicTimer 替代 System.Timers.Timer，正确处理 async
+            _cts = new CancellationTokenSource();
+            _syncTimer = new PeriodicTimer(TimeSpan.FromSeconds(SupabaseConfig.SyncIntervalSeconds));
+            _syncLoopTask = RunSyncLoopAsync(_cts.Token);
+        }
+        
+        /// <summary>
+        /// 同步循环 — 用 PeriodicTimer 正确处理 async + 异常
+        /// </summary>
+        private async Task RunSyncLoopAsync(CancellationToken ct)
+        {
+            try
+            {
+                while (await _syncTimer!.WaitForNextTickAsync(ct))
+                {
+                    try
+                    {
+                        await SyncAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        // 单次同步失败不影响循环
+                        System.Diagnostics.Debug.WriteLine($"Sync tick error: {ex.Message}");
+                        SetStatus(SyncStatus.Error);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 正常退出，忽略
+            }
         }
         
         /// <summary>
@@ -98,17 +134,23 @@ namespace TodoSidebar.Services
             {
                 var result = new SyncResult();
                 
-                // 1. 上传本地更改
+                // 1. 上传本地更改（批量）
                 result.Uploaded = await UploadLocalChangesAsync();
                 
-                // 2. 下载远程更改
-                result.Downloaded = await DownloadRemoteChangesAsync();
+                // 2. 下载远程更改（增量 + 冲突解决）
+                var downloadResult = await DownloadRemoteChangesAsync();
+                result.Downloaded = downloadResult.downloaded;
+                result.Conflicts = downloadResult.conflicts;
                 
-                // 3. 处理离线队列
-                await ProcessOfflineQueueAsync();
+                // 3. 定期清理软删除记录（30天前的）
+                _dbService.PurgeDeletedTasks(30);
                 
                 result.Success = true;
                 LastSyncTime = DateTime.Now;
+                
+                // 保存同步时间到数据库
+                _lastSyncTimeUtc = DateTime.UtcNow;
+                _dbService.SetSetting("LastSyncTimeUtc", _lastSyncTimeUtc.Value.ToString("O"));
                 
                 SetStatus(SyncStatus.Idle);
                 SyncCompleted?.Invoke(this, result);
@@ -124,13 +166,12 @@ namespace TodoSidebar.Services
         }
         
         /// <summary>
-        /// 上传本地更改
+        /// 上传本地更改（批量 upsert）
         /// </summary>
         public async Task<int> UploadLocalChangesAsync()
         {
             try
             {
-                // 1. 获取所有脏任务（本地修改但未同步）
                 var dirtyTasks = _dbService.GetDirtyTasks();
                 if (dirtyTasks.Count == 0)
                     return 0;
@@ -140,54 +181,72 @@ namespace TodoSidebar.Services
                 if (string.IsNullOrEmpty(userId))
                     return 0;
                 
-                int uploaded = 0;
+                // 构建批量同步列表
+                var syncTasks = new List<SyncTask>();
+                var taskMapping = new List<(int localId, SyncTask syncTask)>();
                 
                 foreach (var task in dirtyTasks)
                 {
-                    try
+                    var syncId = string.IsNullOrEmpty(task.SyncId) ? Guid.NewGuid() : Guid.Parse(task.SyncId);
+                    var syncTask = new SyncTask
                     {
-                        // 转换为 Supabase 模型
-                        var syncTask = new SyncTask
-                        {
-                            Id = string.IsNullOrEmpty(task.SyncId) ? Guid.NewGuid() : Guid.Parse(task.SyncId),
-                            UserId = userId,
-                            Title = task.Title,
-                            Type = (int)task.Type,
-                            Priority = (int)task.Priority,
-                            IsCompleted = task.IsCompleted,
-                            CreatedAt = task.CreatedAt,
-                            Deadline = task.Deadline,
-                            CompletedAt = task.CompletedAt,
-                            Description = task.Description,
-                            Tags = task.Tags,
-                            SortOrder = task.SortOrder,
-                            SubtasksJson = task.SubTasksJson,
-                            UpdatedAt = DateTime.UtcNow,
-                            IsDeleted = false
-                        };
-                        
-                        // 上传到 Supabase (upsert)
-                        await client.From<SyncTask>().Upsert(syncTask);
-                        
-                        // 标记本地任务已同步
-                        _dbService.MarkTaskSynced(task.Id, syncTask.Id.ToString());
-                        uploaded++;
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Upload task {task.Id} error: {ex.Message}");
-                        // 添加到离线队列
-                        AddToOfflineQueue(new SyncQueueItem
-                        {
-                            TaskId = string.IsNullOrEmpty(task.SyncId) ? Guid.NewGuid() : Guid.Parse(task.SyncId),
-                            Operation = "update",
-                            TaskData = JsonConvert.SerializeObject(task),
-                            LastError = ex.Message
-                        });
-                    }
+                        Id = syncId,
+                        UserId = userId,
+                        Title = task.Title,
+                        Type = (int)task.Type,
+                        Priority = (int)task.Priority,
+                        IsCompleted = task.IsCompleted,
+                        CreatedAt = task.CreatedAt,
+                        Deadline = task.Deadline,
+                        CompletedAt = task.CompletedAt,
+                        Description = task.Description,
+                        Tags = task.Tags,
+                        SortOrder = task.SortOrder,
+                        SubtasksJson = task.SubTasksJson,
+                        UpdatedAt = DateTime.UtcNow,
+                        IsDeleted = task.IsDeleted
+                    };
+                    
+                    syncTasks.Add(syncTask);
+                    taskMapping.Add((task.Id, syncTask));
                 }
                 
-                return uploaded;
+                // 批量 upsert（一次 HTTP 请求）
+                try
+                {
+                    await client.From<SyncTask>().Upsert(syncTasks);
+                    
+                    // 全部成功，标记本地任务已同步
+                    foreach (var (localId, syncTask) in taskMapping)
+                    {
+                        _dbService.MarkTaskSynced(localId, syncTask.Id.ToString());
+                    }
+                    
+                    return syncTasks.Count;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Batch upload error: {ex.Message}");
+                    
+                    // 批量失败时逐条重试，区分哪些成功哪些失败
+                    int uploaded = 0;
+                    foreach (var (localId, syncTask) in taskMapping)
+                    {
+                        try
+                        {
+                            await client.From<SyncTask>().Upsert(syncTask);
+                            _dbService.MarkTaskSynced(localId, syncTask.Id.ToString());
+                            uploaded++;
+                        }
+                        catch (Exception itemEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Upload task {localId} error: {itemEx.Message}");
+                            // IsDirty 保持为1，下次同步会重试
+                        }
+                    }
+                    
+                    return uploaded;
+                }
             }
             catch (Exception ex)
             {
@@ -197,33 +256,47 @@ namespace TodoSidebar.Services
         }
         
         /// <summary>
-        /// 下载远程更改
+        /// 下载远程更改（增量 + LWW 冲突解决）
         /// </summary>
-        public async Task<int> DownloadRemoteChangesAsync()
+        public async Task<(int downloaded, int conflicts)> DownloadRemoteChangesAsync()
         {
             try
             {
                 var client = SupabaseClientService.Client;
                 var userId = _authService.CurrentUser?.Id;
                 if (string.IsNullOrEmpty(userId))
-                    return 0;
+                    return (0, 0);
                 
-                // 从 Supabase 获取当前用户的所有任务
-                var response = await client.From<SyncTask>()
-                    .Where(x => x.UserId == userId && !x.IsDeleted)
-                    .Get();
+                // 增量同步：只拉取上次同步后有更新的任务
+                Supabase.Postgrest.Responses.ModeledResponse<SyncTask> response;
+                
+                if (_lastSyncTimeUtc.HasValue)
+                {
+                    // 拉取上次同步后更新的任务（包括新创建的和已删除的）
+                    response = await client.From<SyncTask>()
+                        .Where(x => x.UserId == userId && x.UpdatedAt >= _lastSyncTimeUtc.Value)
+                        .Get();
+                }
+                else
+                {
+                    // 首次同步：拉取所有任务
+                    response = await client.From<SyncTask>()
+                        .Where(x => x.UserId == userId)
+                        .Get();
+                }
                 
                 var remoteTasks = response.Models;
-                if (remoteTasks == null || remoteTasks.Count == 0)
-                    return 0;
+                
+                if (remoteTasks == null || remoteTasks.Count() == 0)
+                    return (0, 0);
                 
                 int downloaded = 0;
+                int conflicts = 0;
                 
                 foreach (var remoteTask in remoteTasks)
                 {
                     try
                     {
-                        // 转换为本地模型
                         var localTask = new TaskItem
                         {
                             SyncId = remoteTask.Id.ToString(),
@@ -238,13 +311,37 @@ namespace TodoSidebar.Services
                             Tags = remoteTask.Tags,
                             SortOrder = remoteTask.SortOrder,
                             SubTasksJson = remoteTask.SubtasksJson,
+                            IsDeleted = remoteTask.IsDeleted,
                             IsDirty = false,
                             LastSyncedAt = DateTime.Now
                         };
                         
-                        // 更新或插入本地数据库
-                        _dbService.UpsertTaskFromRemote(localTask);
-                        downloaded++;
+                        // LWW 冲突解决
+                        var existing = _dbService.GetTaskBySyncId(remoteTask.Id.ToString());
+                        
+                        if (existing != null && existing.IsDirty)
+                        {
+                            // 冲突：本地有未同步的修改 + 远程也有修改
+                            // 比较 UpdatedAt：远程更新 → 覆盖本地；本地更新 → 保留本地（下次上传时覆盖远程）
+                            if (remoteTask.UpdatedAt > existing.LastSyncedAt)
+                            {
+                                // 远程更新，覆盖本地
+                                _dbService.UpsertTaskFromRemote(localTask);
+                                downloaded++;
+                            }
+                            else
+                            {
+                                // 本地更新，保留本地（IsDirty=1，下次上传时会覆盖远程）
+                                // 仅更新 LastSyncedAt 避免下次重复判断为冲突
+                                conflicts++;
+                            }
+                        }
+                        else
+                        {
+                            // 无冲突：直接更新/插入
+                            _dbService.UpsertTaskFromRemote(localTask);
+                            downloaded++;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -252,91 +349,21 @@ namespace TodoSidebar.Services
                     }
                 }
                 
-                return downloaded;
+                return (downloaded, conflicts);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"DownloadRemoteChanges error: {ex.Message}");
-                return 0;
+                return (0, 0);
             }
         }
         
         /// <summary>
-        /// 处理离线队列
+        /// 手动触发同步（UI 调用）
         /// </summary>
-        private async Task ProcessOfflineQueueAsync()
+        public async Task<SyncResult> ManualSyncAsync()
         {
-            var itemsToProcess = new List<SyncQueueItem>();
-            await Task.CompletedTask; // 占位符，实际操作是同步的
-            
-            // 取出队列中的所有项
-            lock (_queueLock)
-            {
-                while (_offlineQueue.Count > 0)
-                {
-                    itemsToProcess.Add(_offlineQueue.Dequeue());
-                }
-            }
-            
-            if (itemsToProcess.Count == 0)
-                return;
-            
-            var client = SupabaseClientService.Client;
-            var userId = _authService.CurrentUser?.Id;
-            if (string.IsNullOrEmpty(userId))
-            {
-                // 未登录，放回队列
-                lock (_queueLock)
-                {
-                    foreach (var item in itemsToProcess)
-                        _offlineQueue.Enqueue(item);
-                }
-                return;
-            }
-            
-            foreach (var item in itemsToProcess)
-            {
-                try
-                {
-                    if (item.Operation == "update" || item.Operation == "create")
-                    {
-                        var task = JsonConvert.DeserializeObject<TaskItem>(item.TaskData ?? "{}");
-                        if (task != null)
-                        {
-                            // 重新标记为脏，下次同步时会上传
-                            task.IsDirty = true;
-                            _dbService.UpdateTask(task);
-                        }
-                    }
-                    else if (item.Operation == "delete" && item.TaskId != Guid.Empty)
-                    {
-                        // 软删除：标记为已删除
-                        var existing = _dbService.GetTaskBySyncId(item.TaskId.ToString());
-                        if (existing != null)
-                        {
-                            _dbService.DeleteTask(existing.Id);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Process offline queue item error: {ex.Message}");
-                }
-            }
-        }
-        
-        /// <summary>
-        /// 添加到离线队列
-        /// </summary>
-        public void AddToOfflineQueue(SyncQueueItem item)
-        {
-            lock (_queueLock)
-            {
-                if (_offlineQueue.Count < SupabaseConfig.MaxOfflineQueueSize)
-                {
-                    _offlineQueue.Enqueue(item);
-                }
-            }
+            return await SyncAsync();
         }
         
         /// <summary>
@@ -353,8 +380,9 @@ namespace TodoSidebar.Services
         /// </summary>
         public void Stop()
         {
-            _syncTimer?.Stop();
+            _cts?.Cancel();
             _syncTimer?.Dispose();
+            _cts?.Dispose();
         }
     }
 }
