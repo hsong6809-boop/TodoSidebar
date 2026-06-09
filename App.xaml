@@ -24,6 +24,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <converters:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVis"/>
         <converters:NullToVisibilityConverter x:Key="NullToVis"/>
+        <converters:ZeroToVisibilityConverter x:Key="ZeroToVis"/>
         <converters:SubTaskCompletionToStrikethrough x:Key="SubTaskStrike"/>
         <converters:SubTaskCompletionToForeground x:Key="SubTaskForeground"/>
         <converters:SubTaskProgressToWidth x:Key="SubTaskProgressWidth"/>

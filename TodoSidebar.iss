@@ -5,7 +5,7 @@
 ;   3. 点击 编译 -> 编译 即可生成安装包
 
 #define MyAppName "每日任务"
-#define MyAppVersion "3.1.0"
+#define MyAppVersion "3.2.0"
 #define MyAppPublisher "TodoSidebar"
 #define MyAppExeName "TodoSidebar.exe"
 
@@ -45,20 +45,32 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--sync"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// 卸载时删除数据目录
+// 卸载时询问是否保留数据
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
+  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
     DataDir := ExpandConstant('{userappdata}\TodoSidebar');
     if DirExists(DataDir) then
     begin
-      DelTree(DataDir, True, True, True);
+      // 询问用户是否保留数据
+      ResultCode := MsgBox('是否保留本地数据？' + #13#10 + #13#10 + 
+        '选择"是"：保留本地任务数据，下次安装时可恢复' + #13#10 + 
+        '选择"否"：删除所有本地数据', 
+        mbConfirmation, MB_YESNO);
+      
+      if ResultCode = IDNO then
+      begin
+        // 用户选择删除数据
+        DelTree(DataDir, True, True, True);
+      end;
+      // 如果用户选择保留数据，则不删除目录
     end;
   end;
 end;

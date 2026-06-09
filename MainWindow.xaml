@@ -88,6 +88,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 顶部栏（可拖动） -->
@@ -517,8 +518,52 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <!-- 底部操作栏 -->
+                <!-- 今日已完成任务 -->
                 <Border Grid.Row="4"
+                        Padding="12,8"
+                        BorderThickness="0,1,0,0"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        Visibility="{Binding TodayCompletedTasksCount, Converter={StaticResource ZeroToVis}}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="✅ 今日已完成"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <Border Background="{DynamicResource SuccessBrush}"
+                                    CornerRadius="8"
+                                    Padding="6,2"
+                                    Margin="6,0,0,0">
+                                <TextBlock Text="{Binding TodayCompletedTasksCount}"
+                                           Foreground="White"
+                                           FontSize="10"
+                                           FontWeight="Bold"/>
+                            </Border>
+                        </StackPanel>
+                        <ListBox ItemsSource="{Binding TodayCompletedTasks}"
+                                 Style="{StaticResource GlassListBox}"
+                                 MaxHeight="150"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <TextBlock Text="✓" 
+                                                   Foreground="{DynamicResource SuccessBrush}"
+                                                   FontSize="12"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBlock Text="{Binding Title}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   FontSize="12"
+                                                   TextDecorations="Strikethrough"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 底部操作栏 -->
+                <Border Grid.Row="5"
                         Background="{DynamicResource GlassLightBrush}"
                         Padding="12,10"
                         CornerRadius="0,0,16,16"
@@ -528,11 +573,26 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Button Content="📊 统计"
                                 Style="{StaticResource SidebarButton}"
                                 Click="StatisticsButton_Click"
                                 HorizontalAlignment="Left"/>
+                        <Button Content="⬆️"
+                                Style="{StaticResource IconButton}"
+                                Command="{Binding UploadCommand}"
+                                ToolTip="上传到云端"
+                                Width="28"
+                                Height="28"
+                                Grid.Column="1"/>
+                        <Button Content="⬇️"
+                                Style="{StaticResource IconButton}"
+                                Command="{Binding DownloadCommand}"
+                                ToolTip="从云端下载"
+                                Width="28"
+                                Height="28"
+                                Grid.Column="2"/>
                         
                     </Grid>
                 </Border>

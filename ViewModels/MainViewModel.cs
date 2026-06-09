@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -17,6 +18,7 @@ namespace TodoSidebar.ViewModels
         private readonly TaskService _taskService;
         private readonly DatabaseService _dbService;
         private readonly IMessageService _messageService;
+        private readonly SyncService _syncService;
 
         // 统计视图模型
         public StatisticsViewModel StatisticsViewModel { get; }
@@ -43,6 +45,16 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private bool _isSearchMode;
 
+        // 同步相关
+        [ObservableProperty]
+        private bool _isSyncing;
+        
+        [ObservableProperty]
+        private string _syncStatusText = string.Empty;
+        
+        [ObservableProperty]
+        private DateTime? _lastSyncTime;
+
         public ObservableCollection<TaskItem> SearchResults { get; } = new();
 
         // 模板相关
@@ -52,12 +64,14 @@ namespace TodoSidebar.ViewModels
         public ObservableCollection<TaskItem> DailyTasks { get; } = new();
         public ObservableCollection<TaskItem> DeadlineTasks { get; } = new();
         public ObservableCollection<TaskItem> HistoryTasks { get; } = new();
+        public ObservableCollection<TaskItem> TodayCompletedTasks { get; } = new();
         public ObservableCollection<TaskItem> CurrentTasks { get; } = new();
 
         public int DailyTasksCount => DailyTasks.Count;
         public int DeadlineTasksCount => DeadlineTasks.Count;
         public int CurrentTasksCount => CurrentTasks.Count;
         public int HistoryTasksCount => HistoryTasks.Count;
+        public int TodayCompletedTasksCount => TodayCompletedTasks.Count;
 
         public MainViewModel()
         {
@@ -65,6 +79,7 @@ namespace TodoSidebar.ViewModels
             _taskService = new TaskService(_dbService);
             _messageService = MessageService.Instance;
             _templateService = new TaskTemplateService();
+            _syncService = SyncService.Instance;
             
             // 初始化统计视图模型
             StatisticsViewModel = new StatisticsViewModel(_dbService);
@@ -73,6 +88,7 @@ namespace TodoSidebar.ViewModels
             DailyTasks.CollectionChanged += OnTaskCollectionChanged;
             DeadlineTasks.CollectionChanged += OnTaskCollectionChanged;
             HistoryTasks.CollectionChanged += OnTaskCollectionChanged;
+            TodayCompletedTasks.CollectionChanged += OnTaskCollectionChanged;
             CurrentTasks.CollectionChanged += OnTaskCollectionChanged;
 
             LoadData();
@@ -82,6 +98,7 @@ namespace TodoSidebar.ViewModels
         {
             if (sender == DailyTasks) OnPropertyChanged(nameof(DailyTasksCount));
             else if (sender == DeadlineTasks) OnPropertyChanged(nameof(DeadlineTasksCount));
+            else if (sender == TodayCompletedTasks) OnPropertyChanged(nameof(TodayCompletedTasksCount));
             else if (sender == HistoryTasks) OnPropertyChanged(nameof(HistoryTasksCount));
             else if (sender == CurrentTasks) OnPropertyChanged(nameof(CurrentTasksCount));
         }
@@ -90,6 +107,7 @@ namespace TodoSidebar.ViewModels
         {
             LoadDailyTasks();
             LoadDeadlineTasks();
+            LoadTodayCompletedTasks();
             LoadHistoryTasks();
             LoadCurrentTasks();
             
@@ -116,6 +134,17 @@ namespace TodoSidebar.ViewModels
             HistoryTasks.Clear();
             foreach (var task in _taskService.GetHistoryTasks())
                 HistoryTasks.Add(task);
+        }
+        
+        private void LoadTodayCompletedTasks()
+        {
+            TodayCompletedTasks.Clear();
+            var today = DateTime.Today;
+            var completedTasks = _dbService.GetCompletedTasks(today, today.AddDays(1))
+                .OrderByDescending(t => t.CompletedAt)
+                .ToList();
+            foreach (var task in completedTasks)
+                TodayCompletedTasks.Add(task);
         }
 
         private void LoadCurrentTasks()
@@ -350,6 +379,113 @@ namespace TodoSidebar.ViewModels
                 orders.Add((tasks[i].Id, i));
             }
             _dbService.UpdateTaskOrder(orders);
+        }
+
+        // ========== 同步操作 ==========
+
+        [RelayCommand]
+        private async Task SyncAllAsync()
+        {
+            if (!AuthService.Instance.IsLoggedIn)
+            {
+                _messageService.ShowWarning("请先登录后再同步", "未登录");
+                return;
+            }
+
+            IsSyncing = true;
+            SyncStatusText = "正在同步...";
+
+            try
+            {
+                var result = await _syncService.SyncAsync();
+                
+                if (result.Success)
+                {
+                    LastSyncTime = DateTime.Now;
+                    SyncStatusText = $"同步完成：上传 {result.Uploaded} 条，下载 {result.Downloaded} 条";
+                    
+                    // 刷新本地数据
+                    LoadData();
+                }
+                else
+                {
+                    SyncStatusText = $"同步失败：{result.Error}";
+                    _messageService.ShowError($"同步失败：{result.Error}", "同步错误");
+                }
+            }
+            catch (Exception ex)
+            {
+                SyncStatusText = $"同步出错：{ex.Message}";
+                _messageService.ShowError($"同步出错：{ex.Message}", "同步错误");
+            }
+            finally
+            {
+                IsSyncing = false;
+            }
+        }
+
+        [RelayCommand]
+        private async Task UploadAsync()
+        {
+            if (!AuthService.Instance.IsLoggedIn)
+            {
+                _messageService.ShowWarning("请先登录后再上传", "未登录");
+                return;
+            }
+
+            IsSyncing = true;
+            SyncStatusText = "正在上传本地数据...";
+
+            try
+            {
+                var uploaded = await _syncService.UploadLocalChangesAsync();
+                LastSyncTime = DateTime.Now;
+                SyncStatusText = $"上传完成：{uploaded} 条数据已上传";
+                _messageService.ShowMessage($"成功上传 {uploaded} 条数据到云端", "上传完成");
+            }
+            catch (Exception ex)
+            {
+                SyncStatusText = $"上传出错：{ex.Message}";
+                _messageService.ShowError($"上传出错：{ex.Message}", "上传错误");
+            }
+            finally
+            {
+                IsSyncing = false;
+            }
+        }
+
+        [RelayCommand]
+        private async Task DownloadAsync()
+        {
+            if (!AuthService.Instance.IsLoggedIn)
+            {
+                _messageService.ShowWarning("请先登录后再下载", "未登录");
+                return;
+            }
+
+            IsSyncing = true;
+            SyncStatusText = "正在从云端下载数据...";
+
+            try
+            {
+                var downloaded = await _syncService.DownloadRemoteChangesAsync();
+                LastSyncTime = DateTime.Now;
+                SyncStatusText = $"下载完成：{downloaded} 条数据已下载";
+                
+                // 刷新本地数据
+                LoadData();
+                
+                _messageService.ShowMessage($"成功从云端下载 {downloaded} 条数据", "下载完成");
+            }
+            catch (Exception ex)
+            {
+                SyncStatusText = $"下载出错：{ex.Message}";
+                _messageService.ShowError($"下载出错：{ex.Message}", "下载错误");
+            }
+            finally
+            {
+                IsSyncing = false;
+            }
         }
 
         public void Dispose()

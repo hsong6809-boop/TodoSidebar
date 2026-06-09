@@ -38,79 +38,86 @@ namespace TodoSidebar
                 RequireLogin = !e.Args.Contains("--no-sync");  // 默认需要登录，除非明确传入 --no-sync
                 bool isSidebarMode = e.Args.Contains("--sidebar");
                 
-                // 初始化认证服务（同步等待）
-                InitializeAuthAsync().Wait();
-                
-                // 如果未登录，显示登录窗口
-                if (!AuthService.Instance.IsLoggedIn)
+                // 初始化认证服务（使用 Task.Run 避免死锁）
+                Task.Run(async () =>
                 {
-                    var loginWindow = new LoginWindow();
-                    loginWindow.Show();
-                    return;
-                }
-
-                // 创建共享的 ViewModel
-                SharedViewModel = new MainViewModel();
-
-                // 启动通知服务
-                NotificationService.Instance.Start();
-
-                Window mainWindow;
-                if (isSidebarMode)
-                    mainWindow = new MainWindow();
-                else
-                    mainWindow = new FullWindow();
-
-                mainWindow.Show();
-
-                // 注册全局快捷键
-                _hotkeyService = new HotkeyService();
-                _hotkeyService.RegisterHotkeys(mainWindow);
+                    await InitializeAuthAsync();
+                }).Wait();
                 
-                _hotkeyService.ToggleSidebarRequested += (s, args) =>
+                // 在 UI 线程上检查登录状态并显示窗口
+                Dispatcher.Invoke(() =>
                 {
-                    try
+                    // 如果未登录，显示登录窗口
+                    if (!AuthService.Instance.IsLoggedIn)
                     {
-                        if (mainWindow is MainWindow sidebar)
+                        var loginWindow = new LoginWindow();
+                        loginWindow.Show();
+                        return;
+                    }
+
+                    // 创建共享的 ViewModel
+                    SharedViewModel = new MainViewModel();
+
+                    // 启动通知服务
+                    NotificationService.Instance.Start();
+
+                    Window mainWindow;
+                    if (isSidebarMode)
+                        mainWindow = new MainWindow();
+                    else
+                        mainWindow = new FullWindow();
+
+                    mainWindow.Show();
+
+                    // 注册全局快捷键
+                    _hotkeyService = new HotkeyService();
+                    _hotkeyService.RegisterHotkeys(mainWindow);
+                    
+                    _hotkeyService.ToggleSidebarRequested += (s, args) =>
+                    {
+                        try
                         {
-                            var fullWindow = new FullWindow();
-                            fullWindow.Show();
-                            sidebar.Close();
-                            mainWindow = fullWindow;
-                            _hotkeyService.ReRegisterHotkeys(fullWindow);
+                            if (mainWindow is MainWindow sidebar)
+                            {
+                                var fullWindow = new FullWindow();
+                                fullWindow.Show();
+                                sidebar.Close();
+                                mainWindow = fullWindow;
+                                _hotkeyService.ReRegisterHotkeys(fullWindow);
+                            }
+                            else if (mainWindow is FullWindow full)
+                            {
+                                var sidebarWindow = new MainWindow();
+                                sidebarWindow.Show();
+                                full.Close();
+                                mainWindow = sidebarWindow;
+                                _hotkeyService.ReRegisterHotkeys(sidebarWindow);
+                            }
                         }
-                        else if (mainWindow is FullWindow full)
+                        catch (Exception ex)
                         {
-                            var sidebarWindow = new MainWindow();
-                            sidebarWindow.Show();
-                            full.Close();
-                            mainWindow = sidebarWindow;
-                            _hotkeyService.ReRegisterHotkeys(sidebarWindow);
+                            System.Diagnostics.Debug.WriteLine($"ToggleSidebar error: {ex.Message}");
                         }
-                    }
-                    catch (Exception ex)
+                    };
+                    
+                    _hotkeyService.NewTaskRequested += (s, args) =>
                     {
-                        System.Diagnostics.Debug.WriteLine($"ToggleSidebar error: {ex.Message}");
-                    }
-                };
-                
-                _hotkeyService.NewTaskRequested += (s, args) =>
-                {
-                    try
+                        try
+                        {
+                            mainWindow?.Activate();
+                        }
+                        catch { }
+                    };
+                    
+                    _hotkeyService.SearchRequested += (s, args) =>
                     {
-                        mainWindow?.Activate();
-                    }
-                    catch { }
-                };
-                
-                _hotkeyService.SearchRequested += (s, args) =>
-                {
-                    try
-                    {
-                        mainWindow?.Activate();
-                    }
-                    catch { }
-                };
+                        try
+                        {
+                            mainWindow?.Activate();
+                        }
+                        catch { }
+                    };
+                });
             }
             catch (Exception ex)
             {

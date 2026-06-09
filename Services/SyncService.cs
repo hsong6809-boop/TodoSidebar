@@ -126,7 +126,7 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 上传本地更改
         /// </summary>
-        private async Task<int> UploadLocalChangesAsync()
+        public async Task<int> UploadLocalChangesAsync()
         {
             try
             {
@@ -199,7 +199,7 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 下载远程更改
         /// </summary>
-        private async Task<int> DownloadRemoteChangesAsync()
+        public async Task<int> DownloadRemoteChangesAsync()
         {
             try
             {
