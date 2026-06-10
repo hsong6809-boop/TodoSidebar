@@ -41,6 +41,16 @@ namespace TodoSidebar.Models
             get => _isCompleted;
             set { _isCompleted = value; OnPropertyChanged(); }
         }
+
+        /// <summary>
+        /// 今日是否已完成（每日任务专用，运行时计算，不持久化）
+        /// </summary>
+        private bool _isTodayCompleted;
+        public bool IsTodayCompleted
+        {
+            get => _isTodayCompleted;
+            set { _isTodayCompleted = value; OnPropertyChanged(); }
+        }
         
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime? Deadline { get; set; }

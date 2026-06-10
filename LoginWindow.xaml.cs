@@ -12,6 +12,48 @@ namespace TodoSidebar
         public LoginWindow()
         {
             InitializeComponent();
+            LoadSavedCredentials();
+        }
+
+        private void LoadSavedCredentials()
+        {
+            try
+            {
+                var db = DatabaseService.Instance;
+                var savedEmail = db.GetSetting("SavedEmail");
+                var savedPassword = db.GetSetting("SavedPassword");
+                var rememberMe = db.GetSetting("RememberMe");
+
+                if (rememberMe == "1" && !string.IsNullOrEmpty(savedEmail))
+                {
+                    EmailTextBox.Text = savedEmail;
+                    if (!string.IsNullOrEmpty(savedPassword))
+                        PasswordBox.Password = savedPassword;
+                    RememberMeCheckBox.IsChecked = true;
+                }
+            }
+            catch { }
+        }
+
+        private void SaveCredentials(string email, string password)
+        {
+            try
+            {
+                var db = DatabaseService.Instance;
+                if (RememberMeCheckBox.IsChecked == true)
+                {
+                    db.SetSetting("SavedEmail", email);
+                    db.SetSetting("SavedPassword", password);
+                    db.SetSetting("RememberMe", "1");
+                }
+                else
+                {
+                    db.SetSetting("SavedEmail", "");
+                    db.SetSetting("SavedPassword", "");
+                    db.SetSetting("RememberMe", "0");
+                }
+            }
+            catch { }
         }
         
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -57,6 +99,9 @@ namespace TodoSidebar
                 
                 if (result.Success)
                 {
+                    // 保存凭据（如果勾选了记住我）
+                    SaveCredentials(email, password);
+                    
                     // 登录成功，初始化 ViewModel 并打开主窗口
                     App.SharedViewModel = new ViewModels.MainViewModel();
                     Services.NotificationService.Instance.Start();

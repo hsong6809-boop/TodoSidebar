@@ -12,7 +12,7 @@ namespace TodoSidebar.Services
         System
     }
 
-    public class ThemeManager
+    public class ThemeManager : IThemeManager
     {
         private static ThemeManager? _instance;
         public static ThemeManager Instance => _instance ??= new ThemeManager();

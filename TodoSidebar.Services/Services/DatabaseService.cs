@@ -1,0 +1,539 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Microsoft.Data.Sqlite;
+using TodoSidebar.Models;
+
+namespace TodoSidebar.Services
+{
+    public class DatabaseService : IDisposable
+    {
+        private static DatabaseService? _instance;
+        private static readonly object _lock = new object();
+        
+        public static DatabaseService Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    lock (_lock)
+                    {
+                        if (_instance == null)
+                        {
+                            _instance = new DatabaseService();
+                            _instance.Initialize();
+                        }
+                    }
+                }
+                return _instance;
+            }
+        }
+
+        private readonly string _dbPath;
+        private SqliteConnection? _connection;
+
+        private DatabaseService()  // 改为私有构造函数
+        {
+            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var appFolder = Path.Combine(appDataPath, "TodoSidebar");
+            Directory.CreateDirectory(appFolder);
+            _dbPath = Path.Combine(appFolder, "todo.db");
+        }
+
+        // 保留 Initialize 方法供首次调用
+        public void Initialize()
+        {
+            if (_connection != null) return; // 已初始化
+            try
+            {
+                _connection = new SqliteConnection($"Data Source={_dbPath}");
+                _connection.Open();
+            }
+            catch (Exception ex)
+            {
+                // 数据库连接失败，尝试重建
+                System.Diagnostics.Debug.WriteLine($"数据库连接失败: {ex.Message}，将尝试重建");
+
+                try
+                {
+                    _connection?.Dispose();
+                    if (File.Exists(_dbPath))
+                        File.Delete(_dbPath);
+                    _connection = new SqliteConnection($"Data Source={_dbPath}");
+                    _connection.Open();
+                }
+                catch (Exception ex2)
+                {
+                    throw new InvalidOperationException($"无法创建数据库: {ex2.Message}", ex2);
+                }
+            }
+
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS Tasks (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Title TEXT NOT NULL,
+                    Type INTEGER NOT NULL,
+                    Priority INTEGER NOT NULL DEFAULT 1,
+                    IsCompleted INTEGER NOT NULL DEFAULT 0,
+                    CreatedAt TEXT NOT NULL,
+                    Deadline TEXT,
+                    CompletedAt TEXT,
+                    Description TEXT,
+                    Tags TEXT,
+                    SortOrder INTEGER DEFAULT 0,
+                    EstimatedMinutes INTEGER,
+                    ActualMinutes INTEGER,
+                    SubTasksJson TEXT
+                );
+";
+            cmd.ExecuteNonQuery();
+
+            // 创建设置表
+            using var settingsCmd = _connection.CreateCommand();
+            settingsCmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS Settings (
+                    Key TEXT PRIMARY KEY,
+                    Value TEXT NOT NULL
+                );
+            ";
+            settingsCmd.ExecuteNonQuery();
+
+            // 检查并添加 Priority 列（如果不存在）
+            try
+            {
+                using var checkCmd = _connection.CreateCommand();
+                checkCmd.CommandText = "SELECT Priority FROM Tasks LIMIT 1";
+                checkCmd.ExecuteScalar();
+            }
+            catch
+            {
+                // 列不存在，添加它
+                using var alterCmd = _connection.CreateCommand();
+                alterCmd.CommandText = "ALTER TABLE Tasks ADD COLUMN Priority INTEGER NOT NULL DEFAULT 1";
+                alterCmd.ExecuteNonQuery();
+            }
+
+            // 检查并添加新列（Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes）
+            MigrateDatabase();
+        }
+
+        private void MigrateDatabase()
+        {
+            var columnsToCheck = new Dictionary<string, string>
+            {
+                { "Description", "TEXT" },
+                { "Tags", "TEXT" },
+                { "SortOrder", "INTEGER DEFAULT 0" },
+                { "EstimatedMinutes", "INTEGER" },
+                { "ActualMinutes", "INTEGER" },
+                { "SubTasksJson", "TEXT" },
+                { "SyncId", "TEXT" },
+                { "IsDirty", "INTEGER DEFAULT 1" },
+                { "LastSyncedAt", "TEXT" },
+                { "IsDeleted", "INTEGER DEFAULT 0" }
+            };
+
+            foreach (var column in columnsToCheck)
+            {
+                try
+                {
+                    using var checkCmd = _connection.CreateCommand();
+                    checkCmd.CommandText = $"SELECT {column.Key} FROM Tasks LIMIT 1";
+                    checkCmd.ExecuteScalar();
+                }
+                catch
+                {
+                    try
+                    {
+                        using var alterCmd = _connection.CreateCommand();
+                        alterCmd.CommandText = $"ALTER TABLE Tasks ADD COLUMN {column.Key} {column.Value}";
+                        alterCmd.ExecuteNonQuery();
+                    }
+                    catch { /* 列可能已存在，忽略 */ }
+                }
+            }
+        }
+
+        // Task CRUD
+        public int InsertTask(TaskItem task)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, IsDirty)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, 1);
+                SELECT last_insert_rowid();
+            ";
+            cmd.Parameters.AddWithValue("@title", task.Title);
+            cmd.Parameters.AddWithValue("@type", (int)task.Type);
+            cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
+            cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
+            cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
+            cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
+            cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        public void UpdateTask(TaskItem task)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE Tasks SET
+                    Title = @title,
+                    Priority = @priority,
+                    IsCompleted = @completed,
+                    Deadline = @deadline,
+                    CompletedAt = @completedAt,
+                    Description = @description,
+                    Tags = @tags,
+                    SortOrder = @sortOrder,
+                    EstimatedMinutes = @estimatedMinutes,
+                    ActualMinutes = @actualMinutes,
+                    SubTasksJson = @subTasksJson,
+                    IsDirty = 1
+                WHERE Id = @id
+            ";
+            cmd.Parameters.AddWithValue("@id", task.Id);
+            cmd.Parameters.AddWithValue("@title", task.Title);
+            cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
+            cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
+            cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
+            cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+
+        public void DeleteTask(int id)
+        {
+            // 软删除：标记 IsDeleted + IsDirty，同步时会上传到云端
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1 WHERE Id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        /// 彻底删除已软删除且已同步的任务（定期清理用）
+        /// </summary>
+        public void PurgeDeletedTasks(int daysOld = 30)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = $@"
+                DELETE FROM Tasks
+                WHERE IsDeleted = 1
+                  AND IsDirty = 0
+                  AND LastSyncedAt IS NOT NULL
+                  AND LastSyncedAt < datetime('now', '-{daysOld} days')";
+            cmd.ExecuteNonQuery();
+        }
+
+        public List<TaskItem> GetTasks(TaskType? type = null, bool? completed = null)
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            
+            var sql = "SELECT * FROM Tasks WHERE IsDeleted = 0";
+            if (type.HasValue)
+            {
+                sql += " AND Type = @type";
+                cmd.Parameters.AddWithValue("@type", (int)type.Value);
+            }
+            if (completed.HasValue)
+            {
+                sql += " AND IsCompleted = @completed";
+                cmd.Parameters.AddWithValue("@completed", completed.Value ? 1 : 0);
+            }
+            sql += " ORDER BY CreatedAt DESC";
+            
+            cmd.CommandText = sql;
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tasks.Add(ReadTask(reader));
+            }
+            return tasks;
+        }
+
+        public List<TaskItem> GetCompletedTasks(DateTime? fromDate = null, DateTime? toDate = null)
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            
+            var sql = "SELECT * FROM Tasks WHERE IsCompleted = 1 AND IsDeleted = 0";
+            if (fromDate.HasValue)
+            {
+                sql += " AND CompletedAt >= @fromDate";
+                cmd.Parameters.AddWithValue("@fromDate", fromDate.Value.ToString("O"));
+            }
+            if (toDate.HasValue)
+            {
+                sql += " AND CompletedAt <= @toDate";
+                cmd.Parameters.AddWithValue("@toDate", toDate.Value.ToString("O"));
+            }
+            sql += " ORDER BY CompletedAt DESC";
+            
+            cmd.CommandText = sql;
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tasks.Add(ReadTask(reader));
+            }
+            return tasks;
+        }
+
+        private TaskItem ReadTask(SqliteDataReader reader)
+        {
+            return new TaskItem
+            {
+                Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                Title = reader.GetString(reader.GetOrdinal("Title")),
+                Type = (TaskType)reader.GetInt32(reader.GetOrdinal("Type")),
+                Priority = reader.IsDBNull(reader.GetOrdinal("Priority")) ? TaskPriority.Medium : (TaskPriority)reader.GetInt32(reader.GetOrdinal("Priority")),
+                IsCompleted = reader.GetInt32(reader.GetOrdinal("IsCompleted")) == 1,
+                CreatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("CreatedAt"))),
+                Deadline = reader.IsDBNull(reader.GetOrdinal("Deadline")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("Deadline"))),
+                CompletedAt = reader.IsDBNull(reader.GetOrdinal("CompletedAt")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("CompletedAt"))),
+                Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description")),
+                Tags = reader.IsDBNull(reader.GetOrdinal("Tags")) ? null : reader.GetString(reader.GetOrdinal("Tags")),
+                SortOrder = reader.IsDBNull(reader.GetOrdinal("SortOrder")) ? 0 : reader.GetInt32(reader.GetOrdinal("SortOrder")),
+                EstimatedMinutes = reader.IsDBNull(reader.GetOrdinal("EstimatedMinutes")) ? null : reader.GetInt32(reader.GetOrdinal("EstimatedMinutes")),
+                ActualMinutes = reader.IsDBNull(reader.GetOrdinal("ActualMinutes")) ? null : reader.GetInt32(reader.GetOrdinal("ActualMinutes")),
+                SubTasksJson = reader.IsDBNull(reader.GetOrdinal("SubTasksJson")) ? null : reader.GetString(reader.GetOrdinal("SubTasksJson")),
+                SyncId = reader.IsDBNull(reader.GetOrdinal("SyncId")) ? null : reader.GetString(reader.GetOrdinal("SyncId")),
+                IsDirty = reader.IsDBNull(reader.GetOrdinal("IsDirty")) ? true : reader.GetInt32(reader.GetOrdinal("IsDirty")) == 1,
+                LastSyncedAt = reader.IsDBNull(reader.GetOrdinal("LastSyncedAt")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("LastSyncedAt"))),
+                IsDeleted = reader.IsDBNull(reader.GetOrdinal("IsDeleted")) ? false : reader.GetInt32(reader.GetOrdinal("IsDeleted")) == 1
+            };
+        }
+
+        // Settings
+        public string? GetSetting(string key)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT Value FROM Settings WHERE Key = @key";
+            cmd.Parameters.AddWithValue("@key", key);
+            var result = cmd.ExecuteScalar();
+            return result?.ToString();
+        }
+
+        public void SetSetting(string key, string value)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                INSERT OR REPLACE INTO Settings (Key, Value) VALUES (@key, @value)
+            ";
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@value", value);
+            cmd.ExecuteNonQuery();
+        }
+
+        // 搜索任务
+        public List<TaskItem> SearchTasks(string keyword, TaskType? type = null, TaskPriority? priority = null)
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            
+            var sql = "SELECT * FROM Tasks WHERE IsDeleted = 0 AND (Title LIKE @keyword OR Description LIKE @keyword OR Tags LIKE @keyword)";
+            cmd.Parameters.AddWithValue("@keyword", $"%{keyword}%");
+            
+            if (type.HasValue)
+            {
+                sql += " AND Type = @type";
+                cmd.Parameters.AddWithValue("@type", (int)type.Value);
+            }
+            
+            if (priority.HasValue)
+            {
+                sql += " AND Priority = @priority";
+                cmd.Parameters.AddWithValue("@priority", (int)priority.Value);
+            }
+            
+            sql += " ORDER BY CreatedAt DESC";
+            
+            cmd.CommandText = sql;
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tasks.Add(ReadTask(reader));
+            }
+            return tasks;
+        }
+
+        // 获取所有任务（用于导出）
+        public List<TaskItem> GetTasks()
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Tasks WHERE IsDeleted = 0 ORDER BY SortOrder, CreatedAt DESC";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tasks.Add(ReadTask(reader));
+            }
+            return tasks;
+        }
+
+        // 批量更新任务排序
+        public void UpdateTaskOrder(List<(int id, int order)> orders)
+        {
+            using var transaction = _connection!.BeginTransaction();
+            try
+            {
+                foreach (var (id, order) in orders)
+                {
+                    using var cmd = _connection.CreateCommand();
+                    cmd.CommandText = "UPDATE Tasks SET SortOrder = @order WHERE Id = @id";
+                    cmd.Parameters.AddWithValue("@id", id);
+                    cmd.Parameters.AddWithValue("@order", order);
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
+        // ========== 同步相关方法 ==========
+        
+        /// <summary>
+        /// 获取所有需要同步的任务（IsDirty = 1）
+        /// </summary>
+        public List<TaskItem> GetDirtyTasks()
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Tasks WHERE IsDirty = 1";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tasks.Add(ReadTask(reader));
+            }
+            return tasks;
+        }
+
+        /// <summary>
+        /// 标记任务已同步
+        /// </summary>
+        public void MarkTaskSynced(int localId, string syncId)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE Tasks SET 
+                    SyncId = @syncId, 
+                    IsDirty = 0, 
+                    LastSyncedAt = @syncedAt 
+                WHERE Id = @id
+            ";
+            cmd.Parameters.AddWithValue("@id", localId);
+            cmd.Parameters.AddWithValue("@syncId", syncId);
+            cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        /// 通过 SyncId 获取本地任务
+        /// </summary>
+        public TaskItem? GetTaskBySyncId(string syncId)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Tasks WHERE SyncId = @syncId";
+            cmd.Parameters.AddWithValue("@syncId", syncId);
+            using var reader = cmd.ExecuteReader();
+            if (reader.Read())
+            {
+                return ReadTask(reader);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 通过 SyncId 更新本地任务（来自远程同步）
+        /// </summary>
+        public void UpsertTaskFromRemote(TaskItem task)
+        {
+            var existing = GetTaskBySyncId(task.SyncId!);
+            if (existing != null)
+            {
+                // 更新现有任务
+                task.Id = existing.Id;
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = @"
+                    UPDATE Tasks SET
+                        Title = @title,
+                        Type = @type,
+                        Priority = @priority,
+                        IsCompleted = @completed,
+                        CreatedAt = @createdAt,
+                        Deadline = @deadline,
+                        CompletedAt = @completedAt,
+                        Description = @description,
+                        Tags = @tags,
+                        SortOrder = @sortOrder,
+                        SubTasksJson = @subTasksJson,
+                        IsDeleted = @isDeleted,
+                        IsDirty = 0,
+                        LastSyncedAt = @syncedAt
+                    WHERE SyncId = @syncId
+                ";
+                cmd.Parameters.AddWithValue("@syncId", task.SyncId);
+                cmd.Parameters.AddWithValue("@title", task.Title);
+                cmd.Parameters.AddWithValue("@type", (int)task.Type);
+                cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
+                cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
+                cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
+                cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
+                cmd.ExecuteNonQuery();
+            }
+            else
+            {
+                // 插入新任务
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted)
+                    VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted)
+                ";
+                cmd.Parameters.AddWithValue("@title", task.Title);
+                cmd.Parameters.AddWithValue("@type", (int)task.Type);
+                cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
+                cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
+                cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
+                cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@syncId", task.SyncId);
+                cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public void Dispose()
+        {
+            _connection?.Dispose();
+        }
+    }
+}

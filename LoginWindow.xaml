@@ -137,12 +137,22 @@
                                      VerticalContentAlignment="Center"/>
                     </Border>
                     
-                    <!-- 忘记密码 -->
-                    <Button Content="忘记密码？"
-                            Style="{StaticResource LinkButton}"
-                            HorizontalAlignment="Right"
-                            Click="ForgotPassword_Click"
-                            Margin="0,0,0,20"/>
+                    <!-- 记住我 + 忘记密码 -->
+                    <Grid Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox x:Name="RememberMeCheckBox"
+                                  Content="记住我"
+                                  FontSize="12"
+                                  Foreground="#666666"
+                                  VerticalAlignment="Center"/>
+                        <Button Content="忘记密码？"
+                                Style="{StaticResource LinkButton}"
+                                Grid.Column="1"
+                                Click="ForgotPassword_Click"/>
+                    </Grid>
                     
                     <!-- 错误提示 -->
                     <TextBlock x:Name="ErrorText"

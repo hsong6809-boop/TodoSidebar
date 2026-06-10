@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths]
+"C:\\Users\\24345\\Desktop\\TodoSidebar"=dword:00000000
+"C:\\Users\\24345\\Desktop\\TodoSidebar\\installer"=dword:00000000
+"C:\\Users\\24345\\Desktop\\TodoSidebar\\bin\\publish"=dword:00000000
+"C:\\Program Files (x86)\\Inno Setup 6"=dword:00000000

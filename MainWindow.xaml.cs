@@ -28,6 +28,7 @@ namespace TodoSidebar
         
         // 鼠标轮询定时器
         private readonly DispatcherTimer _mousePollTimer;
+        private readonly DispatcherTimer _dateTimeTimer;
         private bool _wasMouseOver = false;
         
         // 当前展开的任务
@@ -63,6 +64,32 @@ namespace TodoSidebar
                 Interval = TimeSpan.FromMilliseconds(100)
             };
             _mousePollTimer.Tick += MousePollTimer_Tick;
+
+            // 初始化日期时间定时器（每秒刷新）
+            _dateTimeTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _dateTimeTimer.Tick += (s, args) => UpdateDateTime();
+            _dateTimeTimer.Start();
+            UpdateDateTime(); // 立即更新一次
+        }
+
+        private void UpdateDateTime()
+        {
+            var now = DateTime.Now;
+            var dayOfWeek = now.DayOfWeek switch
+            {
+                DayOfWeek.Monday => "周一",
+                DayOfWeek.Tuesday => "周二",
+                DayOfWeek.Wednesday => "周三",
+                DayOfWeek.Thursday => "周四",
+                DayOfWeek.Friday => "周五",
+                DayOfWeek.Saturday => "周六",
+                DayOfWeek.Sunday => "周日",
+                _ => ""
+            };
+            DateTimeText.Text = $"{now:MM/dd} {dayOfWeek} {now:HH:mm:ss}";
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)

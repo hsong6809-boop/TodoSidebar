@@ -57,20 +57,6 @@ namespace TodoSidebar.Models
     }
     
     /// <summary>
-    /// 本地同步队列项
-    /// </summary>
-    public class SyncQueueItem
-    {
-        public Guid Id { get; set; } = Guid.NewGuid();
-        public Guid TaskId { get; set; }
-        public string Operation { get; set; } = string.Empty; // "create", "update", "delete"
-        public string? TaskData { get; set; } // JSON 格式的任务数据
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public int RetryCount { get; set; }
-        public string? LastError { get; set; }
-    }
-    
-    /// <summary>
     /// 同步状态
     /// </summary>
     public enum SyncStatus

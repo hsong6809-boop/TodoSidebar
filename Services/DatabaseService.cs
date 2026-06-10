@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Windows;
 using Microsoft.Data.Sqlite;
 using TodoSidebar.Models;
 
 namespace TodoSidebar.Services
 {
-    public class DatabaseService : IDisposable
+    public partial class DatabaseService : IDatabaseService, IDisposable
     {
         private static DatabaseService? _instance;
         private static readonly object _lock = new object();
@@ -53,8 +52,8 @@ namespace TodoSidebar.Services
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"数据库连接失败: {ex.Message}\n\n将尝试删除并重建数据库。",
-                    "数据库错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                // 数据库连接失败，尝试重建
+                System.Diagnostics.Debug.WriteLine($"数据库连接失败: {ex.Message}，将尝试重建");
 
                 try
                 {
@@ -66,10 +65,7 @@ namespace TodoSidebar.Services
                 }
                 catch (Exception ex2)
                 {
-                    MessageBox.Show($"无法创建数据库: {ex2.Message}\n\n应用将退出。",
-                        "严重错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Application.Current.Shutdown();
-                    return;
+                    throw new InvalidOperationException($"无法创建数据库: {ex2.Message}", ex2);
                 }
             }
 
@@ -103,6 +99,18 @@ namespace TodoSidebar.Services
                 );
             ";
             settingsCmd.ExecuteNonQuery();
+
+            // 创建每日任务完成记录表（每天的完成状态独立）
+            using var dailyCompCmd = _connection.CreateCommand();
+            dailyCompCmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS DailyTaskCompletion (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    TaskId INTEGER NOT NULL,
+                    Date TEXT NOT NULL,
+                    UNIQUE(TaskId, Date)
+                );
+            ";
+            dailyCompCmd.ExecuteNonQuery();
 
             // 检查并添加 Priority 列（如果不存在）
             try
@@ -228,6 +236,20 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
+        /// 通过 ID 获取单个任务
+        /// </summary>
+        public TaskItem? GetTaskById(int taskId)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Tasks WHERE Id = @id AND IsDeleted = 0";
+            cmd.Parameters.AddWithValue("@id", taskId);
+            using var reader = cmd.ExecuteReader();
+            if (reader.Read())
+                return ReadTask(reader);
+            return null;
+        }
+
+        /// <summary>
         /// 彻底删除已软删除且已同步的任务（定期清理用）
         /// </summary>
         public void PurgeDeletedTasks(int daysOld = 30)
@@ -340,6 +362,83 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@key", key);
             cmd.Parameters.AddWithValue("@value", value);
             cmd.ExecuteNonQuery();
+        }
+
+        // ========== 每日任务完成记录 ==========
+
+        /// <summary>
+        /// 标记每日任务在指定日期完成
+        /// </summary>
+        public void MarkDailyTaskCompleted(int taskId, string date)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                INSERT OR IGNORE INTO DailyTaskCompletion (TaskId, Date) VALUES (@taskId, @date)
+            ";
+            cmd.Parameters.AddWithValue("@taskId", taskId);
+            cmd.Parameters.AddWithValue("@date", date);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        /// 取消每日任务在指定日期的完成状态
+        /// </summary>
+        public void UnmarkDailyTaskCompleted(int taskId, string date)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "DELETE FROM DailyTaskCompletion WHERE TaskId = @taskId AND Date = @date";
+            cmd.Parameters.AddWithValue("@taskId", taskId);
+            cmd.Parameters.AddWithValue("@date", date);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        /// 获取今天已完成的每日任务ID集合
+        /// </summary>
+        public HashSet<int> GetTodayCompletedDailyTaskIds()
+        {
+            var ids = new HashSet<int>();
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT TaskId FROM DailyTaskCompletion WHERE Date = @date";
+            cmd.Parameters.AddWithValue("@date", today);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                ids.Add(reader.GetInt32(0));
+            return ids;
+        }
+
+        /// <summary>
+        /// 获取今天已完成的每日任务（完整对象）
+        /// </summary>
+        public List<TaskItem> GetTodayCompletedDailyTasks()
+        {
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                SELECT t.* FROM Tasks t
+                INNER JOIN DailyTaskCompletion d ON t.Id = d.TaskId
+                WHERE d.Date = @date AND t.IsDeleted = 0
+                ORDER BY d.Id DESC
+            ";
+            cmd.Parameters.AddWithValue("@date", today);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                tasks.Add(ReadTask(reader));
+            return tasks;
+        }
+
+        /// <summary>
+        /// 获取每日任务在指定日期是否完成
+        /// </summary>
+        public bool IsDailyTaskCompletedOnDate(int taskId, string date)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM DailyTaskCompletion WHERE TaskId = @taskId AND Date = @date";
+            cmd.Parameters.AddWithValue("@taskId", taskId);
+            cmd.Parameters.AddWithValue("@date", date);
+            return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
 
         // 搜索任务

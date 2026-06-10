@@ -14,7 +14,7 @@ namespace TodoSidebar.Services
     /// <summary>
     /// 同步服务（v2 — 修复冲突解决/离线队列/增量同步/批量上传/Timer异常）
     /// </summary>
-    public class SyncService
+    public class SyncService : ISyncService
     {
         private static SyncService? _instance;
         private static readonly object _lock = new object();
@@ -24,6 +24,9 @@ namespace TodoSidebar.Services
         private Task? _syncLoopTask;
         private readonly DatabaseService _dbService = DatabaseService.Instance;
         private readonly AuthService _authService = AuthService.Instance;
+        private readonly SyncLogService _syncLog = SyncLogService.Instance;
+        private readonly NetworkMonitor _network = NetworkMonitor.Instance;
+        private IFeatureFlagService? _featureFlags;
         
         // 增量同步：记录上次同步时间（UTC）
         private DateTime? _lastSyncTimeUtc;
@@ -71,6 +74,14 @@ namespace TodoSidebar.Services
         }
         
         /// <summary>
+        /// 设置 Feature Flag 服务（由 DI 容器调用）
+        /// </summary>
+        public void SetFeatureFlags(IFeatureFlagService featureFlags)
+        {
+            _featureFlags = featureFlags;
+        }
+        
+        /// <summary>
         /// 初始化同步服务
         /// </summary>
         public async Task InitializeAsync()
@@ -88,6 +99,16 @@ namespace TodoSidebar.Services
             _cts = new CancellationTokenSource();
             _syncTimer = new PeriodicTimer(TimeSpan.FromSeconds(SupabaseConfig.SyncIntervalSeconds));
             _syncLoopTask = RunSyncLoopAsync(_cts.Token);
+            
+            // 网络恢复时自动触发同步
+            _network.ConnectivityChanged += async (_, online) =>
+            {
+                if (online && _authService.IsLoggedIn)
+                {
+                    System.Diagnostics.Debug.WriteLine("[SyncService] Network restored, triggering sync");
+                    try { await SyncAsync(); } catch { }
+                }
+            };
         }
         
         /// <summary>
@@ -128,7 +149,20 @@ namespace TodoSidebar.Services
             if (!AuthService.Instance.IsLoggedIn)
                 return new SyncResult { Success = false, Error = "未登录" };
             
+            // 离线检查
+            if (!_network.IsOnline)
+            {
+                _syncLog.Log(new SyncLogEntry
+                {
+                    Action = "sync",
+                    Success = false,
+                    Details = "已离线，跳过同步"
+                });
+                return new SyncResult { Success = false, Error = "已离线" };
+            }
+            
             SetStatus(SyncStatus.Syncing);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             
             try
             {
@@ -155,12 +189,34 @@ namespace TodoSidebar.Services
                 SetStatus(SyncStatus.Idle);
                 SyncCompleted?.Invoke(this, result);
                 
+                sw.Stop();
+                _syncLog.Log(new SyncLogEntry
+                {
+                    Action = "sync",
+                    Success = true,
+                    Uploaded = result.Uploaded,
+                    Downloaded = result.Downloaded,
+                    Conflicts = result.Conflicts,
+                    Duration = sw.Elapsed,
+                    Details = $"上传{result.Uploaded}条，下载{result.Downloaded}条，冲突{result.Conflicts}条"
+                });
+                
                 return result;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Sync error: {ex.Message}");
                 SetStatus(SyncStatus.Error);
+                
+                sw.Stop();
+                _syncLog.Log(new SyncLogEntry
+                {
+                    Action = "sync",
+                    Success = false,
+                    ErrorMessage = ex.Message,
+                    Duration = sw.Elapsed
+                });
+                
                 return new SyncResult { Success = false, Error = ex.Message };
             }
         }
@@ -228,8 +284,9 @@ namespace TodoSidebar.Services
                 {
                     System.Diagnostics.Debug.WriteLine($"Batch upload error: {ex.Message}");
                     
-                    // 批量失败时逐条重试，区分哪些成功哪些失败
+                    // 批量失败时逐条重试（指数退避）
                     int uploaded = 0;
+                    int retryDelay = 500; // 初始 500ms
                     foreach (var (localId, syncTask) in taskMapping)
                     {
                         try
@@ -237,11 +294,14 @@ namespace TodoSidebar.Services
                             await client.From<SyncTask>().Upsert(syncTask);
                             _dbService.MarkTaskSynced(localId, syncTask.Id.ToString());
                             uploaded++;
+                            retryDelay = 500; // 成功则重置
                         }
                         catch (Exception itemEx)
                         {
                             System.Diagnostics.Debug.WriteLine($"Upload task {localId} error: {itemEx.Message}");
                             // IsDirty 保持为1，下次同步会重试
+                            await Task.Delay(retryDelay);
+                            retryDelay = Math.Min(retryDelay * 2, 5000); // 最大 5 秒
                         }
                     }
                     
@@ -322,18 +382,30 @@ namespace TodoSidebar.Services
                         if (existing != null && existing.IsDirty)
                         {
                             // 冲突：本地有未同步的修改 + 远程也有修改
-                            // 比较 UpdatedAt：远程更新 → 覆盖本地；本地更新 → 保留本地（下次上传时覆盖远程）
                             if (remoteTask.UpdatedAt > existing.LastSyncedAt)
                             {
                                 // 远程更新，覆盖本地
                                 _dbService.UpsertTaskFromRemote(localTask);
                                 downloaded++;
+                                
+                                _syncLog.Log(new SyncLogEntry
+                                {
+                                    Action = "conflict",
+                                    Success = true,
+                                    Details = $"冲突解决(LWW-远程胜): \"{existing.Title}\" → 远程覆盖本地"
+                                });
                             }
                             else
                             {
-                                // 本地更新，保留本地（IsDirty=1，下次上传时会覆盖远程）
-                                // 仅更新 LastSyncedAt 避免下次重复判断为冲突
+                                // 本地更新，保留本地
                                 conflicts++;
+                                
+                                _syncLog.Log(new SyncLogEntry
+                                {
+                                    Action = "conflict",
+                                    Success = true,
+                                    Details = $"冲突解决(LWW-本地胜): \"{existing.Title}\" → 保留本地版本"
+                                });
                             }
                         }
                         else

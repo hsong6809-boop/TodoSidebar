@@ -11,7 +11,7 @@ namespace TodoSidebar.Services
     /// <summary>
     /// 认证服务
     /// </summary>
-    public class AuthService
+    public class AuthService : IAuthService
     {
         private static AuthService? _instance;
         private static readonly object _lock = new object();
@@ -219,7 +219,9 @@ namespace TodoSidebar.Services
                 { 
                     WriteIndented = true 
                 });
-                File.WriteAllText(SessionFilePath, json);
+                // DPAPI 加密后再写入文件
+                var encrypted = DataProtectionHelper.Protect(json);
+                File.WriteAllText(SessionFilePath, encrypted);
                 
                 System.Diagnostics.Debug.WriteLine("Session saved to file");
             }
@@ -239,7 +241,11 @@ namespace TodoSidebar.Services
                 if (!File.Exists(SessionFilePath))
                     return null;
                 
-                var json = File.ReadAllText(SessionFilePath);
+                var raw = File.ReadAllText(SessionFilePath);
+                // DPAPI 解密（兼容旧版明文格式）
+                var json = DataProtectionHelper.IsProtected(raw) 
+                    ? DataProtectionHelper.Unprotect(raw) 
+                    : raw;
                 var sessionData = JsonSerializer.Deserialize<SessionData>(json);
                 
                 // 检查 session 是否过期

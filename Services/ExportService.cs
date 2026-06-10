@@ -7,7 +7,7 @@ using TodoSidebar.Models;
 
 namespace TodoSidebar.Services
 {
-    public class ExportService
+    public class ExportService : IExportService
     {
         private readonly DatabaseService _dbService;
         private readonly TaskService _taskService;

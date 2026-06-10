@@ -5,21 +5,27 @@ using TodoSidebar.Models;
 
 namespace TodoSidebar.Services
 {
-    public class TaskService
+    public class TaskService : ITaskService
     {
         private readonly DatabaseService _db;
         private readonly IMessageService _messageService;
 
-        public TaskService(DatabaseService db)
+        public TaskService(DatabaseService db, IMessageService? messageService = null)
         {
             _db = db;
-            _messageService = MessageService.Instance;
+            _messageService = messageService ?? new NullMessageService();
         }
 
-        // 获取今日每日任务
+        // 获取所有每日任务（永远返回，不管完成状态）
         public List<TaskItem> GetDailyTasks()
         {
             return _db.GetTasks(TaskType.Daily, completed: false);
+        }
+
+        // 获取今日已完成的每日任务
+        public List<TaskItem> GetTodayCompletedDailyTasks()
+        {
+            return _db.GetTodayCompletedDailyTasks();
         }
 
         // 获取截止任务（未完成且未过期）
@@ -63,9 +69,20 @@ namespace TodoSidebar.Services
         {
             try
             {
-                task.IsCompleted = true;
-                task.CompletedAt = DateTime.Now;
-                _db.UpdateTask(task);
+                if (task.Type == TaskType.Daily)
+                {
+                    // 每日任务：记录今天的完成状态，不修改任务本身的 IsCompleted
+                    var today = DateTime.Today.ToString("yyyy-MM-dd");
+                    _db.MarkDailyTaskCompleted(task.Id, today);
+                    task.IsTodayCompleted = true;
+                }
+                else
+                {
+                    // 截止任务：正常标记完成
+                    task.IsCompleted = true;
+                    task.CompletedAt = DateTime.Now;
+                    _db.UpdateTask(task);
+                }
             }
             catch (Exception ex)
             {
@@ -78,9 +95,20 @@ namespace TodoSidebar.Services
         {
             try
             {
-                task.IsCompleted = false;
-                task.CompletedAt = null;
-                _db.UpdateTask(task);
+                if (task.Type == TaskType.Daily)
+                {
+                    // 每日任务：删除今天的完成记录
+                    var today = DateTime.Today.ToString("yyyy-MM-dd");
+                    _db.UnmarkDailyTaskCompleted(task.Id, today);
+                    task.IsTodayCompleted = false;
+                }
+                else
+                {
+                    // 截止任务：正常恢复
+                    task.IsCompleted = false;
+                    task.CompletedAt = null;
+                    _db.UpdateTask(task);
+                }
             }
             catch (Exception ex)
             {

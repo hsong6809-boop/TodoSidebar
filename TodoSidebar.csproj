@@ -8,7 +8,7 @@
     <RootNamespace>TodoSidebar</RootNamespace>
     <AssemblyName>TodoSidebar</AssemblyName>
     <Nullable>enable</Nullable>
-    <Version>3.2.1</Version>
+    <Version>4.0.0</Version>
     <AssemblyTitle>TodoSidebar</AssemblyTitle>
     <Description>Todo 任务管理侧边栏</Description>
     <Company>TodoSidebar</Company>
@@ -20,6 +20,12 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="Supabase" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
   </ItemGroup>
+
+  <!-- 排除子项目目录，防止误编译 -->
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);TodoSidebar.Core\**;TodoSidebar.Services\**;TodoSidebar.Tests\**</DefaultItemExcludes>
+  </PropertyGroup>
 
 </Project>

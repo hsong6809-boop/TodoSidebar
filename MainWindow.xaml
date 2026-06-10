@@ -115,13 +115,17 @@
                                            VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="DateTimeText"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Margin="0,0,0,2"/>
                                 <TextBlock Text="当前任务"
                                            FontSize="15"
                                            FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
+                                           Foreground="{DynamicResource TextBrush}"
+                                           Margin="0,0,0,2"/>
                                 <TextBlock FontSize="11"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           x:Name="TaskCountText">
+                                           Foreground="{DynamicResource TextSecondaryBrush}">
                                     <Run Text="共 "/>
                                     <Run Text="{Binding CurrentTasksCount, Mode=OneWay}" FontWeight="SemiBold"/>
                                     <Run Text=" 项待办"/>
@@ -581,14 +585,14 @@
                                 HorizontalAlignment="Left"/>
                         <Button Content="⬆️"
                                 Style="{StaticResource IconButton}"
-                                Command="{Binding UploadCommand}"
+                                Command="{Binding SyncViewModel.UploadCommand}"
                                 ToolTip="上传到云端"
                                 Width="28"
                                 Height="28"
                                 Grid.Column="1"/>
                         <Button Content="⬇️"
                                 Style="{StaticResource IconButton}"
-                                Command="{Binding DownloadCommand}"
+                                Command="{Binding SyncViewModel.DownloadCommand}"
                                 ToolTip="从云端下载"
                                 Width="28"
                                 Height="28"

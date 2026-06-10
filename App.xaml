@@ -368,50 +368,5 @@
                 </Grid>
             </Border>
         </DataTemplate>
-
-        <!-- ========== 里程碑卡片模板 ========== -->
-        <DataTemplate x:Key="MilestoneCardTemplate">
-            <Border Background="{DynamicResource CardBrush}"
-                    CornerRadius="10"
-                    Padding="16,12"
-                    Margin="0,4"
-                    BorderThickness="0,0,4,0"
-                    BorderBrush="{DynamicResource WarningBrush}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="{Binding Title}" 
-                                   FontWeight="Bold"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   FontSize="16"/>
-                        <TextBlock Text="{Binding Description}" 
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   TextTrimming="CharacterEllipsis"
-                                   MaxWidth="300"
-                                   Margin="0,4,0,0"/>
-                        <TextBlock Text="{Binding TargetDate, StringFormat='目标日期: {0:yyyy/MM/dd}'}"
-                                   Foreground="{DynamicResource WarningBrush}" 
-                                   FontSize="12"
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button Content="✓" 
-                                Command="{Binding DataContext.CompleteMilestoneCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding}"
-                                Style="{StaticResource SuccessButton}"
-                                Padding="10,6"
-                                Margin="4,0"/>
-                        <Button Content="×" 
-                                Command="{Binding DataContext.DeleteMilestoneCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding}"
-                                Style="{StaticResource DangerButton}"
-                                Padding="10,6"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-        </DataTemplate>
     </Application.Resources>
 </Application>

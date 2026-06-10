@@ -18,10 +18,10 @@ namespace TodoSidebar.ViewModels
         private readonly TaskService _taskService;
         private readonly DatabaseService _dbService;
         private readonly IMessageService _messageService;
-        private readonly SyncService _syncService;
 
-        // 统计视图模型
+        // 子 ViewModel
         public StatisticsViewModel StatisticsViewModel { get; }
+        public SyncViewModel SyncViewModel { get; }
 
         [ObservableProperty]
         private int _selectedTabIndex;
@@ -44,16 +44,6 @@ namespace TodoSidebar.ViewModels
 
         [ObservableProperty]
         private bool _isSearchMode;
-
-        // 同步相关
-        [ObservableProperty]
-        private bool _isSyncing;
-        
-        [ObservableProperty]
-        private string _syncStatusText = string.Empty;
-        
-        [ObservableProperty]
-        private DateTime? _lastSyncTime;
 
         public ObservableCollection<TaskItem> SearchResults { get; } = new();
 
@@ -79,10 +69,11 @@ namespace TodoSidebar.ViewModels
             _taskService = new TaskService(_dbService);
             _messageService = MessageService.Instance;
             _templateService = new TaskTemplateService();
-            _syncService = SyncService.Instance;
             
-            // 初始化统计视图模型
+            // 初始化子 ViewModel
             StatisticsViewModel = new StatisticsViewModel(_dbService);
+            SyncViewModel = new SyncViewModel(SyncService.Instance, _messageService);
+            SyncViewModel.OnSyncCompleted = () => LoadData();
 
             // 监听集合变化，自动刷新计数器
             DailyTasks.CollectionChanged += OnTaskCollectionChanged;
@@ -110,16 +101,18 @@ namespace TodoSidebar.ViewModels
             LoadTodayCompletedTasks();
             LoadHistoryTasks();
             LoadCurrentTasks();
-            
-            // 刷新统计数据
             StatisticsViewModel.LoadStatistics();
         }
 
         private void LoadDailyTasks()
         {
             DailyTasks.Clear();
+            var todayCompletedIds = _dbService.GetTodayCompletedDailyTaskIds();
             foreach (var task in _taskService.GetDailyTasks())
+            {
+                task.IsTodayCompleted = todayCompletedIds.Contains(task.Id);
                 DailyTasks.Add(task);
+            }
         }
 
         private void LoadDeadlineTasks()
@@ -140,19 +133,34 @@ namespace TodoSidebar.ViewModels
         {
             TodayCompletedTasks.Clear();
             var today = DateTime.Today;
-            var completedTasks = _dbService.GetCompletedTasks(today, today.AddDays(1))
+            // 截止任务：正常查询已完成的
+            var completedDeadlineTasks = _dbService.GetCompletedTasks(today, today.AddDays(1))
                 .OrderByDescending(t => t.CompletedAt)
                 .ToList();
-            foreach (var task in completedTasks)
+            // 每日任务：查询今天在 DailyTaskCompletion 表中有记录的
+            var completedDailyTasks = _taskService.GetTodayCompletedDailyTasks();
+            
+            foreach (var task in completedDeadlineTasks)
+                TodayCompletedTasks.Add(task);
+            foreach (var task in completedDailyTasks)
                 TodayCompletedTasks.Add(task);
         }
 
         private void LoadCurrentTasks()
         {
             CurrentTasks.Clear();
+            var todayCompletedIds = _dbService.GetTodayCompletedDailyTaskIds();
             foreach (var task in _taskService.GetCurrentTasks())
+            {
+                // 每日任务如果今天已完成，不显示在当前任务中
+                if (task.Type == TaskType.Daily && todayCompletedIds.Contains(task.Id))
+                    continue;
+                task.IsTodayCompleted = todayCompletedIds.Contains(task.Id);
                 CurrentTasks.Add(task);
+            }
         }
+
+        // ========== 任务 CRUD 命令 ==========
 
         [RelayCommand]
         private void AddDailyTask()
@@ -170,7 +178,6 @@ namespace TodoSidebar.ViewModels
         {
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
             
-            // 验证截止日期
             if (NewTaskDeadline.HasValue && NewTaskDeadline.Value.Date < DateTime.Today)
             {
                 _messageService.ShowWarning("截止日期不能早于今天！", "日期错误");
@@ -260,7 +267,6 @@ namespace TodoSidebar.ViewModels
             _taskService.UpdateSubTasks(task, SubTaskHelper.SerializeSubTasks(subTasks));
             NewSubTaskTitle = string.Empty;
             
-            // 触发属性刷新
             RefreshTaskProperties(task);
             LoadCurrentTasks();
         }
@@ -268,7 +274,6 @@ namespace TodoSidebar.ViewModels
         [RelayCommand]
         private void ToggleSubTask(object? param)
         {
-            // param 可能是 object[] {TaskItem, SubTask} 或直接是 SubTask
             TaskItem? task = null;
             SubTask? subTask = null;
 
@@ -280,7 +285,6 @@ namespace TodoSidebar.ViewModels
             else if (param is SubTask st)
             {
                 subTask = st;
-                // 从当前任务列表中找到包含此子任务的父任务
                 task = CurrentTasks.FirstOrDefault(t => t.SubTasksList.Contains(subTask))
                     ?? DailyTasks.FirstOrDefault(t => t.SubTasksList.Contains(subTask))
                     ?? DeadlineTasks.FirstOrDefault(t => t.SubTasksList.Contains(subTask));
@@ -288,8 +292,6 @@ namespace TodoSidebar.ViewModels
 
             if (task == null || subTask == null) return;
 
-            // UI 的 IsChecked 绑定已经更新了 subTask.IsCompleted
-            // 直接把当前子任务列表序列化保存即可
             _taskService.UpdateSubTasks(task, SubTaskHelper.SerializeSubTasks(task.SubTasksList));
             RefreshTaskProperties(task);
             LoadCurrentTasks();
@@ -313,21 +315,18 @@ namespace TodoSidebar.ViewModels
 
         private void RefreshTaskProperties(TaskItem task)
         {
-            // 触发计算属性刷新
-            task.SubTasksJson = task.SubTasksJson; // 触发重新计算
+            task.SubTasksJson = task.SubTasksJson;
             OnPropertyChanged(nameof(TaskItem.SubTasksList));
             OnPropertyChanged(nameof(TaskItem.SubTasksProgressText));
             OnPropertyChanged(nameof(TaskItem.HasSubTasks));
         }
 
-        // 保存子任务到数据库（供对话框调用）
         public void SaveSubTasksToDb(TaskItem task)
         {
             _taskService.UpdateSubTasks(task, task.SubTasksJson ?? "");
             LoadCurrentTasks();
         }
 
-        // 保存任务修改（供对话框调用）
         public void SaveTaskToDb(TaskItem task)
         {
             _dbService.UpdateTask(task);
@@ -343,20 +342,14 @@ namespace TodoSidebar.ViewModels
             if (args[0] is not TaskItem draggedTask || args[1] is not TaskItem targetTask) return;
             if (draggedTask.Id == targetTask.Id) return;
 
-            // 获取当前列表中的所有任务（按 SortOrder 排序）
             var allTasks = CurrentTasks.OrderBy(t => t.SortOrder).ThenBy(t => t.CreatedAt).ToList();
-            
-            // 移除被拖拽的任务
             allTasks.Remove(draggedTask);
             
-            // 找到目标位置
             int targetIndex = allTasks.IndexOf(targetTask);
             if (targetIndex < 0) return;
             
-            // 插入到目标位置
             allTasks.Insert(targetIndex, draggedTask);
             
-            // 重新分配 SortOrder（从0开始递增）
             var orders = new List<(int id, int order)>();
             for (int i = 0; i < allTasks.Count; i++)
             {
@@ -375,128 +368,16 @@ namespace TodoSidebar.ViewModels
             
             var orders = new List<(int id, int order)>();
             for (int i = 0; i < tasks.Count; i++)
-            {
                 orders.Add((tasks[i].Id, i));
-            }
             _dbService.UpdateTaskOrder(orders);
-        }
-
-        // ========== 同步操作 ==========
-
-        [RelayCommand]
-        private async Task SyncAllAsync()
-        {
-            if (!AuthService.Instance.IsLoggedIn)
-            {
-                _messageService.ShowWarning("请先登录后再同步", "未登录");
-                return;
-            }
-
-            IsSyncing = true;
-            SyncStatusText = "正在同步...";
-
-            try
-            {
-                var result = await _syncService.SyncAsync();
-                
-                if (result.Success)
-                {
-                    LastSyncTime = DateTime.Now;
-                    SyncStatusText = $"同步完成：上传 {result.Uploaded} 条，下载 {result.Downloaded} 条";
-                    
-                    // 刷新本地数据
-                    LoadData();
-                }
-                else
-                {
-                    SyncStatusText = $"同步失败：{result.Error}";
-                    _messageService.ShowError($"同步失败：{result.Error}", "同步错误");
-                }
-            }
-            catch (Exception ex)
-            {
-                SyncStatusText = $"同步出错：{ex.Message}";
-                _messageService.ShowError($"同步出错：{ex.Message}", "同步错误");
-            }
-            finally
-            {
-                IsSyncing = false;
-            }
-        }
-
-        [RelayCommand]
-        private async Task UploadAsync()
-        {
-            if (!AuthService.Instance.IsLoggedIn)
-            {
-                _messageService.ShowWarning("请先登录后再上传", "未登录");
-                return;
-            }
-
-            IsSyncing = true;
-            SyncStatusText = "正在上传本地数据...";
-
-            try
-            {
-                var uploaded = await _syncService.UploadLocalChangesAsync();
-                LastSyncTime = DateTime.Now;
-                SyncStatusText = $"上传完成：{uploaded} 条数据已上传";
-                _messageService.ShowMessage($"成功上传 {uploaded} 条数据到云端", "上传完成");
-            }
-            catch (Exception ex)
-            {
-                SyncStatusText = $"上传出错：{ex.Message}";
-                _messageService.ShowError($"上传出错：{ex.Message}", "上传错误");
-            }
-            finally
-            {
-                IsSyncing = false;
-            }
-        }
-
-        [RelayCommand]
-        private async Task DownloadAsync()
-        {
-            if (!AuthService.Instance.IsLoggedIn)
-            {
-                _messageService.ShowWarning("请先登录后再下载", "未登录");
-                return;
-            }
-
-            IsSyncing = true;
-            SyncStatusText = "正在从云端下载数据...";
-
-            try
-            {
-                var downloaded = await _syncService.DownloadRemoteChangesAsync();
-                LastSyncTime = DateTime.Now;
-                SyncStatusText = $"下载完成：{downloaded} 条数据已下载";
-                
-                // 刷新本地数据
-                LoadData();
-                
-                _messageService.ShowMessage($"成功从云端下载 {downloaded} 条数据", "下载完成");
-            }
-            catch (Exception ex)
-            {
-                SyncStatusText = $"下载出错：{ex.Message}";
-                _messageService.ShowError($"下载出错：{ex.Message}", "下载错误");
-            }
-            finally
-            {
-                IsSyncing = false;
-            }
         }
 
         public void Dispose()
         {
-            // 取消事件订阅，防止内存泄漏
             DailyTasks.CollectionChanged -= OnTaskCollectionChanged;
             DeadlineTasks.CollectionChanged -= OnTaskCollectionChanged;
             HistoryTasks.CollectionChanged -= OnTaskCollectionChanged;
             CurrentTasks.CollectionChanged -= OnTaskCollectionChanged;
-            
-            // 注意：不 dispose 全局 DatabaseService 单例，它由 App 生命周期管理
         }
     }
 }

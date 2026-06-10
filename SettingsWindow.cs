@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using TodoSidebar.Services;
 
 namespace TodoSidebar
@@ -19,168 +20,268 @@ namespace TodoSidebar
             InitializeUI();
         }
 
+        private Brush GetBrush(string key, Color fallback)
+        {
+            try { return (Brush)FindResource(key); }
+            catch { return new SolidColorBrush(fallback); }
+        }
+
         private void InitializeUI()
         {
             Title = "设置";
-            Width = 450;
-            Height = 550;
+            Width = 420;
+            Height = 520;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            
-            try
-            {
-                Background = (Brush)FindResource("GlassBrush");
-            }
-            catch
-            {
-                Background = new SolidColorBrush(Color.FromRgb(240, 240, 245));
-            }
+            WindowStyle = WindowStyle.None;
+            AllowsTransparency = true;
+            Background = Brushes.Transparent;
 
-            var mainGrid = new Grid();
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            // 主容器 - 圆角毛玻璃
+            var mainBorder = new Border
+            {
+                Background = GetBrush("GlassBrush", Color.FromRgb(248, 249, 254)),
+                CornerRadius = new CornerRadius(14),
+                BorderBrush = GetBrush("BorderBrush", Color.FromArgb(26, 0, 0, 0)),
+                BorderThickness = new Thickness(1),
+                Effect = new DropShadowEffect { BlurRadius = 20, ShadowDepth = 2, Opacity = 0.2 }
+            };
 
-            // 标题栏
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // ===== 标题栏 =====
             var header = new Border
             {
-                Padding = new Thickness(20, 15, 20, 15),
-                BorderThickness = new Thickness(0, 0, 0, 1)
+                Background = GetBrush("GlassLightBrush", Color.FromRgb(240, 242, 248)),
+                Padding = new Thickness(20, 14, 20, 14),
+                CornerRadius = new CornerRadius(14, 14, 0, 0),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                BorderBrush = GetBrush("BorderBrush", Color.FromArgb(26, 0, 0, 0)),
+                Cursor = System.Windows.Input.Cursors.SizeAll
             };
-            
-            try
-            {
-                header.Background = (Brush)FindResource("GlassLightBrush");
-                header.BorderBrush = (Brush)FindResource("BorderBrush");
-            }
-            catch
-            {
-                header.Background = new SolidColorBrush(Color.FromRgb(245, 245, 250));
-                header.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 0, 0, 0));
-            }
+            header.MouseLeftButtonDown += (s, e) => DragMove();
 
-            header.Child = new TextBlock
+            var headerGrid = new Grid();
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition());
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            headerGrid.Children.Add(new TextBlock
             {
                 Text = "⚙️ 设置",
-                FontSize = 18,
-                FontWeight = FontWeights.Bold
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = GetBrush("TextBrush", Color.FromRgb(30, 41, 59)),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var closeBtn = new Button
+            {
+                Content = "✕",
+                Width = 28,
+                Height = 28,
+                FontSize = 14,
+                Background = Brushes.Transparent,
+                Foreground = GetBrush("TextSecondaryBrush", Color.FromRgb(100, 116, 139)),
+                BorderThickness = new Thickness(0),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right
             };
+            closeBtn.Click += (s, e) => Close();
+            Grid.SetColumn(closeBtn, 1);
+            headerGrid.Children.Add(closeBtn);
+
+            header.Child = headerGrid;
             Grid.SetRow(header, 0);
 
-            // 内容区域
-            var content = new ScrollViewer
+            // ===== 内容区域 =====
+            var scrollViewer = new ScrollViewer
             {
-                Padding = new Thickness(15)
+                Padding = new Thickness(20, 16, 20, 16),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             };
 
             var stack = new StackPanel();
 
-            // 主题设置
-            stack.Children.Add(CreateSectionHeader("🎨 主题设置"));
-            
-            var themePanel = new StackPanel { Margin = new Thickness(0, 5, 0, 15) };
-            
-            var lightRadio = new RadioButton { Content = "☀️ 浅色模式", Tag = "Light", Margin = new Thickness(0, 0, 0, 8) };
-            lightRadio.Checked += Theme_Changed;
-
-            var darkRadio = new RadioButton { Content = "🌙 深色模式", Tag = "Dark", Margin = new Thickness(0, 0, 0, 8) };
-            darkRadio.Checked += Theme_Changed;
-
-            var systemRadio = new RadioButton { Content = "💻 跟随系统", Tag = "System" };
-            systemRadio.Checked += Theme_Changed;
-
-            // 设置当前选中
-            switch (_themeManager.CurrentTheme)
+            // 账户信息
+            stack.Children.Add(CreateCard("👤 账户", card =>
             {
-                case ThemeType.Light: lightRadio.IsChecked = true; break;
-                case ThemeType.Dark: darkRadio.IsChecked = true; break;
-                case ThemeType.System: systemRadio.IsChecked = true; break;
-            }
+                var licenseService = App.Services?.GetService(typeof(ILicenseService)) as ILicenseService;
+                var tierText = licenseService?.IsPro == true ? "Pro 版 ✅" : "Free 版";
+                card.Children.Add(new TextBlock
+                {
+                    Text = $"当前版本：{tierText}",
+                    FontSize = 13,
+                    Foreground = GetBrush("TextBrush", Color.FromRgb(30, 41, 59))
+                });
+            }));
 
-            themePanel.Children.Add(lightRadio);
-            themePanel.Children.Add(darkRadio);
-            themePanel.Children.Add(systemRadio);
-            stack.Children.Add(themePanel);
+            // 主题设置
+            stack.Children.Add(CreateCard("🎨 主题", card =>
+            {
+                var lightRadio = CreateThemeRadio("☀️ 浅色", "Light");
+                var darkRadio = CreateThemeRadio("🌙 深色", "Dark");
+                var systemRadio = CreateThemeRadio("💻 跟随系统", "System");
+
+                switch (_themeManager.CurrentTheme)
+                {
+                    case ThemeType.Light: lightRadio.IsChecked = true; break;
+                    case ThemeType.Dark: darkRadio.IsChecked = true; break;
+                    case ThemeType.System: systemRadio.IsChecked = true; break;
+                }
+
+                var radioStack = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+                radioStack.Children.Add(lightRadio);
+                radioStack.Children.Add(darkRadio);
+                radioStack.Children.Add(systemRadio);
+                card.Children.Add(radioStack);
+            }));
 
             // 数据管理
-            stack.Children.Add(CreateSectionHeader("💾 数据管理"));
-            
-            var dataPanel = new StackPanel { Margin = new Thickness(0, 5, 0, 15) };
-            
-            dataPanel.Children.Add(CreateButton("📤 导出为 JSON", ExportJson_Click));
-            dataPanel.Children.Add(CreateButton("📤 导出为 CSV", ExportCsv_Click));
-            dataPanel.Children.Add(CreateButton("📥 导入数据", Import_Click, isPrimary: false));
-            dataPanel.Children.Add(CreateButton("💾 创建备份", Backup_Click));
-            
-            stack.Children.Add(dataPanel);
+            stack.Children.Add(CreateCard("💾 数据", card =>
+            {
+                var btnPanel = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+                btnPanel.Children.Add(CreateSmallButton("📤 导出JSON", ExportJson_Click));
+                btnPanel.Children.Add(CreateSmallButton("📤 导出CSV", ExportCsv_Click));
+                btnPanel.Children.Add(CreateSmallButton("📥 导入", Import_Click));
+                btnPanel.Children.Add(CreateSmallButton("💾 备份", Backup_Click));
+                card.Children.Add(btnPanel);
+            }));
 
             // 关于
-            stack.Children.Add(CreateSectionHeader("ℹ️ 关于"));
-            
-            var aboutPanel = new StackPanel { Margin = new Thickness(0, 5, 0, 15) };
-            aboutPanel.Children.Add(new TextBlock { Text = "版本: 2.0.0 (优化版)", Margin = new Thickness(0, 0, 0, 5) });
-            aboutPanel.Children.Add(new TextBlock { Text = "一个优雅的待办事项侧边栏应用" });
-            stack.Children.Add(aboutPanel);
+            stack.Children.Add(CreateCard("ℹ️ 关于", card =>
+            {
+                card.Children.Add(new TextBlock
+                {
+                    Text = "版本 3.2.1 · 每日任务",
+                    FontSize = 12,
+                    Foreground = GetBrush("TextSecondaryBrush", Color.FromRgb(100, 116, 139))
+                });
+            }));
 
-            content.Content = stack;
-            Grid.SetRow(content, 1);
+            scrollViewer.Content = stack;
+            Grid.SetRow(scrollViewer, 1);
 
-            // 底部按钮
+            // ===== 底部 =====
             var footer = new Border
             {
-                Padding = new Thickness(15),
-                BorderThickness = new Thickness(0, 1, 0, 0)
+                Background = GetBrush("GlassLightBrush", Color.FromRgb(240, 242, 248)),
+                Padding = new Thickness(20, 12, 20, 12),
+                CornerRadius = new CornerRadius(0, 0, 14, 14),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                BorderBrush = GetBrush("BorderBrush", Color.FromArgb(26, 0, 0, 0))
             };
-            
-            try
-            {
-                footer.Background = (Brush)FindResource("GlassLightBrush");
-                footer.BorderBrush = (Brush)FindResource("BorderBrush");
-            }
-            catch
-            {
-                footer.Background = new SolidColorBrush(Color.FromRgb(245, 245, 250));
-                footer.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 0, 0, 0));
-            }
-
-            var closeBtn = new Button
+            var footerBtn = new Button
             {
                 Content = "关闭",
-                Padding = new Thickness(25, 8, 25, 8),
-                HorizontalAlignment = HorizontalAlignment.Right
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Padding = new Thickness(28, 6, 28, 6),
+                Background = GetBrush("AccentBrush", Color.FromRgb(99, 102, 241)),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                Cursor = System.Windows.Input.Cursors.Hand
             };
-            closeBtn.Click += (s, e) => Close();
-            footer.Child = closeBtn;
+            // 圆角按钮模板
+            var btnTemplate = new ControlTemplate(typeof(Button));
+            var borderFactory = new FrameworkElementFactory(typeof(Border));
+            borderFactory.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
+            borderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+            borderFactory.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Button.PaddingProperty));
+            var presenterFactory = new FrameworkElementFactory(typeof(ContentPresenter));
+            presenterFactory.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            presenterFactory.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            borderFactory.AppendChild(presenterFactory);
+            btnTemplate.VisualTree = borderFactory;
+            footerBtn.Template = btnTemplate;
+            footerBtn.Click += (s, e) => Close();
+            footer.Child = footerBtn;
             Grid.SetRow(footer, 2);
 
-            mainGrid.Children.Add(header);
-            mainGrid.Children.Add(content);
-            mainGrid.Children.Add(footer);
-
-            Content = mainGrid;
+            grid.Children.Add(header);
+            grid.Children.Add(scrollViewer);
+            grid.Children.Add(footer);
+            mainBorder.Child = grid;
+            Content = mainBorder;
         }
 
-        private TextBlock CreateSectionHeader(string text)
+        private Border CreateCard(string title, Action<StackPanel> populateContent)
         {
-            return new TextBlock
+            var card = new Border
             {
-                Text = text,
-                FontSize = 15,
+                Background = GetBrush("CardBrush", Color.FromArgb(245, 255, 255, 255)),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(14, 12, 14, 12),
+                Margin = new Thickness(0, 0, 0, 10),
+                BorderThickness = new Thickness(0, 0, 0, 0)
+            };
+
+            var panel = new StackPanel();
+            panel.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
+                Foreground = GetBrush("TextBrush", Color.FromRgb(30, 41, 59)),
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+
+            var separator = new Border
+            {
+                Height = 1,
+                Background = GetBrush("BorderBrush", Color.FromArgb(26, 0, 0, 0)),
                 Margin = new Thickness(0, 0, 0, 8)
             };
+            panel.Children.Add(separator);
+
+            populateContent(panel);
+            card.Child = panel;
+            return card;
         }
 
-        private Button CreateButton(string content, RoutedEventHandler clickHandler, bool isPrimary = true)
+        private RadioButton CreateThemeRadio(string content, string tag)
+        {
+            var radio = new RadioButton
+            {
+                Content = content,
+                Tag = tag,
+                Margin = new Thickness(0, 0, 16, 0),
+                FontSize = 13,
+                Foreground = GetBrush("TextBrush", Color.FromRgb(30, 41, 59)),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            radio.Checked += Theme_Changed;
+            return radio;
+        }
+
+        private Button CreateSmallButton(string content, RoutedEventHandler handler)
         {
             var btn = new Button
             {
                 Content = content,
-                Margin = new Thickness(0, 0, 0, 8),
-                Padding = new Thickness(15, 10, 15, 10),
-                HorizontalAlignment = HorizontalAlignment.Stretch
+                Margin = new Thickness(0, 0, 8, 6),
+                Padding = new Thickness(12, 6, 12, 6),
+                FontSize = 12,
+                Background = GetBrush("GlassLightBrush", Color.FromRgb(240, 242, 248)),
+                Foreground = GetBrush("TextBrush", Color.FromRgb(30, 41, 59)),
+                BorderThickness = new Thickness(1),
+                BorderBrush = GetBrush("BorderBrush", Color.FromArgb(26, 0, 0, 0)),
+                Cursor = System.Windows.Input.Cursors.Hand
             };
-            
-            btn.Click += clickHandler;
+            var btnTemplate = new ControlTemplate(typeof(Button));
+            var borderFactory = new FrameworkElementFactory(typeof(Border));
+            borderFactory.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
+            borderFactory.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Button.BorderBrushProperty));
+            borderFactory.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Button.BorderThicknessProperty));
+            borderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            borderFactory.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Button.PaddingProperty));
+            var presenterFactory = new FrameworkElementFactory(typeof(ContentPresenter));
+            presenterFactory.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            presenterFactory.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            borderFactory.AppendChild(presenterFactory);
+            btnTemplate.VisualTree = borderFactory;
+            btn.Template = btnTemplate;
+            btn.Click += handler;
             return btn;
         }
 
@@ -189,9 +290,7 @@ namespace TodoSidebar
             if (sender is RadioButton radio && radio.Tag is string themeStr)
             {
                 if (Enum.TryParse<ThemeType>(themeStr, out var theme))
-                {
                     _themeManager.CurrentTheme = theme;
-                }
             }
         }
 
@@ -202,7 +301,6 @@ namespace TodoSidebar
                 Filter = "JSON 文件|*.json",
                 FileName = $"todo_backup_{DateTime.Now:yyyyMMdd}.json"
             };
-
             if (dialog.ShowDialog() == true)
             {
                 try
@@ -224,7 +322,6 @@ namespace TodoSidebar
                 Filter = "CSV 文件|*.csv",
                 FileName = $"todo_export_{DateTime.Now:yyyyMMdd}.csv"
             };
-
             if (dialog.ShowDialog() == true)
             {
                 try
@@ -241,16 +338,11 @@ namespace TodoSidebar
 
         private void Import_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Filter = "JSON 文件|*.json"
-            };
-
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "JSON 文件|*.json" };
             if (dialog.ShowDialog() == true)
             {
                 var result = MessageBox.Show("导入将添加到现有数据，是否继续？", "确认",
                     MessageBoxButton.YesNo, MessageBoxImage.Question);
-
                 if (result == MessageBoxResult.Yes)
                 {
                     try

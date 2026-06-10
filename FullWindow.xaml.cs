@@ -137,7 +137,10 @@ namespace TodoSidebar
                 else if (sender == TabDeadline) vm.SelectedTabIndex = 1;
                 else if (sender == TabTemplate) vm.SelectedTabIndex = 2;
                 else if (sender == TabHistory) vm.SelectedTabIndex = 3;
-                else if (sender == TabStatistics) vm.SelectedTabIndex = 4;
+                else if (sender == TabStatistics)
+                {
+                    vm.SelectedTabIndex = 4;
+                }
             }
         }
 
