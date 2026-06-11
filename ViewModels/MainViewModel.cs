@@ -73,7 +73,7 @@ namespace TodoSidebar.ViewModels
         public MainViewModel()
         {
             _dbService = DatabaseService.Instance;
-            _taskService = new TaskService(_dbService);
+            _taskService = new TaskService(_dbService, MessageService.Instance);
             _messageService = MessageService.Instance;
             _templateService = new TaskTemplateService();
             _templatesCount = Templates.Count;
@@ -229,8 +229,15 @@ namespace TodoSidebar.ViewModels
         private void CompleteTask(TaskItem? task)
         {
             if (task == null) return;
-            _taskService.CompleteTask(task);
-            LoadData();
+            try
+            {
+                _taskService.CompleteTask(task);
+                LoadData();
+            }
+            catch (Exception ex)
+            {
+                _messageService.ShowError($"完成任务失败: {ex.Message}", "错误");
+            }
         }
 
         [RelayCommand]

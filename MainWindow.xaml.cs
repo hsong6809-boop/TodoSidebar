@@ -93,10 +93,10 @@ namespace TodoSidebar
                     _mouseCheckTimer.Start();
             };
             
-            // 窗口失焦 → 立即收起
+            // 窗口失焦 → 收起（但鼠标仍在窗口内时不收起，防止点击按钮触发焦点变化）
             Deactivated += (_, _) =>
             {
-                if (!_isCollapsed)
+                if (!_isCollapsed && !IsMouseOver)
                 {
                     _lastCollapseTime = DateTime.Now;
                     CollapsePanel();
@@ -171,7 +171,8 @@ namespace TodoSidebar
         private void CollapseDelayTimer_Tick(object? sender, EventArgs e)
         {
             _collapseDelayTimer.Stop();
-            if (!_isCollapsed)
+            // 再次检查鼠标是否仍在窗口内，防止计时器到期时鼠标已回到窗口
+            if (!_isCollapsed && !IsMouseOver)
             {
                 _lastCollapseTime = DateTime.Now;
                 CollapsePanel();
