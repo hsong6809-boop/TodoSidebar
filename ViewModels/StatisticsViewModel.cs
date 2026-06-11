@@ -10,7 +10,6 @@ namespace TodoSidebar.ViewModels
     public partial class StatisticsViewModel : ObservableObject
     {
         private readonly DatabaseService _dbService;
-        private readonly TaskService _taskService;
 
         [ObservableProperty]
         private int _totalTasks;
@@ -51,7 +50,6 @@ namespace TodoSidebar.ViewModels
         public StatisticsViewModel(DatabaseService dbService)
         {
             _dbService = dbService;
-            _taskService = new TaskService(dbService);
             LoadStatistics();
         }
 
@@ -59,52 +57,88 @@ namespace TodoSidebar.ViewModels
         {
             var allTasks = _dbService.GetTasks();
             var today = DateTime.Today;
+            var dailyCompletionRecords = _dbService.GetDailyCompletionRecords(7);
 
-            // 总体统计
-            TotalTasks = allTasks.Count;
-            CompletedTasks = allTasks.Count(t => t.IsCompleted);
-            PendingTasks = TotalTasks - CompletedTasks;
-            CompletionRate = TotalTasks > 0 ? (double)CompletedTasks / TotalTasks : 0;
+            // 单次遍历计算多个统计指标
+            int total = 0, completed = 0, overdue = 0, highPrio = 0;
+            int dailyCount = 0, dailyCompleted = 0, deadlineCount = 0, deadlineCompleted = 0;
+            
+            foreach (var task in allTasks)
+            {
+                total++;
+                if (task.IsCompleted) completed++;
+                if (task.Priority == TaskPriority.High && !task.IsCompleted) highPrio++;
+                if (task.Type == TaskType.Deadline && task.Deadline.HasValue 
+                    && task.Deadline.Value.Date < today && !task.IsCompleted) overdue++;
+                
+                if (task.Type == TaskType.Daily) dailyCount++;
+                else if (task.Type == TaskType.Deadline)
+                {
+                    deadlineCount++;
+                    if (task.IsCompleted) deadlineCompleted++;
+                }
+            }
 
-            // 今日统计
-            var todayTasks = allTasks.Where(t => t.CreatedAt.Date == today).ToList();
-            TodayTotal = todayTasks.Count;
-            TodayCompleted = todayTasks.Count(t => t.IsCompleted);
+            TotalTasks = total;
+            CompletedTasks = completed;
+            PendingTasks = total - completed;
+            CompletionRate = total > 0 ? (double)completed / total : 0;
+            OverdueTasks = overdue;
+            HighPriorityTasks = highPrio;
+
+            // 今日统计（结合 DailyTaskCompletion 表）
+            TodayTotal = dailyCount + deadlineCount;
+            var todayStr = today.ToString("yyyy-MM-dd");
+            var todayCompletedDaily = dailyCompletionRecords.ContainsKey(todayStr) 
+                ? dailyCompletionRecords[todayStr].Count : 0;
+            TodayCompleted = todayCompletedDaily + deadlineCompleted;
             TodayCompletionRate = TodayTotal > 0 ? (double)TodayCompleted / TodayTotal : 0;
 
-            // 过期任务
-            OverdueTasks = allTasks.Count(t => 
-                t.Type == TaskType.Deadline && 
-                t.Deadline.HasValue && 
-                t.Deadline.Value.Date < today && 
-                !t.IsCompleted);
-
-            // 高优先级任务
-            HighPriorityTasks = allTasks.Count(t => 
-                t.Priority == TaskPriority.High && !t.IsCompleted);
-
             // 连续完成天数
-            StreakDays = CalculateStreakDays(allTasks);
+            StreakDays = CalculateStreakDays(dailyCompletionRecords);
 
             // 每日统计（最近7天）
-            DailyStats = CalculateDailyStats(allTasks, 7);
+            DailyStats = CalculateDailyStats(dailyCompletionRecords, 7, dailyCount);
 
             // 任务类型统计
-            TaskTypeStats = CalculateTaskTypeStats(allTasks);
+            TaskTypeStats = new List<TaskTypeStats>
+            {
+                new TaskTypeStats
+                {
+                    Type = "每日任务",
+                    Count = dailyCount,
+                    Completed = dailyCompletionRecords.ContainsKey(todayStr) 
+                        ? dailyCompletionRecords[todayStr].Count : 0,
+                    Color = "#5B5FE9"
+                },
+                new TaskTypeStats
+                {
+                    Type = "截止任务",
+                    Count = deadlineCount,
+                    Completed = deadlineCompleted,
+                    Color = "#FF5A5A"
+                }
+            };
         }
 
-        private int CalculateStreakDays(List<TaskItem> tasks)
+        private int CalculateStreakDays(Dictionary<string, HashSet<int>> dailyCompletionRecords)
         {
             int streak = 0;
             var date = DateTime.Today;
+            var dailyTaskCount = _dbService.GetDailyTaskCount();
+
+            // 没有每日任务则无连续天数
+            if (dailyTaskCount == 0) return 0;
 
             while (true)
             {
-                var dayTasks = tasks.Where(t => t.CreatedAt.Date == date).ToList();
-                if (dayTasks.Count == 0) break;
-
-                var allCompleted = dayTasks.All(t => t.IsCompleted);
-                if (!allCompleted) break;
+                var dateStr = date.ToString("yyyy-MM-dd");
+                if (!dailyCompletionRecords.ContainsKey(dateStr))
+                    break;
+                
+                // 当天完成数 >= 每日任务总数才算全部完成
+                if (dailyCompletionRecords[dateStr].Count < dailyTaskCount)
+                    break;
 
                 streak++;
                 date = date.AddDays(-1);
@@ -113,46 +147,28 @@ namespace TodoSidebar.ViewModels
             return streak;
         }
 
-        private List<DailyStats> CalculateDailyStats(List<TaskItem> tasks, int days)
+        private List<DailyStats> CalculateDailyStats(
+            Dictionary<string, HashSet<int>> dailyCompletionRecords, int days, int dailyTaskCount)
         {
             var stats = new List<DailyStats>();
 
             for (int i = days - 1; i >= 0; i--)
             {
                 var date = DateTime.Today.AddDays(-i);
-                var dayTasks = tasks.Where(t => t.CreatedAt.Date == date).ToList();
+                var dateStr = date.ToString("yyyy-MM-dd");
+                var completedCount = dailyCompletionRecords.ContainsKey(dateStr) 
+                    ? dailyCompletionRecords[dateStr].Count : 0;
 
                 stats.Add(new DailyStats
                 {
                     Date = date,
-                    TotalTasks = dayTasks.Count,
-                    CompletedTasks = dayTasks.Count(t => t.IsCompleted),
-                    CompletionRate = dayTasks.Count > 0 ? (double)dayTasks.Count(t => t.IsCompleted) / dayTasks.Count : 0
+                    TotalTasks = dailyTaskCount,
+                    CompletedTasks = completedCount,
+                    CompletionRate = dailyTaskCount > 0 ? (double)completedCount / dailyTaskCount : 0
                 });
             }
 
             return stats;
-        }
-
-        private List<TaskTypeStats> CalculateTaskTypeStats(List<TaskItem> tasks)
-        {
-            return new List<TaskTypeStats>
-            {
-                new TaskTypeStats
-                {
-                    Type = "每日任务",
-                    Count = tasks.Count(t => t.Type == TaskType.Daily),
-                    Completed = tasks.Count(t => t.Type == TaskType.Daily && t.IsCompleted),
-                    Color = "#5B5FE9"
-                },
-                new TaskTypeStats
-                {
-                    Type = "截止任务",
-                    Count = tasks.Count(t => t.Type == TaskType.Deadline),
-                    Completed = tasks.Count(t => t.Type == TaskType.Deadline && t.IsCompleted),
-                    Color = "#FF5A5A"
-                }
-            };
         }
     }
 

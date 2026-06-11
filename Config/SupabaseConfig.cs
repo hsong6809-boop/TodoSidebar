@@ -7,6 +7,8 @@ namespace TodoSidebar.Config
     /// <summary>
     /// Supabase 配置。
     /// 优先级：环境变量 > AppData/config.json > 硬编码默认值。
+    /// ⚠️ 安全提示：不要将真实的 Supabase URL 和 Anon Key 提交到公开仓库。
+    /// 建议通过环境变量 SUPABASE_URL 和 SUPABASE_ANON_KEY 配置。
     /// </summary>
     public static class SupabaseConfig
     {

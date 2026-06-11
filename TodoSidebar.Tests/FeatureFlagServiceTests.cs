@@ -14,17 +14,14 @@ namespace TodoSidebar.Tests
         }
 
         [Fact]
-        public void FreeUser_ProFeatures_ShouldBeDisabled()
+        public void FreeUser_ProFeatures_ShouldBeEnabled()
         {
             var service = CreateService();
-            service.CloudSync.Should().BeFalse();
-            service.AdvancedSearch.Should().BeFalse();
-            service.TagSystem.Should().BeFalse();
-            service.Statistics.Should().BeFalse();
-            service.CustomThemes.Should().BeFalse();
-            service.UnlimitedTemplates.Should().BeFalse();
-            service.DataExportCsv.Should().BeFalse();
-            service.DataExportMarkdown.Should().BeFalse();
+            // v4.0.0 策略：商业化骨架就位，暂不限制任何功能
+            service.CloudSync.Should().BeTrue();
+            service.AdvancedSearch.Should().BeTrue();
+            service.TagSystem.Should().BeTrue();
+            service.Statistics.Should().BeTrue();
         }
 
         [Fact]

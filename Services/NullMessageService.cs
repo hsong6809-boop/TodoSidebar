@@ -9,6 +9,11 @@ namespace TodoSidebar.Services
         public void ShowMessage(string message, string title = "提示") { }
         public void ShowWarning(string message, string title = "警告") { }
         public void ShowError(string message, string title = "错误") { }
-        public bool ShowConfirmation(string message, string title = "确认") => false;
+        public bool ShowConfirmation(string message, string title = "确认")
+        {
+            // 无 UI 环境下默认允许操作，避免阻塞
+            System.Diagnostics.Debug.WriteLine($"[NullMessageService] Confirmation: {title} - {message} (auto-accepted)");
+            return true;
+        }
     }
 }

@@ -8,7 +8,7 @@
     <RootNamespace>TodoSidebar</RootNamespace>
     <AssemblyName>TodoSidebar</AssemblyName>
     <Nullable>enable</Nullable>
-    <Version>4.0.0</Version>
+    <Version>4.1.0</Version>
     <AssemblyTitle>TodoSidebar</AssemblyTitle>
     <Description>Todo 任务管理侧边栏</Description>
     <Company>TodoSidebar</Company>
@@ -23,9 +23,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
   </ItemGroup>
 
-  <!-- 排除子项目目录，防止误编译 -->
+  <!-- 排除测试项目目录，防止误编译 -->
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);TodoSidebar.Core\**;TodoSidebar.Services\**;TodoSidebar.Tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);TodoSidebar.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
 </Project>

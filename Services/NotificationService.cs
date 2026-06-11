@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -11,32 +12,49 @@ namespace TodoSidebar.Services
         public static NotificationService Instance => _instance ??= new NotificationService();
 
         private readonly DispatcherTimer _checkTimer;
+        private readonly DispatcherTimer _midnightTimer;
         private readonly HashSet<int> _notifiedTasks = new();
         private readonly DatabaseService _dbService;
+        private readonly TaskService _taskService;
 
         public event EventHandler<string>? NotificationRequested;
 
         private NotificationService()
         {
             _dbService = DatabaseService.Instance;
-            
+            _taskService = new TaskService(_dbService);
 
             _checkTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMinutes(1) // 每分钟检查一次
             };
             _checkTimer.Tick += CheckTimer_Tick;
+
+            // 每天零点清空已通知列表
+            _midnightTimer = new DispatcherTimer();
+            _midnightTimer.Tick += (s, e) =>
+            {
+                var now = DateTime.Now;
+                if (now.Hour == 0 && now.Minute == 0)
+                {
+                    _notifiedTasks.Clear();
+                }
+                _midnightTimer.Interval = TimeSpan.FromSeconds(60);
+            };
+            _midnightTimer.Interval = TimeSpan.FromMinutes(1);
+            _midnightTimer.Start();
         }
 
         public void Start()
         {
             _checkTimer.Start();
-            CheckNotifications(); // 立即检查一次
+            CheckNotifications();
         }
 
         public void Stop()
         {
             _checkTimer.Stop();
+            _midnightTimer.Stop();
         }
 
         private void CheckTimer_Tick(object? sender, EventArgs e)
@@ -48,8 +66,7 @@ namespace TodoSidebar.Services
         {
             try
             {
-                var taskService = new TaskService(_dbService);
-                var deadlineTasks = taskService.GetDeadlineTasks();
+                var deadlineTasks = _taskService.GetDeadlineTasks();
 
                 foreach (var task in deadlineTasks)
                 {
@@ -58,8 +75,14 @@ namespace TodoSidebar.Services
 
                     var timeLeft = task.Deadline.Value - DateTime.Now;
 
+                    // 已过期
+                    if (timeLeft.TotalMinutes <= 0)
+                    {
+                        ShowNotification($"🔴 任务已过期", $"「{task.Title}」已经过期");
+                        _notifiedTasks.Add(task.Id);
+                    }
                     // 即将到期（1小时内）
-                    if (timeLeft.TotalHours <= 1 && timeLeft.TotalMinutes > 0)
+                    else if (timeLeft.TotalHours <= 1)
                     {
                         ShowNotification($"⏰ 任务即将到期", $"「{task.Title}」将在 {(int)timeLeft.TotalMinutes} 分钟后到期");
                         _notifiedTasks.Add(task.Id);
@@ -82,7 +105,6 @@ namespace TodoSidebar.Services
         {
             NotificationRequested?.Invoke(this, $"{title}\n{message}");
 
-            // 使用系统通知
             Application.Current?.Dispatcher.Invoke(() =>
             {
                 var window = new NotificationWindow(title, message);
@@ -99,11 +121,15 @@ namespace TodoSidebar.Services
     // 简单的通知窗口
     public class NotificationWindow : Window
     {
+        private const int NotificationWidth = 300;
+        private const int NotificationHeight = 100;
+        private const double AutoCloseSeconds = 3;
+
         public NotificationWindow(string title, string message)
         {
             Title = title;
-            Width = 300;
-            Height = 100;
+            Width = NotificationWidth;
+            Height = NotificationHeight;
             WindowStyle = WindowStyle.None;
             AllowsTransparency = true;
             Background = System.Windows.Media.Brushes.Transparent;
@@ -148,16 +174,15 @@ namespace TodoSidebar.Services
             border.Child = stackPanel;
             Content = border;
 
-            // 位置：右下角
-            var screenWidth = SystemParameters.PrimaryScreenWidth;
-            var screenHeight = SystemParameters.PrimaryScreenHeight;
-            Left = screenWidth - Width - 20;
-            Top = screenHeight - Height - 60;
+            // 位置：当前屏幕右下角（适配多屏）
+            var workArea = SystemParameters.WorkArea;
+            Left = workArea.Right - Width - 20;
+            Top = workArea.Bottom - Height - 60;
 
-            // 3秒后自动关闭
+            // 自动关闭
             var closeTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(3)
+                Interval = TimeSpan.FromSeconds(AutoCloseSeconds)
             };
             closeTimer.Tick += (s, e) =>
             {

@@ -16,10 +16,10 @@ namespace TodoSidebar.Services
             _messageService = messageService ?? new NullMessageService();
         }
 
-        // 获取所有每日任务（永远返回，不管完成状态）
+        // 获取所有每日任务（不管完成状态，完成状态由 DailyTaskCompletion 表追踪）
         public List<TaskItem> GetDailyTasks()
         {
-            return _db.GetTasks(TaskType.Daily, completed: false);
+            return _db.GetTasks(TaskType.Daily);
         }
 
         // 获取今日已完成的每日任务
@@ -74,6 +74,7 @@ namespace TodoSidebar.Services
                     // 每日任务：记录今天的完成状态，不修改任务本身的 IsCompleted
                     var today = DateTime.Today.ToString("yyyy-MM-dd");
                     _db.MarkDailyTaskCompleted(task.Id, today);
+                    _db.MarkTaskDirty(task.Id); // 标记需要同步
                     task.IsTodayCompleted = true;
                 }
                 else
@@ -100,6 +101,7 @@ namespace TodoSidebar.Services
                     // 每日任务：删除今天的完成记录
                     var today = DateTime.Today.ToString("yyyy-MM-dd");
                     _db.UnmarkDailyTaskCompleted(task.Id, today);
+                    _db.MarkTaskDirty(task.Id); // 标记需要同步
                     task.IsTodayCompleted = false;
                 }
                 else
@@ -135,5 +137,5 @@ namespace TodoSidebar.Services
             _db.UpdateTask(task);
         }
 
-            }
+    }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Microsoft.Data.Sqlite;
 using TodoSidebar.Models;
 
@@ -32,6 +33,7 @@ namespace TodoSidebar.Services
 
         private readonly string _dbPath;
         private SqliteConnection? _connection;
+        private readonly SemaphoreSlim _dbLock = new(1, 1);
 
         private DatabaseService()  // 改为私有构造函数
         {
@@ -49,19 +51,43 @@ namespace TodoSidebar.Services
             {
                 _connection = new SqliteConnection($"Data Source={_dbPath}");
                 _connection.Open();
+                // 开启 WAL 模式，提升并发读写性能
+                using (var walCmd = _connection.CreateCommand())
+                {
+                    walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                    walCmd.ExecuteNonQuery();
+                }
             }
             catch (Exception ex)
             {
-                // 数据库连接失败，尝试重建
-                System.Diagnostics.Debug.WriteLine($"数据库连接失败: {ex.Message}，将尝试重建");
+                // 数据库连接失败，尝试备份后重建
+                System.Diagnostics.Debug.WriteLine($"数据库连接失败: {ex.Message}，将尝试备份后重建");
 
                 try
                 {
                     _connection?.Dispose();
                     if (File.Exists(_dbPath))
+                    {
+                        // 备份损坏的数据库文件，避免数据丢失
+                        var backupPath = _dbPath + ".corrupted.bak";
+                        try
+                        {
+                            File.Copy(_dbPath, backupPath, overwrite: true);
+                            System.Diagnostics.Debug.WriteLine($"已备份损坏的数据库到: {backupPath}");
+                        }
+                        catch (Exception backupEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"备份损坏数据库失败: {backupEx.Message}");
+                        }
                         File.Delete(_dbPath);
+                    }
                     _connection = new SqliteConnection($"Data Source={_dbPath}");
                     _connection.Open();
+                    using (var walCmd = _connection.CreateCommand())
+                    {
+                        walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                        walCmd.ExecuteNonQuery();
+                    }
                 }
                 catch (Exception ex2)
                 {
@@ -155,7 +181,7 @@ namespace TodoSidebar.Services
                     checkCmd.CommandText = $"SELECT {column.Key} FROM Tasks LIMIT 1";
                     checkCmd.ExecuteScalar();
                 }
-                catch
+                catch (Exception checkEx)
                 {
                     try
                     {
@@ -163,7 +189,10 @@ namespace TodoSidebar.Services
                         alterCmd.CommandText = $"ALTER TABLE Tasks ADD COLUMN {column.Key} {column.Value}";
                         alterCmd.ExecuteNonQuery();
                     }
-                    catch { /* 列可能已存在，忽略 */ }
+                    catch (Exception alterEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"ALTER TABLE ADD COLUMN {column.Key} 失败: {alterEx.Message}");
+                    }
                 }
             }
         }
@@ -255,12 +284,13 @@ namespace TodoSidebar.Services
         public void PurgeDeletedTasks(int daysOld = 30)
         {
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = $@"
+            cmd.CommandText = @"
                 DELETE FROM Tasks
                 WHERE IsDeleted = 1
                   AND IsDirty = 0
                   AND LastSyncedAt IS NOT NULL
-                  AND LastSyncedAt < datetime('now', '-{daysOld} days')";
+                  AND LastSyncedAt < datetime('now', '-' || @daysOld || ' days')";
+            cmd.Parameters.AddWithValue("@daysOld", daysOld.ToString());
             cmd.ExecuteNonQuery();
         }
 
@@ -441,6 +471,51 @@ namespace TodoSidebar.Services
             return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
 
+        /// <summary>
+        /// 标记任务为脏（需要同步），不修改其他字段
+        /// </summary>
+        public void MarkTaskDirty(int taskId)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "UPDATE Tasks SET IsDirty = 1 WHERE Id = @id";
+            cmd.Parameters.AddWithValue("@id", taskId);
+            cmd.ExecuteNonQuery();
+        }
+
+        /// <summary>
+        /// 获取最近 N 天的每日完成记录（用于统计）
+        /// 返回每个日期对应的已完成任务 ID 集合
+        /// </summary>
+        public Dictionary<string, HashSet<int>> GetDailyCompletionRecords(int days)
+        {
+            var result = new Dictionary<string, HashSet<int>>();
+            var startDate = DateTime.Today.AddDays(-(days - 1)).ToString("yyyy-MM-dd");
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT Date, TaskId FROM DailyTaskCompletion WHERE Date >= @startDate";
+            cmd.Parameters.AddWithValue("@startDate", startDate);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var date = reader.GetString(0);
+                var taskId = reader.GetInt32(1);
+                if (!result.ContainsKey(date))
+                    result[date] = new HashSet<int>();
+                result[date].Add(taskId);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 获取每日任务总数（用于统计）
+        /// </summary>
+        public int GetDailyTaskCount()
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE Type = @type AND IsDeleted = 0";
+            cmd.Parameters.AddWithValue("@type", (int)TaskType.Daily);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
         // 搜索任务
         public List<TaskItem> SearchTasks(string keyword, TaskType? type = null, TaskPriority? priority = null)
         {
@@ -517,15 +592,18 @@ namespace TodoSidebar.Services
         /// </summary>
         public List<TaskItem> GetDirtyTasks()
         {
-            var tasks = new List<TaskItem>();
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT * FROM Tasks WHERE IsDirty = 1";
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            return ExecuteLocked(() =>
             {
-                tasks.Add(ReadTask(reader));
-            }
-            return tasks;
+                var tasks = new List<TaskItem>();
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = "SELECT * FROM Tasks WHERE IsDirty = 1";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    tasks.Add(ReadTask(reader));
+                }
+                return tasks;
+            });
         }
 
         /// <summary>
@@ -533,18 +611,21 @@ namespace TodoSidebar.Services
         /// </summary>
         public void MarkTaskSynced(int localId, string syncId)
         {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = @"
-                UPDATE Tasks SET 
-                    SyncId = @syncId, 
-                    IsDirty = 0, 
-                    LastSyncedAt = @syncedAt 
-                WHERE Id = @id
-            ";
-            cmd.Parameters.AddWithValue("@id", localId);
-            cmd.Parameters.AddWithValue("@syncId", syncId);
-            cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
-            cmd.ExecuteNonQuery();
+            ExecuteLocked(() =>
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = @"
+                    UPDATE Tasks SET 
+                        SyncId = @syncId, 
+                        IsDirty = 0, 
+                        LastSyncedAt = @syncedAt 
+                    WHERE Id = @id
+                ";
+                cmd.Parameters.AddWithValue("@id", localId);
+                cmd.Parameters.AddWithValue("@syncId", syncId);
+                cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
+                cmd.ExecuteNonQuery();
+            });
         }
 
         /// <summary>
@@ -568,7 +649,9 @@ namespace TodoSidebar.Services
         /// </summary>
         public void UpsertTaskFromRemote(TaskItem task)
         {
-            var existing = GetTaskBySyncId(task.SyncId!);
+            ExecuteLocked(() =>
+            {
+                var existing = GetTaskBySyncId(task.SyncId!);
             if (existing != null)
             {
                 // 更新现有任务
@@ -605,7 +688,7 @@ namespace TodoSidebar.Services
                 cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                 cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
-                cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
+                cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
                 cmd.ExecuteNonQuery();
             }
             else
@@ -629,14 +712,33 @@ namespace TodoSidebar.Services
                 cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                 cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
-                cmd.Parameters.AddWithValue("@syncedAt", DateTime.Now.ToString("O"));
+                cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
                 cmd.ExecuteNonQuery();
             }
+            });
         }
 
         public void Dispose()
         {
+            _dbLock?.Dispose();
             _connection?.Dispose();
+        }
+
+        /// <summary>
+        /// 在数据库锁保护下执行操作，防止多线程并发访问
+        /// </summary>
+        private T ExecuteLocked<T>(Func<T> action)
+        {
+            _dbLock.Wait();
+            try { return action(); }
+            finally { _dbLock.Release(); }
+        }
+
+        private void ExecuteLocked(Action action)
+        {
+            _dbLock.Wait();
+            try { action(); }
+            finally { _dbLock.Release(); }
         }
     }
 }

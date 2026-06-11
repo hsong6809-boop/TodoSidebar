@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -21,18 +22,31 @@ namespace TodoSidebar
             {
                 var db = DatabaseService.Instance;
                 var savedEmail = db.GetSetting("SavedEmail");
-                var savedPassword = db.GetSetting("SavedPassword");
+                var encryptedPassword = db.GetSetting("SavedPassword");
                 var rememberMe = db.GetSetting("RememberMe");
 
                 if (rememberMe == "1" && !string.IsNullOrEmpty(savedEmail))
                 {
                     EmailTextBox.Text = savedEmail;
-                    if (!string.IsNullOrEmpty(savedPassword))
-                        PasswordBox.Password = savedPassword;
+                    if (!string.IsNullOrEmpty(encryptedPassword))
+                    {
+                        try
+                        {
+                            PasswordBox.Password = DataProtectionHelper.Unprotect(encryptedPassword);
+                        }
+                        catch
+                        {
+                            // 解密失败（可能是旧版明文格式），清除并重新保存
+                            PasswordBox.Password = "";
+                        }
+                    }
                     RememberMeCheckBox.IsChecked = true;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadSavedCredentials error: {ex.Message}");
+            }
         }
 
         private void SaveCredentials(string email, string password)
@@ -43,7 +57,7 @@ namespace TodoSidebar
                 if (RememberMeCheckBox.IsChecked == true)
                 {
                     db.SetSetting("SavedEmail", email);
-                    db.SetSetting("SavedPassword", password);
+                    db.SetSetting("SavedPassword", DataProtectionHelper.Protect(password));
                     db.SetSetting("RememberMe", "1");
                 }
                 else
@@ -53,7 +67,10 @@ namespace TodoSidebar
                     db.SetSetting("RememberMe", "0");
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SaveCredentials error: {ex.Message}");
+            }
         }
         
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -62,7 +79,10 @@ namespace TodoSidebar
             {
                 DragMove();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"DragMove error: {ex.Message}");
+            }
         }
         
         private async void LoginButton_Click(object sender, RoutedEventArgs e)
@@ -79,6 +99,12 @@ namespace TodoSidebar
             if (string.IsNullOrEmpty(email))
             {
                 ShowError("请输入邮箱");
+                return;
+            }
+            
+            if (!IsValidEmail(email))
+            {
+                ShowError("请输入有效的邮箱地址");
                 return;
             }
             
@@ -202,6 +228,18 @@ namespace TodoSidebar
         private void HideError()
         {
             ErrorText.Visibility = Visibility.Collapsed;
+        }
+
+        private static bool IsValidEmail(string email)
+        {
+            try
+            {
+                return Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.None, TimeSpan.FromMilliseconds(200));
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

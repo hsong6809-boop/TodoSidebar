@@ -41,32 +41,6 @@
             </Setter>
         </Style>
 
-        <!-- 图标按钮样式 -->
-        <Style x:Key="IconButton" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Width" Value="28"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Width="{TemplateBinding Width}"
-                                Height="{TemplateBinding Height}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#20000000"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Grid>
@@ -286,7 +260,7 @@
                                                    Foreground="{DynamicResource TextBrush}"
                                                    FontSize="13"
                                                    FontWeight="Medium"/>
-                                        <TextBlock Text="{Binding Type, StringFormat='{}{0}'}"
+                                        <TextBlock Text="{Binding TypeText}"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                                    FontSize="11"
                                                    Margin="0,2,0,0"/>
@@ -605,14 +579,11 @@
 
         <!-- 触发条（鼠标悬停时显示主面板） -->
         <Border x:Name="TriggerStrip"
-                Width="6"
+                Width="3"
                 HorizontalAlignment="Left"
                 Cursor="Hand">
             <Border.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Color="#6366F1" Offset="0"/>
-                    <GradientStop Color="Transparent" Offset="1"/>
-                </LinearGradientBrush>
+                <SolidColorBrush Color="#6366F1"/>
             </Border.Background>
             <Border.Effect>
                 <DropShadowEffect BlurRadius="5" ShadowDepth="1" Opacity="0.3"/>

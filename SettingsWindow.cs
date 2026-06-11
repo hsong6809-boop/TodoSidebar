@@ -154,7 +154,7 @@ namespace TodoSidebar
             {
                 card.Children.Add(new TextBlock
                 {
-                    Text = "版本 3.2.1 · 每日任务",
+                    Text = $"版本 {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "4.0.0"} · 每日任务",
                     FontSize = 12,
                     Foreground = GetBrush("TextSecondaryBrush", Color.FromRgb(100, 116, 139))
                 });

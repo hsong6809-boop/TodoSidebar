@@ -58,20 +58,6 @@ namespace TodoSidebar
                 MessageBox.Show($"打开设置窗口失败: {ex.Message}\n\n{ex.StackTrace}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
-        private void StatisticsButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var statisticsWindow = new StatisticsWindow();
-                statisticsWindow.Owner = this;
-                statisticsWindow.ShowDialog();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"打开统计窗口失败: {ex.Message}\n\n{ex.StackTrace}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
         
         private async void LogoutButton_Click(object sender, RoutedEventArgs e)
         {
@@ -232,11 +218,6 @@ namespace TodoSidebar
         }
 
         // ========== 辅助方法 ==========
-
-        private void TemplateCard_Click(object sender, MouseButtonEventArgs e)
-        {
-            // 双击模板卡片可以快速应用
-        }
 
         private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
         {

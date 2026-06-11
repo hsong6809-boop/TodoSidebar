@@ -19,17 +19,14 @@ namespace TodoSidebar
         /// 共享的 ViewModel 实例，确保窗口切换时数据同步
         /// </summary>
         public static MainViewModel SharedViewModel { get; set; } = null!;
+        
+        private static EventHandler<bool>? _loginStateHandler;
 
         /// <summary>
         /// 全局快捷键服务
         /// </summary>
         private HotkeyService? _hotkeyService;
         
-        /// <summary>
-        /// 是否需要登录（通过命令行参数控制）
-        /// </summary>
-        public static bool RequireLogin { get; private set; } = false;
-
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -50,14 +47,13 @@ namespace TodoSidebar
             try
             {
                 // 检查启动参数
-                RequireLogin = !e.Args.Contains("--no-sync");
                 bool isSidebarMode = e.Args.Contains("--sidebar");
                 
-                // 初始化认证服务
+                // 初始化认证服务（同步等待，避免 AggregregateException 包装）
                 Task.Run(async () =>
                 {
                     await InitializeAuthAsync();
-                }).Wait();
+                }).GetAwaiter().GetResult();
                 
                 // 在 UI 线程上检查登录状态并显示窗口
                 Dispatcher.Invoke(() =>
@@ -118,12 +114,12 @@ namespace TodoSidebar
                     
                     _hotkeyService.NewTaskRequested += (s, args) =>
                     {
-                        try { mainWindow?.Activate(); } catch { }
+                        try { mainWindow?.Activate(); } catch (Exception) { /* Window may have been closed */ }
                     };
                     
                     _hotkeyService.SearchRequested += (s, args) =>
                     {
-                        try { mainWindow?.Activate(); } catch { }
+                        try { mainWindow?.Activate(); } catch (Exception) { /* Window may have been closed */ }
                     };
                 });
             }
@@ -176,11 +172,12 @@ namespace TodoSidebar
             try
             {
                 await AuthService.Instance.InitializeAsync();
-                AuthService.Instance.LoginStateChanged += async (s, isLoggedIn) =>
+                _loginStateHandler = async (s, isLoggedIn) =>
                 {
                     if (isLoggedIn)
                         await SyncService.Instance.InitializeAsync();
                 };
+                AuthService.Instance.LoginStateChanged += _loginStateHandler;
             }
             catch (Exception ex)
             {
@@ -196,8 +193,15 @@ namespace TodoSidebar
                 NotificationService.Instance.Stop();
                 SyncService.Instance.Stop();
                 SharedViewModel?.Dispose();
+                if (_loginStateHandler != null)
+                    AuthService.Instance.LoginStateChanged -= _loginStateHandler;
+                DatabaseService.Instance.Dispose();
+                NetworkMonitor.Instance.Dispose();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"OnExit cleanup error: {ex.Message}");
+            }
             base.OnExit(e);
         }
     }

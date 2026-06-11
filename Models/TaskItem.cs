@@ -126,6 +126,14 @@ namespace TodoSidebar.Models
             TaskType.Deadline => "#EF4444",  // Red-500
             _ => "#6366F1"
         };
+
+        // 类型文本
+        public string TypeText => Type switch
+        {
+            TaskType.Daily => "每日",
+            TaskType.Deadline => "截止",
+            _ => "未知"
+        };
         
         // 优先级图标
         public string PriorityIcon => Priority switch
@@ -238,8 +246,9 @@ namespace TodoSidebar.Models
             {
                 return JsonSerializer.Deserialize<List<SubTask>>(json, _jsonOptions) ?? new List<SubTask>();
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"SubTask JSON parse error: {ex.Message}");
                 return new List<SubTask>();
             }
         }

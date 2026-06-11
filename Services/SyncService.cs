@@ -31,6 +31,12 @@ namespace TodoSidebar.Services
         // 增量同步：记录上次同步时间（UTC）
         private DateTime? _lastSyncTimeUtc;
         
+        // 防重入：使用 Interlocked 作为轻量级同步锁
+        private int _syncInProgress = 0;
+        
+        // 网络恢复事件处理器（保存引用以便取消订阅）
+        private EventHandler<bool>? _networkHandler;
+        
         public static SyncService Instance
         {
             get
@@ -86,6 +92,9 @@ namespace TodoSidebar.Services
         /// </summary>
         public async Task InitializeAsync()
         {
+            // 防止重复初始化
+            if (_cts != null) return;
+            
             await SupabaseClientService.InitializeAsync();
             
             // 从数据库恢复上次同步时间
@@ -100,15 +109,16 @@ namespace TodoSidebar.Services
             _syncTimer = new PeriodicTimer(TimeSpan.FromSeconds(SupabaseConfig.SyncIntervalSeconds));
             _syncLoopTask = RunSyncLoopAsync(_cts.Token);
             
-            // 网络恢复时自动触发同步
-            _network.ConnectivityChanged += async (_, online) =>
+            // 网络恢复时自动触发同步（保存引用以便 Stop 时取消订阅）
+            _networkHandler = async (_, online) =>
             {
                 if (online && _authService.IsLoggedIn)
                 {
                     System.Diagnostics.Debug.WriteLine("[SyncService] Network restored, triggering sync");
-                    try { await SyncAsync(); } catch { }
+                    try { await SyncAsync(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SyncService] Network restore sync failed: {ex.Message}"); }
                 }
             };
+            _network.ConnectivityChanged += _networkHandler;
         }
         
         /// <summary>
@@ -143,7 +153,8 @@ namespace TodoSidebar.Services
         /// </summary>
         public async Task<SyncResult> SyncAsync()
         {
-            if (Status == SyncStatus.Syncing)
+            // 防重入：Interlocked 原子操作防止并发同步
+            if (Interlocked.CompareExchange(ref _syncInProgress, 1, 0) != 0)
                 return new SyncResult { Success = false, Error = "正在同步中" };
             
             if (!AuthService.Instance.IsLoggedIn)
@@ -218,6 +229,10 @@ namespace TodoSidebar.Services
                 });
                 
                 return new SyncResult { Success = false, Error = ex.Message };
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _syncInProgress, 0);
             }
         }
         
@@ -455,6 +470,11 @@ namespace TodoSidebar.Services
             _cts?.Cancel();
             _syncTimer?.Dispose();
             _cts?.Dispose();
+            if (_networkHandler != null)
+            {
+                _network.ConnectivityChanged -= _networkHandler;
+                _networkHandler = null;
+            }
         }
     }
 }

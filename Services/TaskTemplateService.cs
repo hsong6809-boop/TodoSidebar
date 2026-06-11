@@ -64,7 +64,7 @@ namespace TodoSidebar.Services
                     return JsonSerializer.Deserialize<List<TaskTemplate>>(json) ?? new List<TaskTemplate>();
                 }
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Template load error: {ex.Message}"); }
 
             // 返回默认模板
             return GetDefaultTemplates();
@@ -84,7 +84,7 @@ namespace TodoSidebar.Services
                 var json = JsonSerializer.Serialize(_templates, options);
                 File.WriteAllText(_templatesPath, json);
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Template save error: {ex.Message}"); }
         }
 
         private List<TaskTemplate> GetDefaultTemplates()

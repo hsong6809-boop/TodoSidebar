@@ -44,13 +44,16 @@ namespace TodoSidebar.Services
             _source?.AddHook(HwndHook);
 
             // Ctrl+Alt+T: 切换侧边栏
-            RegisterHotKey(_windowHandle, HOTKEY_TOGGLE_SIDEBAR, MOD_CONTROL | MOD_ALT, 0x54); // T
+            if (!RegisterHotKey(_windowHandle, HOTKEY_TOGGLE_SIDEBAR, MOD_CONTROL | MOD_ALT, 0x54))
+                System.Diagnostics.Debug.WriteLine("[HotkeyService] Failed to register Ctrl+Alt+T");
 
             // Ctrl+N: 新建任务
-            RegisterHotKey(_windowHandle, HOTKEY_NEW_TASK, MOD_CONTROL, 0x4E); // N
+            if (!RegisterHotKey(_windowHandle, HOTKEY_NEW_TASK, MOD_CONTROL, 0x4E))
+                System.Diagnostics.Debug.WriteLine("[HotkeyService] Failed to register Ctrl+N");
 
             // Ctrl+F: 搜索
-            RegisterHotKey(_windowHandle, HOTKEY_SEARCH, MOD_CONTROL, 0x46); // F
+            if (!RegisterHotKey(_windowHandle, HOTKEY_SEARCH, MOD_CONTROL, 0x46))
+                System.Diagnostics.Debug.WriteLine("[HotkeyService] Failed to register Ctrl+F");
 
             _isRegistered = true;
         }

@@ -6,6 +6,7 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TodoSidebar.Models;
@@ -51,6 +52,12 @@ namespace TodoSidebar.ViewModels
         private readonly TaskTemplateService _templateService;
         public List<TaskTemplate> Templates => _templateService.GetTemplates();
 
+        [ObservableProperty]
+        private int _templatesCount;
+
+        /// <summary>午夜刷新定时器，用于重置每日任务状态</summary>
+        private DispatcherTimer? _midnightTimer;
+
         public ObservableCollection<TaskItem> DailyTasks { get; } = new();
         public ObservableCollection<TaskItem> DeadlineTasks { get; } = new();
         public ObservableCollection<TaskItem> HistoryTasks { get; } = new();
@@ -69,6 +76,7 @@ namespace TodoSidebar.ViewModels
             _taskService = new TaskService(_dbService);
             _messageService = MessageService.Instance;
             _templateService = new TaskTemplateService();
+            _templatesCount = Templates.Count;
             
             // 初始化子 ViewModel
             StatisticsViewModel = new StatisticsViewModel(_dbService);
@@ -82,7 +90,29 @@ namespace TodoSidebar.ViewModels
             TodayCompletedTasks.CollectionChanged += OnTaskCollectionChanged;
             CurrentTasks.CollectionChanged += OnTaskCollectionChanged;
 
+            // 午夜刷新：在每天零点自动重新加载每日任务
+            ScheduleMidnightRefresh();
+
             LoadData();
+        }
+
+        private void ScheduleMidnightRefresh()
+        {
+            var now = DateTime.Now;
+            var midnight = now.Date.AddDays(1);
+            var msUntilMidnight = (midnight - now).TotalMilliseconds;
+
+            _midnightTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(msUntilMidnight)
+            };
+            _midnightTimer.Tick += (s, e) =>
+            {
+                _midnightTimer?.Stop();
+                LoadData();
+                ScheduleMidnightRefresh();
+            };
+            _midnightTimer.Start();
         }
 
         private void OnTaskCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -111,6 +141,9 @@ namespace TodoSidebar.ViewModels
             foreach (var task in _taskService.GetDailyTasks())
             {
                 task.IsTodayCompleted = todayCompletedIds.Contains(task.Id);
+                // 今日已完成的每日任务在「今日完成」标签页展示，此处过滤避免重复
+                if (task.IsTodayCompleted)
+                    continue;
                 DailyTasks.Add(task);
             }
         }
@@ -313,9 +346,12 @@ namespace TodoSidebar.ViewModels
             }
         }
 
+        /// <summary>
+        /// 尝试立即刷新子任务相关 UI 绑定（后续 LoadData 也会完整刷新）
+        /// </summary>
         private void RefreshTaskProperties(TaskItem task)
         {
-            task.SubTasksJson = task.SubTasksJson;
+            // 通知 UI 刷新子任务相关的绑定属性
             OnPropertyChanged(nameof(TaskItem.SubTasksList));
             OnPropertyChanged(nameof(TaskItem.SubTasksProgressText));
             OnPropertyChanged(nameof(TaskItem.HasSubTasks));
@@ -378,6 +414,10 @@ namespace TodoSidebar.ViewModels
             DeadlineTasks.CollectionChanged -= OnTaskCollectionChanged;
             HistoryTasks.CollectionChanged -= OnTaskCollectionChanged;
             CurrentTasks.CollectionChanged -= OnTaskCollectionChanged;
+            TodayCompletedTasks.CollectionChanged -= OnTaskCollectionChanged;
+            SyncViewModel.OnSyncCompleted = null;
+            _midnightTimer?.Stop();
+            _midnightTimer?.Stop();
         }
     }
 }

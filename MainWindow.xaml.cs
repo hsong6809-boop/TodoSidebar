@@ -16,20 +16,20 @@ namespace TodoSidebar
     {
         private bool _isCollapsed = false;
         private const double ExpandedWidth = 320;
-        private const double CollapsedWidth = 6;
+        private const double CollapsedWidth = 3;
         
         // 悬停延迟定时器
         private readonly DispatcherTimer _hoverDelayTimer;
-        private const int HoverDelayMilliseconds = 400;
+        private const int HoverDelayMilliseconds = 250;
         
         // 收起延迟定时器
         private readonly DispatcherTimer _collapseDelayTimer;
         private const int CollapseDelayMilliseconds = 300;
         
-        // 鼠标轮询定时器
-        private readonly DispatcherTimer _mousePollTimer;
         private readonly DispatcherTimer _dateTimeTimer;
-        private bool _wasMouseOver = false;
+        private readonly DispatcherTimer _mouseCheckTimer;
+        private DateTime _lastCollapseTime = DateTime.MinValue;
+        private const int CollapseCooldownMs = 500;
         
         // 当前展开的任务
         private FrameworkElement? _expandedTaskCard;
@@ -58,21 +58,68 @@ namespace TodoSidebar
             };
             _collapseDelayTimer.Tick += CollapseDelayTimer_Tick;
             
-            // 初始化鼠标轮询定时器
-            _mousePollTimer = new DispatcherTimer
+            // 鼠标检测定时器，只在需要时激活
+            _mouseCheckTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(100)
+                Interval = TimeSpan.FromMilliseconds(150)
             };
-            _mousePollTimer.Tick += MousePollTimer_Tick;
+            _mouseCheckTimer.Tick += MouseCheckTimer_Tick;
 
-            // 初始化日期时间定时器（每秒刷新）
+            // 触发条悬停 → 延迟展开
+            TriggerStrip.MouseEnter += (_, _) =>
+            {
+                if ((DateTime.Now - _lastCollapseTime).TotalMilliseconds < CollapseCooldownMs)
+                    return;
+                if (_isCollapsed && !_hoverDelayTimer.IsEnabled)
+                    _hoverDelayTimer.Start();
+            };
+            
+            // 触发条点击 → 立即展开（兜底机制，防止悬停检测失败）
+            TriggerStrip.MouseLeftButtonDown += (_, _) =>
+            {
+                if (_isCollapsed && !_isAnimating)
+                {
+                    _hoverDelayTimer.Stop();
+                    ExpandPanel();
+                }
+            };
+            
+            // 窗口内鼠标移动 → 取消收起计时
+            MouseMove += (_, _) =>
+            {
+                _collapseDelayTimer.Stop();
+                // 如果已收起，开始检测光标是否靠近触发条
+                if (_isCollapsed && !_mouseCheckTimer.IsEnabled)
+                    _mouseCheckTimer.Start();
+            };
+            
+            // 窗口失焦 → 立即收起
+            Deactivated += (_, _) =>
+            {
+                if (!_isCollapsed)
+                {
+                    _lastCollapseTime = DateTime.Now;
+                    CollapsePanel();
+                }
+            };
+
+            // 鼠标检测在首次收起后启动，初始展开状态不需要
             _dateTimeTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(1)
+                Interval = TimeSpan.FromSeconds(30)
             };
             _dateTimeTimer.Tick += (s, args) => UpdateDateTime();
             _dateTimeTimer.Start();
             UpdateDateTime(); // 立即更新一次
+            
+            // 窗口关闭时清理定时器（ViewModel 由 App.OnExit 统一销毁）
+            Closing += (s, e) =>
+            {
+                _hoverDelayTimer.Stop();
+                _collapseDelayTimer.Stop();
+                _dateTimeTimer.Stop();
+                _mouseCheckTimer.Stop();
+            };
         }
 
         private void UpdateDateTime()
@@ -109,9 +156,6 @@ namespace TodoSidebar
                 Width = ExpandedWidth;
 
                 SetWindowPos(helper.Handle, HWND_TOPMOST, (int)Left, (int)Top, (int)Width, (int)Height, SWP_SHOWWINDOW);
-                
-                // 启动鼠标轮询
-                _mousePollTimer.Start();
             }
             catch
             {
@@ -124,39 +168,52 @@ namespace TodoSidebar
 
         #region 鼠标悬停展开/收起
 
-        private void MousePollTimer_Tick(object? sender, EventArgs e)
-        {
-            bool isMouseOver = IsMouseOver;
-            
-            // 鼠标刚移入
-            if (isMouseOver && !_wasMouseOver)
-            {
-                _collapseDelayTimer.Stop(); // 取消待执行的收起
-                _hoverDelayTimer.Stop();
-                if (_isCollapsed)
-                {
-                    _hoverDelayTimer.Start();
-                }
-            }
-            // 鼠标刚移出
-            else if (!isMouseOver && _wasMouseOver)
-            {
-                _hoverDelayTimer.Stop();
-                if (!_isCollapsed)
-                {
-                    _collapseDelayTimer.Start();
-                }
-            }
-            
-            _wasMouseOver = isMouseOver;
-        }
-
         private void CollapseDelayTimer_Tick(object? sender, EventArgs e)
         {
             _collapseDelayTimer.Stop();
             if (!_isCollapsed)
             {
+                _lastCollapseTime = DateTime.Now;
                 CollapsePanel();
+            }
+        }
+
+        private void MouseCheckTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_isAnimating) return;
+
+            if (_isCollapsed)
+            {
+                // 收起状态：使用 Win32 API 获取像素级坐标
+                GetCursorPos(out var cursorPos);
+                var hwnd = new WindowInteropHelper(this).Handle;
+                GetWindowRect(hwnd, out var windowRect);
+                var triggerRight = windowRect.Left + 30;
+
+                if (cursorPos.X >= windowRect.Left && cursorPos.X <= triggerRight
+                    && cursorPos.Y >= windowRect.Top && cursorPos.Y <= windowRect.Bottom)
+                {
+                    if ((DateTime.Now - _lastCollapseTime).TotalMilliseconds >= CollapseCooldownMs)
+                    {
+                        // 鼠标在触发区 → 启动悬停延迟（仅在未运行时启动，避免每150ms重置导致永远无法到期）
+                        if (!_hoverDelayTimer.IsEnabled)
+                        {
+                            _hoverDelayTimer.Start();
+                        }
+                    }
+                }
+                else
+                {
+                    // 鼠标离开触发区 → 停止悬停延迟
+                    _hoverDelayTimer.Stop();
+                }
+            }
+            else
+            {
+                if (!IsMouseOver)
+                {
+                    _collapseDelayTimer.Start();
+                }
             }
         }
 
@@ -175,6 +232,7 @@ namespace TodoSidebar
 
         private void CollapseButton_Click(object sender, RoutedEventArgs e)
         {
+            _lastCollapseTime = DateTime.Now;
             CollapsePanel();
         }
 
@@ -198,7 +256,7 @@ namespace TodoSidebar
             {
                 DragMove();
             }
-            catch { }
+            catch (Exception) { /* DragMove may fail if mouse not captured */ }
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -261,6 +319,9 @@ namespace TodoSidebar
         {
             if (_isAnimating) return;
             _isCollapsed = true;
+            _lastCollapseTime = DateTime.Now;
+            _collapseDelayTimer.Stop();
+            _mouseCheckTimer.Start(); // 收起后开始检测靠近
             AnimatePanel(false);
         }
 
@@ -268,7 +329,36 @@ namespace TodoSidebar
         {
             if (_isAnimating) return;
             _isCollapsed = false;
+            _hoverDelayTimer.Stop();
+            _collapseDelayTimer.Stop(); // 展开时必须停止收起定时器，防止立即被收回
+            // 注意：不停止 _mouseCheckTimer，保持运行以检测鼠标离开窗口
+            
+            // 安全检查：如果 MainPanel 宽度已经正确但不可见，强制恢复
+            if (MainPanel.Width >= ExpandedWidth - 1 && MainPanel.Opacity < 0.1)
+            {
+                MainPanel.Opacity = 1;
+            }
+            
             AnimatePanel(true);
+            
+            // 兜底机制：1 秒后如果还没展开，强制恢复可见
+            var failSafeTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(1000)
+            };
+            failSafeTimer.Tick += (s, e) =>
+            {
+                failSafeTimer.Stop();
+                if (MainPanel.Opacity < 0.5 || MainPanel.Width < ExpandedWidth - 10)
+                {
+                    MainPanel.BeginAnimation(UIElement.OpacityProperty, null);
+                    MainPanel.Opacity = 1;
+                    MainPanel.Width = ExpandedWidth;
+                    Width = ExpandedWidth;
+                    _isAnimating = false;
+                }
+            };
+            failSafeTimer.Start();
         }
 
         private void AnimatePanel(bool expand)
@@ -278,31 +368,43 @@ namespace TodoSidebar
 
             try
             {
+                // 清除旧动画
+                MainPanel.BeginAnimation(UIElement.OpacityProperty, null);
                 BeginAnimation(WidthProperty, null);
-                MainPanel.BeginAnimation(WidthProperty, null);
 
-                var duration = TimeSpan.FromMilliseconds(300);
+                var duration = TimeSpan.FromMilliseconds(450);
                 var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
 
-                var targetWidth = expand ? ExpandedWidth : CollapsedWidth;
-                var panelTargetWidth = expand ? ExpandedWidth : 0;
+                if (expand)
+                {
+                    // 展开：先设宽度再淡入，避免布局抖动
+                    Width = ExpandedWidth;
+                    MainPanel.Width = ExpandedWidth;
+                    MainPanel.Opacity = 0;
 
-                var winAnim = new DoubleAnimation(targetWidth, duration) { EasingFunction = easing };
-                winAnim.Completed += (s, e) => 
-                { 
-                    Width = targetWidth; 
-                    BeginAnimation(WidthProperty, null);
-                    _isAnimating = false;
-                };
-                BeginAnimation(WidthProperty, winAnim);
-
-                var panelAnim = new DoubleAnimation(panelTargetWidth, duration) { EasingFunction = easing };
-                panelAnim.Completed += (s, e) => 
-                { 
-                    MainPanel.Width = panelTargetWidth; 
-                    MainPanel.BeginAnimation(WidthProperty, null); 
-                };
-                MainPanel.BeginAnimation(WidthProperty, panelAnim);
+                    var fadeIn = new DoubleAnimation(1, duration) { EasingFunction = easing };
+                    fadeIn.Completed += (s, e) =>
+                    {
+                        MainPanel.BeginAnimation(UIElement.OpacityProperty, null);
+                        MainPanel.Opacity = 1;  // 修复：动画清除后局部值会回退到0，必须显式设为1
+                        _isAnimating = false;
+                    };
+                    MainPanel.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+                }
+                else
+                {
+                    // 收起：先淡出再设宽度
+                    var fadeOut = new DoubleAnimation(0, duration) { EasingFunction = easing };
+                    fadeOut.Completed += (s, e) =>
+                    {
+                        MainPanel.BeginAnimation(UIElement.OpacityProperty, null);
+                        MainPanel.Opacity = 0;  // 显式同步局部值，保持一致性
+                        MainPanel.Width = 0;
+                        Width = CollapsedWidth;
+                        _isAnimating = false;
+                    };
+                    MainPanel.BeginAnimation(UIElement.OpacityProperty, fadeOut);
+                }
             }
             catch
             {
@@ -365,7 +467,7 @@ namespace TodoSidebar
                                 }
                             }
                         }
-                        catch { }
+                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"AnimateAdd error: {ex.Message}"); }
                     }), DispatcherPriority.Background);
                 }
             }
@@ -511,7 +613,7 @@ namespace TodoSidebar
                     {
                         DragDrop.DoDragDrop(TaskListBox, data, DragDropEffects.Move);
                     }
-                    catch { }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"DragDrop error: {ex.Message}"); }
                 }
             }
         }
@@ -584,7 +686,7 @@ namespace TodoSidebar
                         vm.SearchCommand.Execute(null);
                     }
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"SearchInput_KeyDown error: {ex.Message}"); }
             }
         }
 
@@ -639,7 +741,7 @@ namespace TodoSidebar
                     parent = System.Windows.Media.VisualTreeHelper.GetParent(parent);
                 }
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"FindParent error: {ex.Message}"); }
             return null;
         }
 
@@ -666,7 +768,10 @@ namespace TodoSidebar
                     if (result != null) return result;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"FindChild error: {ex.Message}");
+            }
 
             return null;
         }
@@ -681,5 +786,17 @@ namespace TodoSidebar
 
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr hWnd, int hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int X; public int Y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     }
 }

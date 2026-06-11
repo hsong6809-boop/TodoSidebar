@@ -31,7 +31,8 @@ namespace TodoSidebar.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"DataProtection.Protect error: {ex.Message}");
-                // DPAPI 不可用时回退到明文（开发环境等）
+                // DPAPI 不可用时回退到明文（仅在非 Windows 环境）
+                System.Diagnostics.Trace.TraceWarning("DPAPI not available, falling back to plaintext storage");
                 return plainText;
             }
         }
@@ -64,7 +65,7 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// 判断字符串是否为 DPAPI 加密格式（Base64 且长度合理）
+        /// 判断字符串是否为 DPAPI 加密格式
         /// </summary>
         public static bool IsProtected(string text)
         {
@@ -73,7 +74,9 @@ namespace TodoSidebar.Services
 
             try
             {
-                Convert.FromBase64String(text);
+                // 尝试 Base64 解码 + DPAPI 解密来验证
+                var encryptedBytes = Convert.FromBase64String(text);
+                ProtectedData.Unprotect(encryptedBytes, Entropy, DataProtectionScope.CurrentUser);
                 return true;
             }
             catch

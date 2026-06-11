@@ -2,7 +2,6 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Shapes;
 
 namespace TodoSidebar.Controls
 {
@@ -34,12 +33,6 @@ namespace TodoSidebar.Controls
             set => SetValue(ProgressProperty, Math.Max(0, Math.Min(1, value)));
         }
 
-        public double StrokeThickness
-        {
-            get => (double)GetValue(StrokeThicknessProperty);
-            set => SetValue(StrokeThicknessProperty, value);
-        }
-
         public Brush ProgressBrush
         {
             get => (Brush)GetValue(ProgressBrushProperty);
@@ -58,6 +51,12 @@ namespace TodoSidebar.Controls
             set => SetValue(SizeProperty, value);
         }
 
+        public double StrokeThickness
+        {
+            get => (double)GetValue(StrokeThicknessProperty);
+            set => SetValue(StrokeThicknessProperty, value);
+        }
+
         static CircularProgress()
         {
             DefaultStyleKeyProperty.OverrideMetadata(typeof(CircularProgress),
@@ -68,8 +67,18 @@ namespace TodoSidebar.Controls
         {
             if (d is CircularProgress control)
             {
+                control.InvalidateCachedPens();
                 control.InvalidateVisual();
             }
+        }
+
+        private Pen? _cachedBackgroundPen;
+        private Pen? _cachedProgressPen;
+
+        private void InvalidateCachedPens()
+        {
+            _cachedBackgroundPen = null;
+            _cachedProgressPen = null;
         }
 
         protected override void OnRender(DrawingContext drawingContext)
@@ -79,16 +88,26 @@ namespace TodoSidebar.Controls
             var radius = (Size - StrokeThickness) / 2;
             var center = new Point(Size / 2, Size / 2);
 
+            // 缓存 Pen 避免每帧创建
+            if (_cachedBackgroundPen == null)
+            {
+                _cachedBackgroundPen = new Pen(BackgroundBrush, StrokeThickness);
+                _cachedBackgroundPen.Freeze();
+            }
+
             // 绘制背景圆
-            var backgroundPen = new Pen(BackgroundBrush, StrokeThickness);
-            drawingContext.DrawEllipse(null, backgroundPen, center, radius, radius);
+            drawingContext.DrawEllipse(null, _cachedBackgroundPen, center, radius, radius);
 
             // 绘制进度弧
             if (Progress > 0)
             {
-                var progressPen = new Pen(ProgressBrush, StrokeThickness);
-                progressPen.StartLineCap = PenLineCap.Round;
-                progressPen.EndLineCap = PenLineCap.Round;
+                if (_cachedProgressPen == null)
+                {
+                    _cachedProgressPen = new Pen(ProgressBrush, StrokeThickness);
+                    _cachedProgressPen.StartLineCap = PenLineCap.Round;
+                    _cachedProgressPen.EndLineCap = PenLineCap.Round;
+                    _cachedProgressPen.Freeze();
+                }
 
                 var angle = Progress * 360;
                 var startPoint = new Point(
@@ -119,7 +138,7 @@ namespace TodoSidebar.Controls
                 var pathGeometry = new PathGeometry();
                 pathGeometry.Figures.Add(pathFigure);
 
-                drawingContext.DrawGeometry(null, progressPen, pathGeometry);
+                drawingContext.DrawGeometry(null, _cachedProgressPen, pathGeometry);
             }
         }
     }

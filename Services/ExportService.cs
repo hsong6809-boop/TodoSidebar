@@ -21,27 +21,36 @@ namespace TodoSidebar.Services
         // 导出为 JSON
         public void ExportToJson(string filePath)
         {
-            var exportData = new ExportData
+            try
             {
-                ExportDate = DateTime.Now,
-                Tasks = _dbService.GetTasks(),
-                Settings = GetAllSettings()
-            };
+                var exportData = new ExportData
+                {
+                    ExportDate = DateTime.Now,
+                    Tasks = _dbService.GetTasks(),
+                    Settings = GetAllSettings()
+                };
 
-            var options = new JsonSerializerOptions
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                var json = JsonSerializer.Serialize(exportData, options);
+                File.WriteAllText(filePath, json);
+            }
+            catch (Exception ex)
             {
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
-
-            var json = JsonSerializer.Serialize(exportData, options);
-            File.WriteAllText(filePath, json);
+                throw new InvalidOperationException($"导出 JSON 失败: {ex.Message}", ex);
+            }
         }
 
         // 导出为 CSV（修复转义问题）
         public void ExportToCsv(string filePath)
         {
-            var tasks = _dbService.GetTasks();
+            try
+            {
+                var tasks = _dbService.GetTasks();
             using var writer = new StreamWriter(filePath);
 
             // 写入表头
@@ -53,14 +62,19 @@ namespace TodoSidebar.Services
                 writer.WriteLine(string.Join(",",
                     task.Id,
                     EscapeCsvField(task.Title),
-                    task.Type,
-                    task.Priority,
+                    task.Type switch { TaskType.Daily => "每日", TaskType.Deadline => "截止", _ => task.Type.ToString() },
+                    task.Priority switch { TaskPriority.High => "高", TaskPriority.Medium => "中", TaskPriority.Low => "低", _ => task.Priority.ToString() },
                     task.IsCompleted,
                     task.CreatedAt.ToString("O"),
                     task.Deadline?.ToString("O") ?? "",
                     task.CompletedAt?.ToString("O") ?? "",
                     EscapeCsvField(task.Tags ?? "")
                 ));
+            }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"导出 CSV 失败: {ex.Message}", ex);
             }
         }
 
@@ -81,32 +95,46 @@ namespace TodoSidebar.Services
         // 从 JSON 导入
         public int ImportFromJson(string filePath)
         {
-            var json = File.ReadAllText(filePath);
-            var options = new JsonSerializerOptions
+            try
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
+                var json = File.ReadAllText(filePath);
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
 
-            var importData = JsonSerializer.Deserialize<ExportData>(json, options);
-            if (importData == null) return 0;
+                var importData = JsonSerializer.Deserialize<ExportData>(json, options);
+                if (importData?.Tasks == null) return 0;
 
-            int importedCount = 0;
+                int importedCount = 0;
 
-            // 导入任务
-            foreach (var task in importData.Tasks)
-            {
-                task.Id = 0; // 重置 ID，让数据库分配新 ID
-                _dbService.InsertTask(task);
-                importedCount++;
+                // 导入任务（跳过无效任务）
+                foreach (var task in importData.Tasks)
+                {
+                    if (string.IsNullOrWhiteSpace(task.Title))
+                        continue;
+                    task.Id = 0;
+                    _dbService.InsertTask(task);
+                    importedCount++;
+                }
+
+                // 导入设置（仅导入非敏感设置）
+                if (importData.Settings != null)
+                {
+                    var safeKeys = new[] { "Theme", "AccentColor", "FontSize", "LastWeeklyReset" };
+                    foreach (var key in safeKeys)
+                    {
+                        if (importData.Settings.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
+                            _dbService.SetSetting(key, value);
+                    }
+                }
+
+                return importedCount;
             }
-
-            // 导入设置
-            foreach (var setting in importData.Settings)
+            catch (Exception ex)
             {
-                _dbService.SetSetting(setting.Key, setting.Value);
+                throw new InvalidOperationException($"导入 JSON 失败: {ex.Message}", ex);
             }
-
-            return importedCount;
         }
 
         // 备份数据
@@ -129,9 +157,15 @@ namespace TodoSidebar.Services
             return backupPath;
         }
 
-        // 恢复备份
+        // 恢复备份（替换模式：先清除现有数据再导入）
         public int RestoreBackup(string backupPath)
         {
+            // 软删除所有现有任务（标记 IsDeleted，同步时会同步到云端）
+            var allTasks = _dbService.GetTasks();
+            foreach (var task in allTasks)
+            {
+                _dbService.DeleteTask(task.Id);
+            }
             return ImportFromJson(backupPath);
         }
 

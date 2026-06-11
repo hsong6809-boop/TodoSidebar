@@ -76,6 +76,7 @@ namespace TodoSidebar.Services
         /// </summary>
         public static void Dispose()
         {
+            // supabase-csharp v1.0.0 Client 不实现 IDisposable，直接置空即可
             _client = null;
         }
     }

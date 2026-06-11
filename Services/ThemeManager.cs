@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
+using Microsoft.Win32;
 using TodoSidebar.Services;
 
 namespace TodoSidebar.Services
@@ -25,6 +26,7 @@ namespace TodoSidebar.Services
             get => _currentTheme;
             set
             {
+                if (_currentTheme == value) return;
                 _currentTheme = value;
                 ApplyTheme(value);
                 SaveThemePreference(value);
@@ -36,7 +38,6 @@ namespace TodoSidebar.Services
         private ThemeManager()
         {
             _dbService = DatabaseService.Instance;
-            
             LoadThemePreference();
         }
 
@@ -55,6 +56,22 @@ namespace TodoSidebar.Services
             _dbService.SetSetting("Theme", theme.ToString());
         }
 
+        /// <summary>
+        /// 检测 Windows 系统当前使用的主题
+        /// </summary>
+        private static bool IsSystemDarkTheme()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                if (key?.GetValue("AppsUseLightTheme") is int value)
+                    return value == 0;
+            }
+            catch { /* 注册表读取失败，默认浅色 */ }
+            return false;
+        }
+
         public void ApplyTheme(ThemeType theme)
         {
             var app = Application.Current;
@@ -64,8 +81,7 @@ namespace TodoSidebar.Services
 
             if (theme == ThemeType.System)
             {
-                // TODO: 检测系统主题
-                theme = ThemeType.Light;
+                theme = IsSystemDarkTheme() ? ThemeType.Dark : ThemeType.Light;
             }
 
             switch (theme)
@@ -78,7 +94,6 @@ namespace TodoSidebar.Services
                     break;
             }
 
-            _currentTheme = theme;
             ThemeChanged?.Invoke(this, theme);
         }
 
@@ -136,7 +151,15 @@ namespace TodoSidebar.Services
 
         private static Color ColorFromHex(string hex)
         {
-            return (Color)ColorConverter.ConvertFromString(hex);
+            try
+            {
+                return (Color)ColorConverter.ConvertFromString(hex);
+            }
+            catch
+            {
+                System.Diagnostics.Debug.WriteLine($"ThemeManager: 无效颜色值 {hex}");
+                return Colors.Gray;
+            }
         }
     }
 }

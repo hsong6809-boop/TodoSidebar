@@ -118,11 +118,11 @@ namespace TodoSidebar.ViewModels
 
             try
             {
-                var downloaded = await _syncService.DownloadRemoteChangesAsync();
+                var (downloaded, conflicts) = await _syncService.DownloadRemoteChangesAsync();
                 LastSyncTime = DateTime.Now;
-                SyncStatusText = $"下载完成：{downloaded} 条数据已下载";
+                SyncStatusText = $"下载完成：{downloaded} 条数据已下载" + (conflicts > 0 ? $"（{conflicts} 条冲突）" : "");
                 OnSyncCompleted?.Invoke();
-                _messageService.ShowMessage($"成功从云端下载 {downloaded} 条数据", "下载完成");
+                _messageService.ShowMessage($"成功从云端下载 {downloaded} 条数据" + (conflicts > 0 ? $"（{conflicts} 条冲突）" : ""), "下载完成");
             }
             catch (Exception ex)
             {

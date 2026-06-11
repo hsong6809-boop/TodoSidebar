@@ -58,7 +58,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `每日任务-Setup-4.0.0.exe`
+2. 运行 `每日任务-Setup-4.1.0.exe`
 3. 按照向导完成安装
 
 ### 首次使用
@@ -98,22 +98,28 @@ TodoSidebar/
 ├── Config/
 │   └── SupabaseConfig.cs     # Supabase 配置
 ├── Models/
-│   ├── TaskItem.cs           # 任务模型
-│   └── SyncModels.cs         # 同步模型
+│   └── TaskItem.cs           # 任务模型
 ├── Interfaces/                # 服务接口定义
+├── Helpers/
+│   └── BlurHelper.cs         # 毛玻璃效果辅助
 ├── Services/
 │   ├── AuthService.cs        # 认证服务
-│   ├── DatabaseService.cs    # 数据库服务（含每日任务完成记录）
+│   ├── DatabaseService.cs    # 数据库服务（WAL 模式 + 并发锁）
 │   ├── SyncService.cs        # 同步服务
+│   ├── SyncLogService.cs     # 同步日志服务
 │   ├── TaskService.cs        # 任务服务
+│   ├── AnimationService.cs   # 动画服务（硬件加速）
+│   ├── NotificationService.cs # 通知提醒服务
+│   ├── ExportService.cs      # 数据导出服务
+│   ├── ThemeManager.cs       # 主题管理
+│   ├── HotkeyService.cs      # 全局快捷键
+│   ├── NetworkMonitor.cs     # 网络状态监控
 │   ├── FeatureFlagService.cs # 功能开关服务
 │   └── LicenseService.cs     # 授权服务骨架
 ├── ViewModels/
 │   ├── MainViewModel.cs      # 主视图模型
 │   ├── SyncViewModel.cs      # 同步视图模型
 │   └── StatisticsViewModel.cs # 统计视图模型
-├── TodoSidebar.Core/          # 核心类库（Models + Interfaces）
-├── TodoSidebar.Services/      # 服务类库
 ├── TodoSidebar.Tests/         # 测试项目
 └── TodoSidebar.iss            # Inno Setup 安装脚本
 ```
@@ -173,6 +179,17 @@ public static string AnonKey { get; set; } = "your-anon-key";
 在 Supabase 控制台的 SQL Editor 中执行 `Database/init.sql` 脚本。
 
 ## 📝 更新日志
+
+### v4.1.0 (2026-06-11)
+- 🏗️ **架构精简**：删除 TodoSidebar.Core 和 TodoSidebar.Services 子项目，所有代码合并到主项目，减少 2100+ 行冗余代码
+- 🐛 **修复侧边栏悬浮失效**：修复 5 层叠加 Bug（动画属性回退、触发条透明像素不可交互、DPI 坐标不匹配、定时器芝诺悖论、状态切换定时器遗漏）
+- 🐛 **修复触发条交互**：背景从渐变改为纯色，解决 `AllowsTransparency=True` 下透明像素不响应鼠标事件
+- 🐛 **修复定时器芝诺悖论**：鼠标轮询定时器不再重复重置悬停延迟定时器，改为 `if (!IsEnabled) Start()` 模式
+- ⚡ **数据库优化**：启用 WAL 模式 + SemaphoreSlim 并发锁，提升读写性能；损坏数据库先备份再重建
+- ⚡ **动画服务优化**：统一 TransformGroup 管理，新增硬件加速缓存
+- ⚡ **统计性能优化**：单次遍历计算所有统计指标，移除冗余 TaskService 依赖
+- ✨ **通知增强**：新增零点定时器自动清空已通知列表
+- 🧹 **资源清理**：App.OnExit 完善事件处理器注销和数据库连接释放
 
 ### v4.0.0 (2026-06-10)
 - ✨ **每日任务逻辑重构**：建立一次，每天自动刷新，完成状态按天独立记录

@@ -80,9 +80,7 @@ namespace TodoSidebar
                 subTask.IsCompleted = !subTask.IsCompleted;
                 _hasChanges = true;
                 UpdateProgress();
-                // 刷新 ItemsSource 显示
-                SubTasksItemsControl.ItemsSource = null;
-                SubTasksItemsControl.ItemsSource = _subTasks;
+                SubTasksItemsControl.Items.Refresh();
             }
         }
 
