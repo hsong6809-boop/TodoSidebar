@@ -1,6 +1,6 @@
 # 每日任务 (TodoSidebar)
 
-一款现代化的 Windows 桌面待办管理应用，支持**侧边栏**和**完整窗口**双模式，带有 Supabase 云同步功能。
+一款现代化的 Windows 桌面待办管理应用，支持**侧边栏**和**完整窗口**双模式，带有 Supabase 云同步功能。采用全新 v2 配色方案，渐变按钮、阴影卡片、流畅动画，视觉体验全面升级。
 
 ## ✨ 功能特性
 
@@ -13,7 +13,6 @@
 - 📅 **截止任务**：带有截止日期的项目制任务，显示倒计时
 - 🎯 **优先级系统**：高/中/低三级优先级，颜色区分
 - 📝 **子任务**：支持为每个任务添加子任务，显示完成进度
-- 🔍 **搜索功能**：快速搜索任务标题、描述、标签
 - 📌 **任务模板**：内置常用模板，一键创建任务
 
 ### 📊 数据统计
@@ -33,9 +32,8 @@
 - ⌨️ **全局快捷键**：
   - `Ctrl+Alt+T`：切换侧边栏/完整模式
   - `Ctrl+N`：新建任务
-  - `Ctrl+F`：搜索
-- 🎨 **毛玻璃效果**：半透明亚克力背景
-- ✨ **流畅动画**：任务添加/完成/删除动画
+- 🎨 **现代 UI v2**：渐变按钮、阴影卡片、细腻圆角，引入 MahApps.Metro.IconPacks 图标库
+- ✨ **流畅动画**：任务添加/完成/删除动画，悬停微交互
 - 🔔 **通知提醒**：截止任务即将到期时提醒
 - 📤 **数据导出**：支持导出为 JSON/CSV 格式
 - 🕐 **实时时间**：侧边栏显示当前日期、时间和星期
@@ -58,7 +56,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `每日任务-Setup-4.1.0.exe`
+2. 运行 `每日任务-Setup-4.2.0.exe`
 3. 按照向导完成安装
 
 ### 首次使用
@@ -159,6 +157,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -o bin\publish
 ## 📦 依赖项
 
 - [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) - MVVM 框架
+- [MahApps.Metro.IconPacks](https://github.com/MahApps/MahApps.Metro.IconPacks) - 图标库
 - [Microsoft.Data.Sqlite](https://docs.microsoft.com/en-us/dotnet/standard/data/sqlite/) - SQLite 数据库
 - [Microsoft.Extensions.DependencyInjection](https://docs.microsoft.com/en-us/dotnet/core/extensions/dependency-injection) - 依赖注入
 - [Supabase](https://github.com/supabase-community/supabase-csharp) - Supabase C# 客户端
@@ -179,6 +178,16 @@ public static string AnonKey { get; set; } = "your-anon-key";
 在 Supabase 控制台的 SQL Editor 中执行 `Database/init.sql` 脚本。
 
 ## 📝 更新日志
+
+### v4.2.0 (2026-06-12)
+- 🎨 **全新配色方案 v2**：温暖白色背景、渐变紫蓝强调色、更清晰的文字层次
+- 🎨 **按钮样式升级**：PrimaryButton 渐变+阴影，新增 MahappsIconButton 图标按钮样式
+- 🎨 **输入框优化**：聚焦时边框加粗+柔和光晕，鼠标悬停变色反馈
+- 🎨 **任务卡片重设计**：更大圆角、微妙阴影、更宽松的间距
+- 🎨 **图标系统升级**：引入 MahApps.Metro.IconPacks，emoji 与 TextBlock 分离渲染更清晰
+- 🎨 **同步按钮移至创建区**：上传/下载按钮从底部工具栏移至任务创建区域，布局更紧凑
+- 🧹 **移除搜索功能**：简化侧边栏界面，移除搜索框和搜索结果列表
+- 🧹 **移除底部工具栏**：完整模式底部不再显示同步/设置按钮，头部图标区统一管理
 
 ### v4.1.0 (2026-06-11)
 - 🏗️ **架构精简**：删除 TodoSidebar.Core 和 TodoSidebar.Services 子项目，所有代码合并到主项目，减少 2100+ 行冗余代码

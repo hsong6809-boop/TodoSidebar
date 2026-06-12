@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:TodoSidebar.ViewModels"
         xmlns:helpers="clr-namespace:TodoSidebar.Helpers"
+        xmlns:mahapps="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:tabler="http://schemas.iconpacks.tabler"
         Title="每日任务"
         Width="450"
         Height="700"
@@ -109,19 +111,6 @@
                             BorderThickness="0,1,0,0"
                             BorderBrush="{DynamicResource BorderBrush}">
                         <StackPanel Orientation="Horizontal">
-                            <Button Content="⬆ 同步上传"
-                                    Style="{StaticResource ToolbarTextButton}"
-                                    Command="{Binding SyncViewModel.UploadCommand}"
-                                    ToolTip="上传到云端"/>
-                            <Button Content="⬇ 同步下载"
-                                    Style="{StaticResource ToolbarTextButton}"
-                                    Command="{Binding SyncViewModel.DownloadCommand}"
-                                    ToolTip="从云端下载"
-                                    Margin="4,0,0,0"/>
-                            <Button Content="⚙ 设置"
-                                    Style="{StaticResource ToolbarTextButton}"
-                                    Click="SettingsButton_Click"
-                                    ToolTip="设置"/>
                         </StackPanel>
                     </Border>
 
@@ -155,15 +144,23 @@
                                 </StackPanel>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Button Content="🚪"
-                                        Style="{StaticResource HeaderIconButton}"
+                                <Button Style="{StaticResource HeaderIconButton}"
+                                        Click="SettingsButton_Click"
+                                        ToolTip="设置">
+                                    <TextBlock Text="⚙" FontSize="16"/>
+                                </Button>
+                                <Button Style="{StaticResource HeaderIconButton}"
                                         Click="LogoutButton_Click"
-                                        ToolTip="退出登录"/>
-                                <Button Content="◀"
-                                        Style="{StaticResource HeaderIconButton}"
+                                        ToolTip="退出登录"
+                                        Margin="2,0,0,0">
+                                    <TextBlock Text="🚪" FontSize="16"/>
+                                </Button>
+                                <Button Style="{StaticResource HeaderIconButton}"
                                         Click="CollapseToSidebar_Click"
                                         ToolTip="收起为侧边栏"
-                                        Margin="2,0,0,0"/>
+                                        Margin="2,0,0,0">
+                                    <TextBlock Text="◀" FontSize="16"/>
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -190,9 +187,14 @@
                     <RadioButton x:Name="TabHistory" Content="历史" 
                                  Style="{StaticResource TabRadioButton}"
                                  Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabStatistics" Content="📊 统计" 
+                    <RadioButton x:Name="TabStatistics" 
                                  Style="{StaticResource TabRadioButton}"
-                                 Checked="Tab_Checked"/>
+                                 Checked="Tab_Checked">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📊" FontSize="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="统计" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </RadioButton>
                 </StackPanel>
             </Border>
 
@@ -286,10 +288,12 @@
                             Padding="12,8"
                             Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="📋 任务模板" 
+                            <TextBlock Text="📋" FontSize="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="任务模板" 
                                        Foreground="{DynamicResource TextBrush}"
                                        FontSize="14"
-                                       VerticalAlignment="Center"/>
+                                       VerticalAlignment="Center"
+                                       Margin="6,0,0,0"/>
                             <Border Background="{DynamicResource AccentBrush}"
                                     CornerRadius="10"
                                     Padding="8,4"
@@ -389,11 +393,14 @@
                                 Padding="12,8"
                                 Margin="0,0,0,12">
                             <StackPanel>
-                                <TextBlock Text="📈 总体概览" 
-                                           Foreground="{DynamicResource TextBrush}"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"
-                                           Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="📈" FontSize="16" VerticalAlignment="Center"/>
+                                    <TextBlock Text="总体概览" 
+                                               Foreground="{DynamicResource TextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Margin="6,0,0,8"/>
+                                </StackPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition/>
@@ -443,11 +450,14 @@
                                 Padding="12,8"
                                 Margin="0,0,0,12">
                             <StackPanel>
-                                <TextBlock Text="📅 今日统计" 
-                                           Foreground="{DynamicResource TextBrush}"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"
-                                           Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="📅" FontSize="16" VerticalAlignment="Center"/>
+                                    <TextBlock Text="今日统计" 
+                                               Foreground="{DynamicResource TextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Margin="6,0,0,8"/>
+                                </StackPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition/>
@@ -490,10 +500,12 @@
                                            FontWeight="Bold"
                                            Foreground="{DynamicResource WarningBrush}"
                                            HorizontalAlignment="Center"/>
-                                <TextBlock Text="🔥 连续完成天数" 
+                                <TextBlock Text="🔥" FontSize="24" HorizontalAlignment="Center"/>
+                                <TextBlock Text="连续完成天数" 
                                            FontSize="12"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                           HorizontalAlignment="Center"/>
+                                           HorizontalAlignment="Center"
+                                           Margin="0,4,0,0"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -529,27 +541,52 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="优先级:" 
                                    Foreground="{DynamicResource TextBrush}"
                                    VerticalAlignment="Center"
                                    Margin="0,0,10,0"/>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <RadioButton Content="高" 
                                          Tag="High"
                                          Foreground="{StaticResource PriorityHighBrush}"
                                          Margin="0,0,15,0"
+                                         VerticalAlignment="Center"
                                          Checked="Priority_Checked"/>
                             <RadioButton Content="中" 
                                          Tag="Medium"
                                          Foreground="{StaticResource PriorityMediumBrush}"
                                          IsChecked="True"
                                          Margin="0,0,15,0"
+                                         VerticalAlignment="Center"
                                          Checked="Priority_Checked"/>
                             <RadioButton Content="低" 
                                          Tag="Low"
                                          Foreground="{StaticResource PriorityLowBrush}"
+                                         VerticalAlignment="Center"
                                          Checked="Priority_Checked"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Style="{StaticResource MahappsIconButton}"
+                                    Command="{Binding SyncViewModel.UploadCommand}"
+                                    ToolTip="上传到云端"
+                                    Padding="10,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="⬆" FontSize="14" VerticalAlignment="Center"/>
+                                    <TextBlock Text="上传" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource MahappsIconButton}"
+                                    Command="{Binding SyncViewModel.DownloadCommand}"
+                                    ToolTip="从云端下载"
+                                    Margin="4,0,0,0"
+                                    Padding="10,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="⬇" FontSize="14" VerticalAlignment="Center"/>
+                                    <TextBlock Text="下载" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </Grid>
                     

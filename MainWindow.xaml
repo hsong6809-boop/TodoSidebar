@@ -2,6 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:TodoSidebar.ViewModels"
+        xmlns:mahapps="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:tabler="http://schemas.iconpacks.tabler"
         Title="Todo Sidebar"
         Width="320"
         WindowStyle="None"
@@ -44,20 +46,19 @@
     </Window.Resources>
 
     <Grid>
-        <!-- 主面板 -->
-        <Border x:Name="MainPanel"
-                Background="{DynamicResource GlassBrush}"
-                BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="0,0,1,0"
-                CornerRadius="0,16,16,0"
-                Margin="0"
-                Width="320">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="15" ShadowDepth="3" Opacity="0.15"/>
-            </Border.Effect>
+                <!-- 主面板 -->
+                <Border x:Name="MainPanel"
+                        Background="{DynamicResource GlassBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,1,0"
+                        CornerRadius="0,16,16,0"
+                        Margin="0"
+                        Width="320">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#000000" BlurRadius="20" ShadowDepth="2" Opacity="0.08"/>
+                    </Border.Effect>
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -107,31 +108,22 @@
                             </StackPanel>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <Button Content="🔍"
-                                    Style="{StaticResource IconButton}"
-                                    Click="SearchButton_Click"
-                                    ToolTip="搜索"
-                                    Width="28"
-                                    Height="28"/>
-                            <Button Content="⚙"
-                                    Style="{StaticResource IconButton}"
+                            <Button Style="{StaticResource MahappsIconButton}"
                                     Click="SettingsButton_Click"
-                                    ToolTip="设置"
-                                    Margin="4,0,0,0"/>
-                            <Button Content="🚪"
-                                    Style="{StaticResource IconButton}"
-                                    Click="LogoutButton_Click"
-                                    ToolTip="退出登录"
-                                    Margin="4,0,0,0"/>
-                            <Button Content="⤢"
-                                    Style="{StaticResource IconButton}"
+                                    ToolTip="设置">
+                                <TextBlock Text="⚙" FontSize="16"/>
+                            </Button>
+                            <Button Style="{StaticResource MahappsIconButton}"
                                     Click="ExpandFullMode_Click"
                                     ToolTip="展开主窗口"
-                                    Margin="4,0,0,0"/>
-                            <Button Content="◀"
-                                    Style="{StaticResource IconButton}"
+                                    Margin="4,0,0,0">
+                                <TextBlock Text="⤢" FontSize="16"/>
+                            </Button>
+                            <Button Style="{StaticResource MahappsIconButton}"
                                     Click="CollapseButton_Click"
-                                    ToolTip="收起"/>
+                                    ToolTip="收起">
+                                <TextBlock Text="◀" FontSize="16"/>
+                            </Button>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -192,87 +184,8 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 搜索框 -->
-                <Border Grid.Row="2"
-                        Padding="8,4"
-                        Visibility="{Binding IsSearchMode, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                BorderBrush="{DynamicResource BorderBrush}"
-                                BorderThickness="1">
-                            <TextBox x:Name="SearchInput"
-                                     Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     Padding="10,8"
-                                     FontSize="13"
-                                     Foreground="{DynamicResource TextBrush}"
-                                     VerticalContentAlignment="Center"
-                                     KeyDown="SearchInput_KeyDown"/>
-                        </Border>
-                        <Button Grid.Column="1"
-                                Content="✕"
-                                Style="{StaticResource IconButton}"
-                                Command="{Binding ClearSearchCommand}"
-                                Width="28"
-                                Height="28"
-                                Margin="4,0,0,0"
-                                ToolTip="清除搜索"/>
-                    </Grid>
-                </Border>
-
-                <!-- 搜索结果列表 -->
-                <ListBox Grid.Row="3"
-                         x:Name="SearchResultsListBox"
-                         ItemsSource="{Binding SearchResults}"
-                         Style="{StaticResource GlassListBox}"
-                         Margin="8,8"
-                         Visibility="{Binding IsSearchMode, Converter={StaticResource BoolToVis}}"
-                         MouseDoubleClick="TaskListBox_MouseDoubleClick">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource CardBrush}"
-                                    CornerRadius="10"
-                                    Padding="12,10"
-                                    Margin="0,2"
-                                    BorderThickness="0,0,3,0"
-                                    BorderBrush="{Binding TypeColor}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0"
-                                            Background="{Binding PriorityColor}"
-                                            CornerRadius="4"
-                                            Width="4"
-                                            Height="24"
-                                            Margin="0,0,10,0"
-                                            VerticalAlignment="Center"/>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Title}"
-                                                   Foreground="{DynamicResource TextBrush}"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"/>
-                                        <TextBlock Text="{Binding TypeText}"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   FontSize="11"
-                                                   Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
                 <!-- 当前任务列表 -->
-                <ListBox Grid.Row="3"
+                <ListBox Grid.Row="2"
                          x:Name="TaskListBox"
                          ItemsSource="{Binding CurrentTasks}"
                          Style="{StaticResource GlassListBox}"
@@ -287,25 +200,29 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border x:Name="TaskCard"
-                                    CornerRadius="10"
-                                    Padding="12,10"
-                                    Margin="0,3"
+                                    CornerRadius="14"
+                                    Padding="16,14"
+                                    Margin="0,2"
                                     Cursor="Hand"
                                     MouseLeftButtonDown="TaskCard_Click">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
-                                        <Setter Property="BorderThickness" Value="0,0,0,0"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
                                         <Style.Triggers>
                                             <!-- 项目制任务：左边框蓝色，带底色 -->
                                             <DataTrigger Binding="{Binding Type}" Value="1">
                                                 <Setter Property="Background" Value="{DynamicResource DeadlineCardBrush}"/>
-                                                <Setter Property="BorderThickness" Value="0,0,3,0"/>
                                                 <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                                                <Setter Property="BorderThickness" Value="1,1,3,1"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="2" Opacity="0.06"/>
+                                </Border.Effect>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
@@ -315,46 +232,43 @@
 
                                     <!-- 任务类型图标 -->
                                     <Border Grid.Column="0"
-                                            CornerRadius="14"
-                                            Width="28"
-                                            Height="28"
-                                            Margin="0,0,10,0"
+                                            CornerRadius="12"
+                                            Width="36"
+                                            Height="36"
+                                            Margin="0,0,14,0"
                                             VerticalAlignment="Center">
                                         <Border.Style>
                                             <Style TargetType="Border">
-                                                <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                                <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Type}" Value="1">
-                                                        <Setter Property="Background" Value="{DynamicResource WarningBrush}"/>
+                                                        <Setter Property="Background" Value="{DynamicResource WarningLightBrush}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="📌"
-                                                   FontSize="14"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   RenderTransformOrigin="0.5,0.5">
-                                            <TextBlock.RenderTransform>
-                                                <RotateTransform Angle="-30"/>
-                                            </TextBlock.RenderTransform>
-                                        </TextBlock>
+                                    <TextBlock x:Name="TypeIcon"
+                                               Text="☀"
+                                               FontSize="18"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AccentBrush}">
+                                    </TextBlock>
                                     </Border>
 
                                     <!-- 任务内容 -->
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Title}"
                                                    Foreground="{DynamicResource TextBrush}"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"
+                                                   FontSize="14"
+                                                   FontWeight="Normal"
                                                    TextTrimming="CharacterEllipsis"/>
                                         <!-- 项目制任务显示截止日期和倒计时 -->
                                         <StackPanel x:Name="DeadlineRow"
                                                     Orientation="Horizontal"
                                                     Margin="0,3,0,0"
                                                     Visibility="Collapsed">
-                                            <TextBlock Text="⏰ "
-                                                       FontSize="10"/>
+                                <TextBlock Text="⏰" FontSize="11"/>
                                             <TextBlock Text="{Binding Deadline, StringFormat='{}{0:MM/dd}'}"
                                                        Foreground="{DynamicResource WarningBrush}"
                                                        FontSize="10"
@@ -369,13 +283,13 @@
                                         <!-- 每日任务显示标签 -->
                                         <StackPanel x:Name="DailyRow"
                                                     Orientation="Horizontal"
-                                                    Margin="0,3,0,0">
-                                            <Border Background="{DynamicResource AccentBrush}"
-                                                    CornerRadius="4"
-                                                    Padding="6,2">
+                                                    Margin="0,6,0,0">
+                                            <Border Background="{DynamicResource AccentSubtleBrush}"
+                                                    CornerRadius="6"
+                                                    Padding="8,3">
                                                 <TextBlock Text="每日"
-                                                           FontSize="9"
-                                                           Foreground="White"
+                                                           FontSize="10"
+                                                           Foreground="{DynamicResource AccentBrush}"
                                                            FontWeight="SemiBold"/>
                                             </Border>
                                         </StackPanel>
@@ -384,8 +298,7 @@
                                                     Orientation="Horizontal"
                                                     Margin="0,3,0,0"
                                                     Visibility="Collapsed">
-                                            <TextBlock Text="📋 "
-                                                       FontSize="10"/>
+                                <TextBlock Text="📋" FontSize="11"/>
                                             <TextBlock Text="{Binding SubTasksProgressText}"
                                                        FontSize="10"
                                                        Foreground="{DynamicResource AccentBrush}"
@@ -465,18 +378,18 @@
                                                 Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButton}"
-                                                Width="26"
-                                                Height="26"
+                                                Width="32"
+                                                Height="32"
                                                 Foreground="{DynamicResource SuccessBrush}"
                                                 FontWeight="Bold"
-                                                Margin="0,0,4,0"/>
+                                                Margin="0,0,6,0"/>
                                         <Button Content="×"
                                                 Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource IconButton}"
-                                                Width="26"
-                                                Height="26"
-                                                Foreground="{DynamicResource DangerBrush}"
+                                                Width="32"
+                                                Height="32"
+                                                Foreground="{DynamicResource TextTertiaryBrush}"
                                                 FontWeight="Bold"/>
                                     </StackPanel>
                                 </Grid>
@@ -486,6 +399,8 @@
                                 <DataTrigger Binding="{Binding Type}" Value="1">
                                     <Setter TargetName="DeadlineRow" Property="Visibility" Value="Visible"/>
                                     <Setter TargetName="DailyRow" Property="Visibility" Value="Collapsed"/>
+                                    <Setter TargetName="TypeIcon" Property="Text" Value="🎯"/>
+                                    <Setter TargetName="TypeIcon" Property="Foreground" Value="{DynamicResource WarningBrush}"/>
                                 </DataTrigger>
                                 <!-- 有子任务时显示进度 -->
                                 <DataTrigger Binding="{Binding HasSubTasks}" Value="True">
@@ -497,17 +412,19 @@
                 </ListBox>
 
                 <!-- 今日已完成任务 -->
-                <Border Grid.Row="4"
+                <Border Grid.Row="3"
                         Padding="12,8"
                         BorderThickness="0,1,0,0"
                         BorderBrush="{DynamicResource BorderBrush}"
                         Visibility="{Binding TodayCompletedTasksCount, Converter={StaticResource ZeroToVis}}">
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <TextBlock Text="✅ 今日已完成"
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <mahapps:PackIconMaterial Kind="CheckCircle" Foreground="{DynamicResource SuccessBrush}" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="今日已完成"
                                        FontSize="12"
                                        FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="4,0,0,0"/>
                             <Border Background="{DynamicResource SuccessBrush}"
                                     CornerRadius="8"
                                     Padding="6,2"
@@ -525,10 +442,7 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <TextBlock Text="✓" 
-                                                   Foreground="{DynamicResource SuccessBrush}"
-                                                   FontSize="12"
-                                                   Margin="0,0,6,0"/>
+                                         <TextBlock Text="✓" Foreground="{DynamicResource SuccessBrush}" FontSize="14" Margin="0,0,6,0"/>
                                         <TextBlock Text="{Binding Title}"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                                    FontSize="12"
@@ -541,9 +455,9 @@
                 </Border>
 
                 <!-- 底部操作栏 -->
-                <Border Grid.Row="5"
+                <Border Grid.Row="4"
                         Background="{DynamicResource GlassLightBrush}"
-                        Padding="12,10"
+                        Padding="16,12"
                         CornerRadius="0,0,16,16"
                         BorderThickness="0,1,0,0"
                         BorderBrush="{DynamicResource BorderBrush}">
@@ -553,24 +467,23 @@
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Button Content="📊 统计"
-                                Style="{StaticResource SidebarButton}"
+                        <Button Style="{StaticResource MahappsIconButton}"
                                 Click="StatisticsButton_Click"
-                                HorizontalAlignment="Left"/>
-                        <Button Content="⬆️"
-                                Style="{StaticResource IconButton}"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="📊" FontSize="16"/>
+                        </Button>
+                        <Button Style="{StaticResource MahappsIconButton}"
                                 Command="{Binding SyncViewModel.UploadCommand}"
                                 ToolTip="上传到云端"
-                                Width="28"
-                                Height="28"
-                                Grid.Column="1"/>
-                        <Button Content="⬇️"
-                                Style="{StaticResource IconButton}"
+                                Grid.Column="1">
+                            <TextBlock Text="⬆" FontSize="16"/>
+                        </Button>
+                        <Button Style="{StaticResource MahappsIconButton}"
                                 Command="{Binding SyncViewModel.DownloadCommand}"
                                 ToolTip="从云端下载"
-                                Width="28"
-                                Height="28"
-                                Grid.Column="2"/>
+                                Grid.Column="2">
+                            <TextBlock Text="⬇" FontSize="16"/>
+                        </Button>
                         
                     </Grid>
                 </Border>
@@ -583,10 +496,10 @@
                 HorizontalAlignment="Left"
                 Cursor="Hand">
             <Border.Background>
-                <SolidColorBrush Color="#6366F1"/>
+                <SolidColorBrush Color="#4F6AFF"/>
             </Border.Background>
             <Border.Effect>
-                <DropShadowEffect BlurRadius="5" ShadowDepth="1" Opacity="0.3"/>
+                <DropShadowEffect Color="#4F6AFF" BlurRadius="6" ShadowDepth="0" Opacity="0.4"/>
             </Border.Effect>
         </Border>
     </Grid>

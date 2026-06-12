@@ -8,7 +8,7 @@
     <RootNamespace>TodoSidebar</RootNamespace>
     <AssemblyName>TodoSidebar</AssemblyName>
     <Nullable>enable</Nullable>
-    <Version>4.1.0</Version>
+    <Version>4.2.0</Version>
     <AssemblyTitle>TodoSidebar</AssemblyTitle>
     <Description>Todo 任务管理侧边栏</Description>
     <Company>TodoSidebar</Company>
@@ -17,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MahApps.Metro.IconPacks" Version="6.2.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="Supabase" Version="1.0.0" />

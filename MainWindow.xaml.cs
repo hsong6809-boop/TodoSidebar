@@ -655,40 +655,10 @@ namespace TodoSidebar
 
         private void SearchButton_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (DataContext is MainViewModel vm)
-                {
-                    vm.IsSearchMode = !vm.IsSearchMode;
-                    if (vm.IsSearchMode)
-                    {
-                        Dispatcher.BeginInvoke(new Action(() => SearchInput.Focus()), DispatcherPriority.Background);
-                    }
-                    else
-                    {
-                        vm.ClearSearchCommand.Execute(null);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"SearchButton_Click error: {ex.Message}");
-            }
         }
 
         private void SearchInput_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter)
-            {
-                try
-                {
-                    if (DataContext is MainViewModel vm)
-                    {
-                        vm.SearchCommand.Execute(null);
-                    }
-                }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"SearchInput_KeyDown error: {ex.Message}"); }
-            }
         }
 
         private void TaskListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
