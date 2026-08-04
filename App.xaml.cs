@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,10 +27,24 @@ namespace TodoSidebar
         /// 全局快捷键服务
         /// </summary>
         private HotkeyService? _hotkeyService;
+
+        // 修复 F1：单实例锁 —— 防止多个实例同时写 SQLite 导致锁库损坏
+        private static Mutex? _singleInstanceMutex;
+        private const string MutexName = "TodoSidebar_SingleInstance_Mutex";
         
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // 单实例检查（最先执行，重复实例直接退出）
+            _singleInstanceMutex = new Mutex(true, MutexName, out bool isNewInstance);
+            if (!isNewInstance)
+            {
+                MessageBox.Show("TodoSidebar 已经在运行中。\n\n请查看系统托盘或任务栏。", 
+                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                Shutdown();
+                return;
+            }
 
             // === 配置依赖注入（最先执行）===
             var serviceCollection = new ServiceCollection();
@@ -43,6 +58,24 @@ namespace TodoSidebar
             // 注册全局异常处理
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+
+            // 修复 F2：每日首次启动自动备份（保留最近10份）
+            try
+            {
+                var exportService = new ExportService(DatabaseService.Instance);
+                var todayKey = "LastAutoBackupDate";
+                var lastBackupDate = DatabaseService.Instance.GetSetting(todayKey);
+                if (lastBackupDate != DateTime.Today.ToString("yyyy-MM-dd"))
+                {
+                    exportService.CreateBackup();
+                    DatabaseService.Instance.SetSetting(todayKey, DateTime.Today.ToString("yyyy-MM-dd"));
+                    System.Diagnostics.Debug.WriteLine("[App] 每日自动备份完成");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"自动备份失败: {ex.Message}");
+            }
 
             try
             {
@@ -113,11 +146,6 @@ namespace TodoSidebar
                     };
                     
                     _hotkeyService.NewTaskRequested += (s, args) =>
-                    {
-                        try { mainWindow?.Activate(); } catch (Exception) { /* Window may have been closed */ }
-                    };
-                    
-                    _hotkeyService.SearchRequested += (s, args) =>
                     {
                         try { mainWindow?.Activate(); } catch (Exception) { /* Window may have been closed */ }
                     };
@@ -202,6 +230,19 @@ namespace TodoSidebar
             {
                 System.Diagnostics.Debug.WriteLine($"OnExit cleanup error: {ex.Message}");
             }
+            
+            // 释放单实例锁
+            try
+            {
+                _singleInstanceMutex?.ReleaseMutex();
+                _singleInstanceMutex?.Dispose();
+                _singleInstanceMutex = null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Mutex release error: {ex.Message}");
+            }
+            
             base.OnExit(e);
         }
     }

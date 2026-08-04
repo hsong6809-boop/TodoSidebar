@@ -38,12 +38,12 @@ namespace TodoSidebar.Tests
         }
 
         [Fact]
-        public void Unprotect_PlainText_ShouldReturnAsIs()
+        public void Unprotect_PlainText_ShouldThrow()
         {
-            // 兼容旧版明文格式
+            // 安全修复：解密失败必须抛异常，绝不返回明文（防止误把密文当明文用）
             var plainText = "old format session data";
-            var result = DataProtectionHelper.Unprotect(plainText);
-            result.Should().Be(plainText);
+            Action act = () => DataProtectionHelper.Unprotect(plainText);
+            act.Should().Throw<Exception>();
         }
 
         [Fact]

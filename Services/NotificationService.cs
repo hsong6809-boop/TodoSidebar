@@ -16,6 +16,7 @@ namespace TodoSidebar.Services
         private readonly HashSet<int> _notifiedTasks = new();
         private readonly DatabaseService _dbService;
         private readonly TaskService _taskService;
+        private DateTime _lastCheckDate = DateTime.Today;
 
         public event EventHandler<string>? NotificationRequested;
 
@@ -30,18 +31,22 @@ namespace TodoSidebar.Services
             };
             _checkTimer.Tick += CheckTimer_Tick;
 
-            // 每天零点清空已通知列表
-            _midnightTimer = new DispatcherTimer();
+            // 修复 B3：每天零点清空已通知列表 —— 用日期变化检测代替整点巧合判断
+            // 旧实现 now.Hour==0 && now.Minute==0 几乎不可能被 DispatcherTimer 恰好命中
+            _midnightTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(60)
+            };
             _midnightTimer.Tick += (s, e) =>
             {
                 var now = DateTime.Now;
-                if (now.Hour == 0 && now.Minute == 0)
+                if (now.Date != _lastCheckDate)
                 {
+                    _lastCheckDate = now.Date;
                     _notifiedTasks.Clear();
+                    System.Diagnostics.Debug.WriteLine($"[NotificationService] 跨天，已清空通知列表: {now:yyyy-MM-dd}");
                 }
-                _midnightTimer.Interval = TimeSpan.FromSeconds(60);
             };
-            _midnightTimer.Interval = TimeSpan.FromMinutes(1);
             _midnightTimer.Start();
         }
 
@@ -68,6 +73,11 @@ namespace TodoSidebar.Services
             {
                 var deadlineTasks = _taskService.GetDeadlineTasks();
 
+                // 修复 F3：通知聚合 —— 收集所有待通知任务，一条通知展示，避免窗口重叠
+                var expiredTasks = new List<string>();
+                var dueSoonTasks = new List<string>();
+                var dueTodayTasks = new List<string>();
+
                 foreach (var task in deadlineTasks)
                 {
                     if (task.Deadline == null || _notifiedTasks.Contains(task.Id))
@@ -78,21 +88,35 @@ namespace TodoSidebar.Services
                     // 已过期
                     if (timeLeft.TotalMinutes <= 0)
                     {
-                        ShowNotification($"🔴 任务已过期", $"「{task.Title}」已经过期");
+                        expiredTasks.Add(task.Title);
                         _notifiedTasks.Add(task.Id);
                     }
                     // 即将到期（1小时内）
                     else if (timeLeft.TotalHours <= 1)
                     {
-                        ShowNotification($"⏰ 任务即将到期", $"「{task.Title}」将在 {(int)timeLeft.TotalMinutes} 分钟后到期");
+                        dueSoonTasks.Add($"{task.Title}（{(int)timeLeft.TotalMinutes} 分钟后）");
                         _notifiedTasks.Add(task.Id);
                     }
                     // 今天到期
                     else if (task.Deadline.Value.Date == DateTime.Today && timeLeft.TotalHours > 1)
                     {
-                        ShowNotification($"📅 今日到期任务", $"「{task.Title}」今天到期");
+                        dueTodayTasks.Add(task.Title);
                         _notifiedTasks.Add(task.Id);
                     }
+                }
+
+                // 聚合显示
+                var notifications = new List<string>();
+                if (expiredTasks.Count > 0)
+                    notifications.Add($"🔴 已过期（{expiredTasks.Count}）：{string.Join("、", expiredTasks.Take(5))}{(expiredTasks.Count > 5 ? " 等" : "")}");
+                if (dueSoonTasks.Count > 0)
+                    notifications.Add($"⏰ 即将到期（{dueSoonTasks.Count}）：{string.Join("、", dueSoonTasks.Take(5))}{(dueSoonTasks.Count > 5 ? " 等" : "")}");
+                if (dueTodayTasks.Count > 0)
+                    notifications.Add($"📅 今日到期（{dueTodayTasks.Count}）：{string.Join("、", dueTodayTasks.Take(5))}{(dueTodayTasks.Count > 5 ? " 等" : "")}");
+
+                if (notifications.Count > 0)
+                {
+                    ShowNotification("⏰ 任务提醒", string.Join("\n", notifications));
                 }
             }
             catch (Exception ex)

@@ -14,8 +14,10 @@ namespace TodoSidebar.Config
     {
         private static bool _loaded = false;
 
-        private static string _url = "https://rtszvchilzhcgdvlopdi.supabase.co";
-        private static string _anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0c3p2Y2hpbHpoY2dkdmxvcGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NzE0NzIsImV4cCI6MjA5NjU0NzQ3Mn0.-odGCeEO4YRb93jVJFiOo5ZZctYOva1qwK8pZCVtEHU";
+        // 占位符 —— 真实配置必须通过环境变量或 AppData/TodoSidebar/supabase.json 提供！
+        // 未配置时 GetConfigError() 返回错误说明，避免应用静默使用无效凭据。
+        private static string _url = string.Empty;
+        private static string _anonKey = string.Empty;
 
         public static string Url
         {
@@ -27,6 +29,35 @@ namespace TodoSidebar.Config
         {
             get { EnsureLoaded(); return _anonKey; }
             set { _anonKey = value; }
+        }
+
+        /// <summary>
+        /// 配置是否完整（URL 和 AnonKey 均非空）。
+        /// 启动时调用，缺失时提示用户配置。
+        /// </summary>
+        public static bool IsConfigured
+        {
+            get
+            {
+                EnsureLoaded();
+                return !string.IsNullOrWhiteSpace(_url) && !string.IsNullOrWhiteSpace(_anonKey);
+            }
+        }
+
+        /// <summary>
+        /// 获取配置缺失的错误说明（用于启动引导）。
+        /// </summary>
+        public static string GetConfigError()
+        {
+            EnsureLoaded();
+            if (string.IsNullOrWhiteSpace(_url) && string.IsNullOrWhiteSpace(_anonKey))
+                return "未配置 Supabase URL 和 AnonKey。请设置环境变量 SUPABASE_URL / SUPABASE_ANON_KEY，"
+                     + "或在 %AppData%\\TodoSidebar\\supabase.json 中配置。";
+            if (string.IsNullOrWhiteSpace(_url))
+                return "未配置 Supabase URL。请设置环境变量 SUPABASE_URL 或在 supabase.json 中配置。";
+            if (string.IsNullOrWhiteSpace(_anonKey))
+                return "未配置 Supabase AnonKey。请设置环境变量 SUPABASE_ANON_KEY 或在 supabase.json 中配置。";
+            return string.Empty;
         }
 
         public static bool AutoRefreshToken { get; set; } = true;

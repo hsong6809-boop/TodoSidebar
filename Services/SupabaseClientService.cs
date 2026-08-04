@@ -63,6 +63,15 @@ namespace TodoSidebar.Services
         /// </summary>
         private static Supabase.Client CreateClient()
         {
+            // 安全加固：配置缺失时立即抛出明确错误，而不是用空凭据静默请求
+            if (!SupabaseConfig.IsConfigured)
+                throw new InvalidOperationException(
+                    $"Supabase 配置缺失：{SupabaseConfig.GetConfigError()}\n\n"
+                    + "配置方式（任选其一）：\n"
+                    + "1. 设置环境变量 SUPABASE_URL 和 SUPABASE_ANON_KEY\n"
+                    + "2. 创建文件 %AppData%\\TodoSidebar\\supabase.json：\n"
+                    + "   { \"Url\": \"https://xxx.supabase.co\", \"AnonKey\": \"你的anon_key\" }");
+
             var options = new SupabaseOptions
             {
                 AutoRefreshToken = SupabaseConfig.AutoRefreshToken

@@ -162,8 +162,10 @@ namespace TodoSidebar
                 return;
             }
             
+            // 修复 B5：禁用注册按钮（而不是登录按钮），文案恢复为"注册"
+            RegisterButton.IsEnabled = false;
+            RegisterButton.Content = "注册中...";
             LoginButton.IsEnabled = false;
-            LoginButton.Content = "注册中...";
             HideError();
             
             try
@@ -185,8 +187,9 @@ namespace TodoSidebar
             }
             finally
             {
+                RegisterButton.IsEnabled = true;
+                RegisterButton.Content = "注册";
                 LoginButton.IsEnabled = true;
-                LoginButton.Content = "登录";
             }
         }
         

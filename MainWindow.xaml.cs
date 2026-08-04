@@ -653,13 +653,12 @@ namespace TodoSidebar
 
         #region 搜索
 
-        private void SearchButton_Click(object sender, RoutedEventArgs e)
-        {
-        }
+        // 修复 B6：v4.2.0 已移除搜索 UI，此处不再保留空方法。
+        // MainViewModel 中保留了 SearchTasks 数据库查询能力，未来重新加 UI 时可直接绑定 SearchCommand。
 
-        private void SearchInput_KeyDown(object sender, KeyEventArgs e)
-        {
-        }
+        #endregion
+
+        #region 任务详情
 
         private void TaskListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {

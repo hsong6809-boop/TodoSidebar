@@ -227,6 +227,7 @@ namespace TodoSidebar.Services
             cmd.CommandText = @"
                 UPDATE Tasks SET
                     Title = @title,
+                    Type = @type,
                     Priority = @priority,
                     IsCompleted = @completed,
                     Deadline = @deadline,
@@ -242,6 +243,7 @@ namespace TodoSidebar.Services
             ";
             cmd.Parameters.AddWithValue("@id", task.Id);
             cmd.Parameters.AddWithValue("@title", task.Title);
+            cmd.Parameters.AddWithValue("@type", (int)task.Type);
             cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
             cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
             cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
@@ -310,7 +312,7 @@ namespace TodoSidebar.Services
                 sql += " AND IsCompleted = @completed";
                 cmd.Parameters.AddWithValue("@completed", completed.Value ? 1 : 0);
             }
-            sql += " ORDER BY CreatedAt DESC";
+            sql += " ORDER BY SortOrder ASC, CreatedAt DESC";
             
             cmd.CommandText = sql;
             using var reader = cmd.ExecuteReader();

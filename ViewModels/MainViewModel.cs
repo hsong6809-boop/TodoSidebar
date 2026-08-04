@@ -423,8 +423,7 @@ namespace TodoSidebar.ViewModels
             CurrentTasks.CollectionChanged -= OnTaskCollectionChanged;
             TodayCompletedTasks.CollectionChanged -= OnTaskCollectionChanged;
             SyncViewModel.OnSyncCompleted = null;
-            _midnightTimer?.Stop();
-            _midnightTimer?.Stop();
+            _midnightTimer?.Stop();  // 修复 B8：移除重复调用
         }
     }
 }

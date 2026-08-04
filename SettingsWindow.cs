@@ -144,7 +144,9 @@ namespace TodoSidebar
                 var btnPanel = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
                 btnPanel.Children.Add(CreateSmallButton("📤 导出JSON", ExportJson_Click));
                 btnPanel.Children.Add(CreateSmallButton("📤 导出CSV", ExportCsv_Click));
+                btnPanel.Children.Add(CreateSmallButton("📤 导出MD", ExportMarkdown_Click));
                 btnPanel.Children.Add(CreateSmallButton("📥 导入", Import_Click));
+                btnPanel.Children.Add(CreateSmallButton("📥 导入CSV", ImportCsv_Click));
                 btnPanel.Children.Add(CreateSmallButton("💾 备份", Backup_Click));
                 card.Children.Add(btnPanel);
             }));
@@ -332,6 +334,51 @@ namespace TodoSidebar
                 catch (Exception ex)
                 {
                     MessageBox.Show($"导出失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        // 修复 F5：导出 Markdown
+        private void ExportMarkdown_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "Markdown 文件|*.md",
+                FileName = $"todo_export_{DateTime.Now:yyyyMMdd}.md"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _exportService.ExportToMarkdown(dialog.FileName);
+                    MessageBox.Show("导出成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"导出失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        // 修复 F5：导入 CSV
+        private void ImportCsv_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "CSV 文件|*.csv" };
+            if (dialog.ShowDialog() == true)
+            {
+                var result = MessageBox.Show("导入将添加到现有数据，是否继续？", "确认",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result == MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        var count = _exportService.ImportFromCsv(dialog.FileName);
+                        MessageBox.Show($"成功导入 {count} 条任务！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"导入失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                 }
             }
         }

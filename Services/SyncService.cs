@@ -256,9 +256,30 @@ namespace TodoSidebar.Services
                 var syncTasks = new List<SyncTask>();
                 var taskMapping = new List<(int localId, SyncTask syncTask)>();
                 
+                // 今日日期（用于每日任务完成状态同步）
+                var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+                
                 foreach (var task in dirtyTasks)
                 {
                     var syncId = string.IsNullOrEmpty(task.SyncId) ? Guid.NewGuid() : Guid.Parse(task.SyncId);
+                    
+                    // 修复 B2：每日任务的"今日完成"状态 → 云端 is_completed/completed_at
+                    // 本地 DailyTaskCompletion 表记录按天完成状态，同步时转换为云端布尔字段
+                    bool syncCompleted;
+                    DateTime? syncCompletedAt;
+                    
+                    if (task.Type == TaskType.Daily)
+                    {
+                        var todayCompleted = _dbService.IsDailyTaskCompletedOnDate(task.Id, todayStr);
+                        syncCompleted = todayCompleted;
+                        syncCompletedAt = todayCompleted ? DateTime.Now : (DateTime?)null;
+                    }
+                    else
+                    {
+                        syncCompleted = task.IsCompleted;
+                        syncCompletedAt = task.CompletedAt;
+                    }
+                    
                     var syncTask = new SyncTask
                     {
                         Id = syncId,
@@ -266,10 +287,10 @@ namespace TodoSidebar.Services
                         Title = task.Title,
                         Type = (int)task.Type,
                         Priority = (int)task.Priority,
-                        IsCompleted = task.IsCompleted,
+                        IsCompleted = syncCompleted,
                         CreatedAt = task.CreatedAt,
                         Deadline = task.Deadline,
-                        CompletedAt = task.CompletedAt,
+                        CompletedAt = syncCompletedAt,
                         Description = task.Description,
                         Tags = task.Tags,
                         SortOrder = task.SortOrder,
@@ -372,16 +393,37 @@ namespace TodoSidebar.Services
                 {
                     try
                     {
+                        // 修复 B2：每日任务的云端完成状态 → 本地 DailyTaskCompletion 表
+                        // 云端 is_completed=true 且 completed_at 是今天 → 标记本地今日完成
+                        if (remoteTask.Type == (int)TaskType.Daily 
+                            && remoteTask.IsCompleted 
+                            && remoteTask.CompletedAt.HasValue 
+                            && remoteTask.CompletedAt.Value.Date == DateTime.Today)
+                        {
+                            var existingBySyncId = _dbService.GetTaskBySyncId(remoteTask.Id.ToString());
+                            if (existingBySyncId != null)
+                            {
+                                var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+                                if (!_dbService.IsDailyTaskCompletedOnDate(existingBySyncId.Id, todayStr))
+                                {
+                                    _dbService.MarkDailyTaskCompleted(existingBySyncId.Id, todayStr);
+                                    downloaded++;
+                                }
+                            }
+                        }
+                        
                         var localTask = new TaskItem
                         {
                             SyncId = remoteTask.Id.ToString(),
                             Title = remoteTask.Title,
                             Type = (TaskType)remoteTask.Type,
                             Priority = (TaskPriority)remoteTask.Priority,
-                            IsCompleted = remoteTask.IsCompleted,
+                            // 修复 B2：每日任务的完成状态不写入本地 IsCompleted 字段
+                            // （本地每日任务完成状态只存 DailyTaskCompletion 表，IsCompleted 恒为 false）
+                            IsCompleted = remoteTask.Type == (int)TaskType.Daily ? false : remoteTask.IsCompleted,
                             CreatedAt = remoteTask.CreatedAt,
                             Deadline = remoteTask.Deadline,
-                            CompletedAt = remoteTask.CompletedAt,
+                            CompletedAt = remoteTask.Type == (int)TaskType.Daily ? null : remoteTask.CompletedAt,
                             Description = remoteTask.Description,
                             Tags = remoteTask.Tags,
                             SortOrder = remoteTask.SortOrder,

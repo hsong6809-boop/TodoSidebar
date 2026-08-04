@@ -91,10 +91,23 @@ namespace TodoSidebar.Services
                         DeleteSessionFile();
                     }
                 }
+
+                // 修复：session 不存在/过期/恢复失败时，确保状态一致（避免 CurrentUser 残留旧值）
+                if (CurrentUser != null)
+                {
+                    CurrentUser = null;
+                    LoginStateChanged?.Invoke(this, false);
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"AuthService Initialize error: {ex.Message}");
+                // 修复：初始化失败时同样清理状态
+                if (CurrentUser != null)
+                {
+                    CurrentUser = null;
+                    LoginStateChanged?.Invoke(this, false);
+                }
             }
         }
         

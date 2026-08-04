@@ -10,7 +10,9 @@ namespace TodoSidebar.Services
     {
         void ExportToJson(string filePath);
         void ExportToCsv(string filePath);
+        void ExportToMarkdown(string filePath);
         int ImportFromJson(string filePath);
+        int ImportFromCsv(string filePath);
         string CreateBackup();
         int RestoreBackup(string backupPath);
     }

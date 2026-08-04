@@ -43,8 +43,10 @@ namespace TodoSidebar.Services
         {
             var daily = GetDailyTasks();
             var deadline = GetDeadlineTasks();
+            // 修复 B7：优先按 SortOrder（用户拖拽顺序）排列，其次按类型/截止日期
             return daily.Concat(deadline)
-                .OrderBy(t => t.Type)
+                .OrderBy(t => t.SortOrder)
+                .ThenBy(t => t.Type)
                 .ThenBy(t => t.Deadline)
                 .ToList();
         }

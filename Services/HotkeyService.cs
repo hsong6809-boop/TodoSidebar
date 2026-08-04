@@ -25,7 +25,7 @@ namespace TodoSidebar.Services
         // 热键 ID
         private const int HOTKEY_TOGGLE_SIDEBAR = 1;
         private const int HOTKEY_NEW_TASK = 2;
-        private const int HOTKEY_SEARCH = 3;
+        // 修复 B6：搜索功能已移除，不再注册 HOTKEY_SEARCH (Ctrl+F)
 
         private IntPtr _windowHandle;
         private HwndSource? _source;
@@ -33,7 +33,6 @@ namespace TodoSidebar.Services
 
         public event EventHandler? ToggleSidebarRequested;
         public event EventHandler? NewTaskRequested;
-        public event EventHandler? SearchRequested;
 
         public void RegisterHotkeys(Window window)
         {
@@ -51,10 +50,6 @@ namespace TodoSidebar.Services
             if (!RegisterHotKey(_windowHandle, HOTKEY_NEW_TASK, MOD_CONTROL, 0x4E))
                 System.Diagnostics.Debug.WriteLine("[HotkeyService] Failed to register Ctrl+N");
 
-            // Ctrl+F: 搜索
-            if (!RegisterHotKey(_windowHandle, HOTKEY_SEARCH, MOD_CONTROL, 0x46))
-                System.Diagnostics.Debug.WriteLine("[HotkeyService] Failed to register Ctrl+F");
-
             _isRegistered = true;
         }
 
@@ -64,7 +59,6 @@ namespace TodoSidebar.Services
 
             UnregisterHotKey(_windowHandle, HOTKEY_TOGGLE_SIDEBAR);
             UnregisterHotKey(_windowHandle, HOTKEY_NEW_TASK);
-            UnregisterHotKey(_windowHandle, HOTKEY_SEARCH);
 
             _source?.RemoveHook(HwndHook);
             _isRegistered = false;
@@ -92,11 +86,6 @@ namespace TodoSidebar.Services
 
                     case HOTKEY_NEW_TASK:
                         NewTaskRequested?.Invoke(this, EventArgs.Empty);
-                        handled = true;
-                        break;
-
-                    case HOTKEY_SEARCH:
-                        SearchRequested?.Invoke(this, EventArgs.Empty);
                         handled = true;
                         break;
                 }
