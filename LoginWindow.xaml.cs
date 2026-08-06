@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using TodoSidebar.Config;
 using TodoSidebar.ViewModels;
 using TodoSidebar.Services;
 
@@ -30,15 +31,8 @@ namespace TodoSidebar
                     EmailTextBox.Text = savedEmail;
                     if (!string.IsNullOrEmpty(encryptedPassword))
                     {
-                        try
-                        {
-                            PasswordBox.Password = DataProtectionHelper.Unprotect(encryptedPassword);
-                        }
-                        catch
-                        {
-                            // 解密失败（可能是旧版明文格式），清除并重新保存
-                            PasswordBox.Password = "";
-                        }
+                        // 解密失败（换机器/旧明文数据）时置空，不展示错误凭据
+                        PasswordBox.Password = DataProtectionHelper.Unprotect(encryptedPassword) ?? "";
                     }
                     RememberMeCheckBox.IsChecked = true;
                 }
@@ -128,7 +122,8 @@ namespace TodoSidebar
                     // 保存凭据（如果勾选了记住我）
                     SaveCredentials(email, password);
                     
-                    // 登录成功，初始化 ViewModel 并打开主窗口
+                    // 登录成功：先释放旧 ViewModel（避免定时器/订阅泄漏），再初始化新实例
+                    App.SharedViewModel?.Dispose();
                     App.SharedViewModel = new ViewModels.MainViewModel();
                     Services.NotificationService.Instance.Start();
                     var mainWindow = new MainWindow();
@@ -137,17 +132,42 @@ namespace TodoSidebar
                 }
                 else
                 {
-                    ShowError(result.Error ?? "登录失败");
+                    var errMsg = (result.Error ?? "登录失败") + BuildConfigDiag();
+                    LogLoginDiag(errMsg);
+                    ShowError(errMsg);
                 }
             }
             catch (Exception ex)
             {
-                ShowError($"登录出错: {ex.Message}");
+                var errMsg = $"登录出错: {ex.Message}" + BuildConfigDiag();
+                LogLoginDiag(errMsg);
+                ShowError(errMsg);
             }
             finally
             {
                 LoginButton.IsEnabled = true;
                 LoginButton.Content = "登录";
+            }
+        }
+
+        /// <summary>
+        /// 登录失败时把完整错误 + 配置诊断写入日志文件，便于排查（不回显完整 Key）。
+        /// </summary>
+        private static void LogLoginDiag(string message)
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "TodoSidebar", "logs");
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.AppendAllText(
+                    System.IO.Path.Combine(dir, "login_diag.txt"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LogLoginDiag error: {ex.Message}");
             }
         }
         
@@ -162,10 +182,8 @@ namespace TodoSidebar
                 return;
             }
             
-            // 修复 B5：禁用注册按钮（而不是登录按钮），文案恢复为"注册"
-            RegisterButton.IsEnabled = false;
-            RegisterButton.Content = "注册中...";
             LoginButton.IsEnabled = false;
+            LoginButton.Content = "注册中...";
             HideError();
             
             try
@@ -187,9 +205,8 @@ namespace TodoSidebar
             }
             finally
             {
-                RegisterButton.IsEnabled = true;
-                RegisterButton.Content = "注册";
                 LoginButton.IsEnabled = true;
+                LoginButton.Content = "登录";
             }
         }
         
@@ -226,6 +243,28 @@ namespace TodoSidebar
         {
             ErrorText.Text = message;
             ErrorText.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// 登录失败时附加配置诊断（URL 与 Key 前缀），用于排查 Invalid API key。
+        /// 仅显示 Key 前 24 字符，不回显完整凭据。
+        /// </summary>
+        private static string BuildConfigDiag()
+        {
+            string url = "?", key = "?";
+            try { url = SupabaseConfig.Url; } catch (Exception ex) { url = "(读取异常: " + ex.Message + ")"; }
+            try
+            {
+                var k = SupabaseConfig.AnonKey;
+                key = string.IsNullOrEmpty(k)
+                    ? "(空)"
+                    : k.Substring(0, Math.Min(24, k.Length)) + $"... 长度={k.Length}";
+            }
+            catch (Exception ex)
+            {
+                key = "(读取异常: " + ex.Message + ")";
+            }
+            return $"\n\n[诊断] URL = {url}\nKey = {key}";
         }
         
         private void HideError()

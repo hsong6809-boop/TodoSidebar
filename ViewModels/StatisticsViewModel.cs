@@ -61,7 +61,7 @@ namespace TodoSidebar.ViewModels
 
             // 单次遍历计算多个统计指标
             int total = 0, completed = 0, overdue = 0, highPrio = 0;
-            int dailyCount = 0, dailyCompleted = 0, deadlineCount = 0, deadlineCompleted = 0;
+            int dailyCount = 0, deadlineCount = 0, deadlineCompleted = 0;
             
             foreach (var task in allTasks)
             {
@@ -89,8 +89,8 @@ namespace TodoSidebar.ViewModels
             // 今日统计（结合 DailyTaskCompletion 表）
             TodayTotal = dailyCount + deadlineCount;
             var todayStr = today.ToString("yyyy-MM-dd");
-            var todayCompletedDaily = dailyCompletionRecords.ContainsKey(todayStr) 
-                ? dailyCompletionRecords[todayStr].Count : 0;
+            var todayCompletedDaily = dailyCompletionRecords.TryGetValue(todayStr, out var todaySet)
+                ? todaySet.Count : 0;
             TodayCompleted = todayCompletedDaily + deadlineCompleted;
             TodayCompletionRate = TodayTotal > 0 ? (double)TodayCompleted / TodayTotal : 0;
 
@@ -107,8 +107,7 @@ namespace TodoSidebar.ViewModels
                 {
                     Type = "每日任务",
                     Count = dailyCount,
-                    Completed = dailyCompletionRecords.ContainsKey(todayStr) 
-                        ? dailyCompletionRecords[todayStr].Count : 0,
+                    Completed = todayCompletedDaily,
                     Color = "#5B5FE9"
                 },
                 new TaskTypeStats
@@ -133,11 +132,11 @@ namespace TodoSidebar.ViewModels
             while (true)
             {
                 var dateStr = date.ToString("yyyy-MM-dd");
-                if (!dailyCompletionRecords.ContainsKey(dateStr))
+                if (!dailyCompletionRecords.TryGetValue(dateStr, out var dateSet))
                     break;
                 
                 // 当天完成数 >= 每日任务总数才算全部完成
-                if (dailyCompletionRecords[dateStr].Count < dailyTaskCount)
+                if (dateSet.Count < dailyTaskCount)
                     break;
 
                 streak++;
@@ -156,8 +155,8 @@ namespace TodoSidebar.ViewModels
             {
                 var date = DateTime.Today.AddDays(-i);
                 var dateStr = date.ToString("yyyy-MM-dd");
-                var completedCount = dailyCompletionRecords.ContainsKey(dateStr) 
-                    ? dailyCompletionRecords[dateStr].Count : 0;
+                var completedCount = dailyCompletionRecords.TryGetValue(dateStr, out var dateSet)
+                    ? dateSet.Count : 0;
 
                 stats.Add(new DailyStats
                 {

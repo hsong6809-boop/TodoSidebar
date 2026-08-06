@@ -7,22 +7,46 @@ using TodoSidebar.Models;
 
 namespace TodoSidebar.Converters
 {
+    // 统一颜色常量（与 TaskItem.PriorityColor / App.xaml 资源保持一致）
+    internal static class Palette
+    {
+        // 优先级色
+        public static readonly Brush PriorityHigh = Freeze("#EF4444");   // Red-500
+        public static readonly Brush PriorityMedium = Freeze("#F59E0B"); // Amber-500
+        public static readonly Brush PriorityLow = Freeze("#10B981");    // Emerald-500
+        // 截止紧急度色
+        public static readonly Brush UrgencyOverdue = Freeze("#FF5A5A");
+        public static readonly Brush UrgencyToday = Freeze("#FF9632");
+        public static readonly Brush UrgencySoon = Freeze("#FFC832");
+        public static readonly Brush UrgencySafe = Freeze("#10B981");
+        // 完成状态色
+        public static readonly Brush CompletedGreen = Freeze("#10B981");
+        public static readonly Brush MutedGray = Freeze("#666680");
+        // 子任务正常文字色
+        public static readonly Brush SubTaskText = Freeze("#DCDCE6");
+
+        private static Brush Freeze(string hex)
+        {
+            var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+            brush.Freeze();
+            return brush;
+        }
+    }
+
     // 优先级转颜色
     public class PriorityToColorConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is TaskPriority priority)
-            {
-                return priority switch
+            return value is TaskPriority priority
+                ? priority switch
                 {
-                    TaskPriority.High => new SolidColorBrush(Color.FromRgb(255, 90, 90)),
-                    TaskPriority.Medium => new SolidColorBrush(Color.FromRgb(255, 184, 0)),
-                    TaskPriority.Low => new SolidColorBrush(Color.FromRgb(0, 196, 140)),
-                    _ => new SolidColorBrush(Color.FromRgb(255, 184, 0))
-                };
-            }
-            return new SolidColorBrush(Color.FromRgb(255, 184, 0));
+                    TaskPriority.High => Palette.PriorityHigh,
+                    TaskPriority.Medium => Palette.PriorityMedium,
+                    TaskPriority.Low => Palette.PriorityLow,
+                    _ => Palette.PriorityMedium
+                }
+                : Palette.PriorityMedium;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -137,15 +161,15 @@ namespace TodoSidebar.Converters
                 var daysLeft = (deadline - DateTime.Now).TotalDays;
 
                 if (daysLeft < 0)
-                    return new SolidColorBrush(Color.FromRgb(255, 90, 90));
+                    return Palette.UrgencyOverdue;
                 else if (daysLeft <= 1)
-                    return new SolidColorBrush(Color.FromRgb(255, 150, 50));
+                    return Palette.UrgencyToday;
                 else if (daysLeft <= 3)
-                    return new SolidColorBrush(Color.FromRgb(255, 200, 50));
+                    return Palette.UrgencySoon;
                 else
-                    return new SolidColorBrush(Color.FromRgb(0, 196, 140));
+                    return Palette.UrgencySafe;
             }
-            return new SolidColorBrush(Color.FromRgb(0, 196, 140));
+            return Palette.UrgencySafe;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -186,13 +210,9 @@ namespace TodoSidebar.Converters
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is bool isCompleted)
-            {
-                return isCompleted
-                    ? new SolidColorBrush(Color.FromRgb(0, 196, 140))
-                    : new SolidColorBrush(Color.FromRgb(102, 102, 128));
-            }
-            return new SolidColorBrush(Color.FromRgb(102, 102, 128));
+            return value is bool isCompleted && isCompleted
+                ? Palette.CompletedGreen
+                : Palette.MutedGray;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -228,7 +248,7 @@ namespace TodoSidebar.Converters
         {
             if (value is bool isCompleted && isCompleted)
                 return TextDecorations.Strikethrough;
-            return null;
+            return Binding.DoNothing;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -243,8 +263,8 @@ namespace TodoSidebar.Converters
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is bool isCompleted && isCompleted)
-                return new SolidColorBrush(Color.FromRgb(102, 102, 128)); // 暗灰色
-            return new SolidColorBrush(Color.FromRgb(220, 220, 230)); // 正常文字色
+                return Palette.MutedGray;
+            return Palette.SubTaskText;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

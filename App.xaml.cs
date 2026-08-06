@@ -1,6 +1,6 @@
 using System;
+using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,24 +27,17 @@ namespace TodoSidebar
         /// 全局快捷键服务
         /// </summary>
         private HotkeyService? _hotkeyService;
-
-        // 修复 F1：单实例锁 —— 防止多个实例同时写 SQLite 导致锁库损坏
-        private static Mutex? _singleInstanceMutex;
-        private const string MutexName = "TodoSidebar_SingleInstance_Mutex";
         
-        protected override void OnStartup(StartupEventArgs e)
+        /// <summary>
+        /// 应用日志文件路径（%APPDATA%\TodoSidebar\logs\app.log）
+        /// </summary>
+        private static readonly string LogFilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TodoSidebar", "logs", "app.log");
+
+        protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-
-            // 单实例检查（最先执行，重复实例直接退出）
-            _singleInstanceMutex = new Mutex(true, MutexName, out bool isNewInstance);
-            if (!isNewInstance)
-            {
-                MessageBox.Show("TodoSidebar 已经在运行中。\n\n请查看系统托盘或任务栏。", 
-                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                Shutdown();
-                return;
-            }
 
             // === 配置依赖注入（最先执行）===
             var serviceCollection = new ServiceCollection();
@@ -59,104 +52,102 @@ namespace TodoSidebar
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
 
-            // 修复 F2：每日首次启动自动备份（保留最近10份）
-            try
-            {
-                var exportService = new ExportService(DatabaseService.Instance);
-                var todayKey = "LastAutoBackupDate";
-                var lastBackupDate = DatabaseService.Instance.GetSetting(todayKey);
-                if (lastBackupDate != DateTime.Today.ToString("yyyy-MM-dd"))
-                {
-                    exportService.CreateBackup();
-                    DatabaseService.Instance.SetSetting(todayKey, DateTime.Today.ToString("yyyy-MM-dd"));
-                    System.Diagnostics.Debug.WriteLine("[App] 每日自动备份完成");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"自动备份失败: {ex.Message}");
-            }
-
             try
             {
                 // 检查启动参数
                 bool isSidebarMode = e.Args.Contains("--sidebar");
                 
-                // 初始化认证服务（同步等待，避免 AggregregateException 包装）
-                Task.Run(async () =>
+                // 异步初始化认证服务（await 期间 UI 线程不阻塞）
+                await InitializeAuthAsync();
+
+                var authService = Services.GetRequiredService<IAuthService>();
+
+                if (!authService.IsLoggedIn)
                 {
-                    await InitializeAuthAsync();
-                }).GetAwaiter().GetResult();
+                    var loginWindow = new LoginWindow();
+                    loginWindow.Show();
+                    return;
+                }
+
+                // 创建共享的 ViewModel
+                SharedViewModel = new MainViewModel();
+
+                // 启动通知服务
+                NotificationService.Instance.Start();
+
+                Window mainWindow;
+                if (isSidebarMode)
+                    mainWindow = new MainWindow();
+                else
+                    mainWindow = new FullWindow();
+
+                mainWindow.Show();
+
+                // 注册全局快捷键
+                _hotkeyService = new HotkeyService();
+                _hotkeyService.RegisterHotkeys(mainWindow);
                 
-                // 在 UI 线程上检查登录状态并显示窗口
-                Dispatcher.Invoke(() =>
+                _hotkeyService.ToggleSidebarRequested += (s, args) =>
                 {
-                    var authService = Services.GetRequiredService<IAuthService>();
-
-                    if (!authService.IsLoggedIn)
+                    try
                     {
-                        var loginWindow = new LoginWindow();
-                        loginWindow.Show();
-                        return;
+                        if (mainWindow is MainWindow sidebar)
+                        {
+                            var fullWindow = new FullWindow();
+                            fullWindow.Show();
+                            sidebar.Close();
+                            mainWindow = fullWindow;
+                            _hotkeyService.ReRegisterHotkeys(fullWindow);
+                        }
+                        else if (mainWindow is FullWindow full)
+                        {
+                            var sidebarWindow = new MainWindow();
+                            sidebarWindow.Show();
+                            full.Close();
+                            mainWindow = sidebarWindow;
+                            _hotkeyService.ReRegisterHotkeys(sidebarWindow);
+                        }
                     }
-
-                    // 创建共享的 ViewModel
-                    SharedViewModel = new MainViewModel();
-
-                    // 启动通知服务
-                    NotificationService.Instance.Start();
-
-                    Window mainWindow;
-                    if (isSidebarMode)
-                        mainWindow = new MainWindow();
-                    else
-                        mainWindow = new FullWindow();
-
-                    mainWindow.Show();
-
-                    // 注册全局快捷键
-                    _hotkeyService = new HotkeyService();
-                    _hotkeyService.RegisterHotkeys(mainWindow);
-                    
-                    _hotkeyService.ToggleSidebarRequested += (s, args) =>
+                    catch (Exception ex)
                     {
-                        try
-                        {
-                            if (mainWindow is MainWindow sidebar)
-                            {
-                                var fullWindow = new FullWindow();
-                                fullWindow.Show();
-                                sidebar.Close();
-                                mainWindow = fullWindow;
-                                _hotkeyService.ReRegisterHotkeys(fullWindow);
-                            }
-                            else if (mainWindow is FullWindow full)
-                            {
-                                var sidebarWindow = new MainWindow();
-                                sidebarWindow.Show();
-                                full.Close();
-                                mainWindow = sidebarWindow;
-                                _hotkeyService.ReRegisterHotkeys(sidebarWindow);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"ToggleSidebar error: {ex.Message}");
-                        }
-                    };
-                    
-                    _hotkeyService.NewTaskRequested += (s, args) =>
-                    {
-                        try { mainWindow?.Activate(); } catch (Exception) { /* Window may have been closed */ }
-                    };
-                });
+                        LogError("ToggleSidebar error", ex);
+                    }
+                };
+                
+                // 新建任务/搜索热键：统一激活窗口
+                EventHandler activateHandler = (s, args) =>
+                {
+                    try { mainWindow?.Activate(); } catch (Exception ex) { LogError("Hotkey activate error", ex); }
+                };
+                _hotkeyService.NewTaskRequested += activateHandler;
+                _hotkeyService.SearchRequested += activateHandler;
             }
             catch (Exception ex)
             {
+                LogError("Startup failed", ex);
                 MessageBox.Show($"启动失败: {ex.Message}\n\n{ex.StackTrace}", 
                     "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
+        }
+
+        /// <summary>
+        /// 停止所有后台服务并释放共享 ViewModel（登出时调用）。
+        /// </summary>
+        public static void StopBackgroundServices()
+        {
+            try
+            {
+                SyncService.Instance.Stop();
+                NotificationService.Instance.Stop();
+            }
+            catch (Exception ex)
+            {
+                LogError("StopBackgroundServices error", ex);
+            }
+
+            SharedViewModel?.Dispose();
+            SharedViewModel = null!;
         }
 
         /// <summary>
@@ -181,7 +172,7 @@ namespace TodoSidebar
 
         private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"UI thread unhandled exception: {e.Exception}");
+            LogError("UI thread unhandled exception", e.Exception);
             var errorMessage = $"发生未处理的异常:\n\n{e.Exception.Message}";
             if (e.Exception.InnerException != null)
                 errorMessage += $"\n\n内部异常:\n{e.Exception.InnerException.Message}";
@@ -192,7 +183,7 @@ namespace TodoSidebar
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             if (e.ExceptionObject is Exception ex)
-                System.Diagnostics.Debug.WriteLine($"AppDomain unhandled exception: {ex}");
+                LogError("AppDomain unhandled exception", ex);
         }
         
         private async Task InitializeAuthAsync()
@@ -202,14 +193,21 @@ namespace TodoSidebar
                 await AuthService.Instance.InitializeAsync();
                 _loginStateHandler = async (s, isLoggedIn) =>
                 {
-                    if (isLoggedIn)
-                        await SyncService.Instance.InitializeAsync();
+                    try
+                    {
+                        if (isLoggedIn)
+                            await SyncService.Instance.InitializeAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError("Login state handler error", ex);
+                    }
                 };
                 AuthService.Instance.LoginStateChanged += _loginStateHandler;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"InitializeAuth error: {ex.Message}");
+                LogError("InitializeAuth error", ex);
             }
         }
 
@@ -228,22 +226,28 @@ namespace TodoSidebar
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"OnExit cleanup error: {ex.Message}");
+                LogError("OnExit cleanup error", ex);
             }
-            
-            // 释放单实例锁
+            base.OnExit(e);
+        }
+
+        /// <summary>
+        /// 追加写日志到 %APPDATA%\TodoSidebar\logs\app.log（Release 下也可见，避免异常被静默吞掉）。
+        /// </summary>
+        private static void LogError(string message, Exception? ex = null)
+        {
+            System.Diagnostics.Debug.WriteLine(message + (ex != null ? ": " + ex.Message : ""));
             try
             {
-                _singleInstanceMutex?.ReleaseMutex();
-                _singleInstanceMutex?.Dispose();
-                _singleInstanceMutex = null;
+                var dir = Path.GetDirectoryName(LogFilePath);
+                if (dir != null) Directory.CreateDirectory(dir);
+                File.AppendAllText(LogFilePath,
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{(ex != null ? ": " + ex : "")}{Environment.NewLine}");
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"Mutex release error: {ex.Message}");
+                // 日志写入失败不影响主流程
             }
-            
-            base.OnExit(e);
         }
     }
 }

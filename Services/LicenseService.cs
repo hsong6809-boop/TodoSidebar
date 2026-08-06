@@ -34,8 +34,7 @@ namespace TodoSidebar.Services
         public bool ActivateLicense(string licenseKey)
         {
             // 后期实现：HTTP POST 到 License Server 验证
-            // 现阶段：始终返回 false
-            System.Diagnostics.Debug.WriteLine($"[LicenseService] ActivateLicense called with key: {licenseKey?.Substring(0, Math.Min(8, licenseKey?.Length ?? 0))}...");
+            // 现阶段：始终返回 false；不打印 key 内容，避免泄露激活码
             return false;
         }
 
@@ -45,8 +44,10 @@ namespace TodoSidebar.Services
             if (_currentTier == LicenseTier.Free)
                 return true;
 
-            // 后期实现：在线验证 + 离线缓存
-            return true;
+            // 支付/License Server 接入前，任何非 Free 层级都不应被放行，
+            // 防止内存修改或残留状态绕过商业化闸门
+            System.Diagnostics.Debug.WriteLine("[LicenseService] ValidateLicense: 非 Free 层级在许可服务接入前拒绝放行");
+            return false;
         }
 
         public void StartTrial()

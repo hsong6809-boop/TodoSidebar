@@ -1,5 +1,7 @@
+using System;
 using System.Windows;
 using System.Windows.Input;
+using Microsoft.Extensions.DependencyInjection;
 using TodoSidebar.Services;
 
 namespace TodoSidebar
@@ -13,8 +15,8 @@ namespace TodoSidebar
         public UpgradeDialog(ILicenseService? licenseService)
         {
             InitializeComponent();
-            _licenseService = licenseService ?? App.Services.GetService(typeof(ILicenseService)) as ILicenseService
-                              ?? new LicenseService();
+            // 统一从 DI 获取单例，避免 new 出与全局不一致的 LicenseService 实例
+            _licenseService = licenseService ?? App.Services.GetRequiredService<ILicenseService>();
             UpdateStatus();
         }
 
@@ -49,7 +51,14 @@ namespace TodoSidebar
 
         private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            DragMove();
+            try
+            {
+                DragMove();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Header drag error: {ex.Message}");
+            }
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)

@@ -22,7 +22,8 @@ namespace TodoSidebar.Services
 
         public List<TaskTemplate> GetTemplates()
         {
-            return _templates;
+            // 返回副本，防止外部直接修改内部集合绕过 SaveTemplates
+            return new List<TaskTemplate>(_templates);
         }
 
         public void SaveTemplate(TaskTemplate template)
@@ -82,7 +83,10 @@ namespace TodoSidebar.Services
 
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 var json = JsonSerializer.Serialize(_templates, options);
-                File.WriteAllText(_templatesPath, json);
+                // 原子写：临时文件 + 替换，避免写一半崩溃损坏模板文件
+                var tempPath = _templatesPath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                File.Move(tempPath, _templatesPath, overwrite: true);
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Template save error: {ex.Message}"); }
         }

@@ -17,6 +17,8 @@ namespace TodoSidebar
         private bool _isCollapsed = false;
         private const double ExpandedWidth = 320;
         private const double CollapsedWidth = 3;
+        private const int TriggerHitWidth = 30;      // 收起状态下触发条命中宽度(px)
+        private const double MainScreenHeightRatio = 0.66;  // 主屏高度比例
         
         // 悬停延迟定时器
         private readonly DispatcherTimer _hoverDelayTimer;
@@ -43,6 +45,19 @@ namespace TodoSidebar
         {
             InitializeComponent();
             DataContext = App.SharedViewModel;
+
+            // 订阅升级/成就事件：显示横幅 + 粒子特效
+            if (DataContext is MainViewModel vm)
+            {
+                vm.LevelUpOccurred += OnLevelUpOccurred;
+                vm.AchievementUnlockedOccurred += OnAchievementUnlockedOccurred;
+            }
+
+            // 订阅番茄钟事件：刷新迷你计时器
+            PomodoroService.Instance.Tick += OnFocusTick;
+            PomodoroService.Instance.StateChanged += OnFocusStateChanged;
+            PomodoroService.Instance.SessionCompleted += OnFocusSessionCompleted;
+            UpdateMiniFocus();
             
             // 初始化悬停延迟定时器
             _hoverDelayTimer = new DispatcherTimer
@@ -93,10 +108,10 @@ namespace TodoSidebar
                     _mouseCheckTimer.Start();
             };
             
-            // 窗口失焦 → 收起（但鼠标仍在窗口内时不收起，防止点击按钮触发焦点变化）
+            // 窗口失焦 → 立即收起
             Deactivated += (_, _) =>
             {
-                if (!_isCollapsed && !IsMouseOver)
+                if (!_isCollapsed)
                 {
                     _lastCollapseTime = DateTime.Now;
                     CollapsePanel();
@@ -139,6 +154,187 @@ namespace TodoSidebar
             DateTimeText.Text = $"{now:MM/dd} {dayOfWeek} {now:HH:mm:ss}";
         }
 
+        #region 成就
+
+        /// <summary>打开成就图鉴</summary>
+        private void BrowseBadges_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var window = new AchievementWindow { Owner = this };
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"BrowseBadges error: {ex.Message}");
+            }
+        }
+
+        /// <summary>徽章解锁：横幅 + 粒子（复用升级横幅）</summary>
+        private void OnAchievementUnlockedOccurred(object? sender, TodoSidebar.Models.AchievementUnlockedEventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAchievementUnlockedOccurred(sender, e)));
+                return;
+            }
+
+            try
+            {
+                LevelUpTitleText.Text = $"🏅 成就解锁：{e.Name}";
+                LevelUpSubText.Text = e.Description;
+                LevelUpBanner.Visibility = Visibility.Visible;
+                AnimationService.AnimateFadeIn(LevelUpBanner);
+
+                var bannerCenter = new System.Windows.Point(
+                    LevelUpBanner.ActualWidth > 0 ? LevelUpBanner.ActualWidth / 2 : 120,
+                    LevelUpBanner.ActualHeight > 0 ? LevelUpBanner.ActualHeight / 2 : 60);
+                AnimationService.CreateCompletionParticles(ParticleLayer, bannerCenter);
+
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                timer.Tick += (s, args) =>
+                {
+                    timer.Stop();
+                    AnimationService.AnimateFadeOut(LevelUpBanner, 300);
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Achievement banner error: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region 迷你番茄钟
+
+        private void OnFocusTick(object? sender, EventArgs e) => UpdateMiniFocus();
+
+        private void OnFocusStateChanged(object? sender, PomodoroState state) => UpdateMiniFocus();
+
+        private void OnFocusSessionCompleted(object? sender, PomodoroSessionCompletedEventArgs e)
+        {
+            UpdateMiniFocus();
+            if (!e.Completed)
+            {
+                System.Diagnostics.Debug.WriteLine("Pomodoro interrupted");
+                return;
+            }
+            // 完成提示（复用通知窗口）
+            var msg = e.TaskId.HasValue
+                ? $"专注完成 +{(e.TaskId.HasValue ? 10 : 5)} XP"
+                : "专注完成 +5 XP";
+            if (e.EstimatedReached)
+                msg += "\n🎯 已达预估专注时长，可以收尾啦！";
+            try
+            {
+                NotificationService.Instance.ShowNotification("🍅 番茄完成", msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Pomodoro notify error: {ex.Message}");
+            }
+        }
+
+        private void UpdateMiniFocus()
+        {
+            var pomo = PomodoroService.Instance;
+            MiniFocusTimer.Text = PomodoroService.FormatTime(pomo.RemainingSeconds);
+            var progress = pomo.TotalSeconds > 0
+                ? 1.0 - (double)pomo.RemainingSeconds / pomo.TotalSeconds
+                : 0;
+            MiniFocusRing.Progress = Math.Clamp(progress, 0, 1);
+
+            MiniFocusState.Text = pomo.State switch
+            {
+                PomodoroState.Focus => string.IsNullOrEmpty(pomo.BoundTaskTitle)
+                    ? "🍅 专注中…"
+                    : $"🍅 专注「{pomo.BoundTaskTitle}」",
+                PomodoroState.Paused => "⏸ 已暂停",
+                PomodoroState.Break => "☕ 休息中…",
+                _ => $"🍅 未开始 · 今日已完成 {pomo.GetTodayStats().completed} 个"
+            };
+        }
+
+        private void MiniFocusStart_Click(object sender, RoutedEventArgs e)
+        {
+            // 暂停状态点开始 = 继续
+            if (PomodoroService.Instance.State == PomodoroState.Paused)
+            {
+                PomodoroService.Instance.Resume();
+                return;
+            }
+            PomodoroService.Instance.Start();
+        }
+
+        private void MiniFocusPause_Click(object sender, RoutedEventArgs e)
+        {
+            if (PomodoroService.Instance.State == PomodoroState.Focus)
+                PomodoroService.Instance.Pause();
+            else if (PomodoroService.Instance.State == PomodoroState.Paused)
+                PomodoroService.Instance.Resume();
+        }
+
+        private void MiniFocusStop_Click(object sender, RoutedEventArgs e)
+        {
+            if (PomodoroService.Instance.State is PomodoroState.Focus or PomodoroState.Paused)
+            {
+                // 确认中断（避免误点丢 XP）
+                var result = MessageBox.Show("停止当前番茄将视为中断，不获得经验。确定停止吗？",
+                    "停止专注", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result == MessageBoxResult.Yes)
+                    PomodoroService.Instance.Stop(complete: false);
+            }
+        }
+
+        #endregion
+
+        /// <summary>
+        /// 升级反馈：横幅滑入显示 3 秒 + 粒子爆炸。
+        /// </summary>
+        private void OnLevelUpOccurred(object? sender, TodoSidebar.Models.LevelUpEventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnLevelUpOccurred(sender, e)));
+                return;
+            }
+
+            try
+            {
+                LevelUpTitleText.Text = $"🎉 升级！Lv.{e.NewLevel}";
+                LevelUpSubText.Text = $"获得新称号「{e.NewTitle}」";
+                LevelUpBanner.Visibility = Visibility.Visible;
+                AnimationService.AnimateFadeIn(LevelUpBanner);
+
+                // 粒子特效（位于横幅附近）
+                var bannerCenter = new System.Windows.Point(
+                    LevelUpBanner.ActualWidth > 0 ? LevelUpBanner.ActualWidth / 2 : 120,
+                    LevelUpBanner.ActualHeight > 0 ? LevelUpBanner.ActualHeight / 2 : 60);
+                for (int i = 0; i < 3; i++)
+                {
+                    AnimationService.CreateCompletionParticles(ParticleLayer, bannerCenter);
+                }
+
+                // 3 秒后淡出
+                var timer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(3)
+                };
+                timer.Tick += (s, args) =>
+                {
+                    timer.Stop();
+                    AnimationService.AnimateFadeOut(LevelUpBanner, 300);
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LevelUp banner error: {ex.Message}");
+            }
+        }
+
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             try
@@ -151,14 +347,15 @@ namespace TodoSidebar
                 var screenTop = screen.Bounds.Y;
 
                 Left = screenLeft;
-                Height = screenHeight * 0.66;
+                Height = screenHeight * MainScreenHeightRatio;
                 Top = screenTop + (screenHeight - Height) / 2;
                 Width = ExpandedWidth;
 
                 SetWindowPos(helper.Handle, HWND_TOPMOST, (int)Left, (int)Top, (int)Width, (int)Height, SWP_SHOWWINDOW);
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Window_Loaded position init failed, fallback: {ex.Message}");
                 Left = 0;
                 Top = 100;
                 Width = ExpandedWidth;
@@ -171,8 +368,7 @@ namespace TodoSidebar
         private void CollapseDelayTimer_Tick(object? sender, EventArgs e)
         {
             _collapseDelayTimer.Stop();
-            // 再次检查鼠标是否仍在窗口内，防止计时器到期时鼠标已回到窗口
-            if (!_isCollapsed && !IsMouseOver)
+            if (!_isCollapsed)
             {
                 _lastCollapseTime = DateTime.Now;
                 CollapsePanel();
@@ -189,7 +385,7 @@ namespace TodoSidebar
                 GetCursorPos(out var cursorPos);
                 var hwnd = new WindowInteropHelper(this).Handle;
                 GetWindowRect(hwnd, out var windowRect);
-                var triggerRight = windowRect.Left + 30;
+                var triggerRight = windowRect.Left + TriggerHitWidth;
 
                 if (cursorPos.X >= windowRect.Left && cursorPos.X <= triggerRight
                     && cursorPos.Y >= windowRect.Top && cursorPos.Y <= windowRect.Bottom)
@@ -257,7 +453,7 @@ namespace TodoSidebar
             {
                 DragMove();
             }
-            catch (Exception) { /* DragMove may fail if mouse not captured */ }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Header drag error: {ex.Message}"); }
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -299,6 +495,9 @@ namespace TodoSidebar
                 {
                     // 退出登录
                     await AuthService.Instance.LogoutAsync();
+
+                    // 释放共享 ViewModel 并停止后台服务（通知/同步/定时器），避免登出后空转
+                    App.StopBackgroundServices();
                     
                     // 关闭主窗口，显示登录窗口
                     var loginWindow = new LoginWindow();
@@ -407,8 +606,9 @@ namespace TodoSidebar
                     MainPanel.BeginAnimation(UIElement.OpacityProperty, fadeOut);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"AnimatePanel error: {ex.Message}");
                 _isAnimating = false;
             }
         }
@@ -653,12 +853,43 @@ namespace TodoSidebar
 
         #region 搜索
 
-        // 修复 B6：v4.2.0 已移除搜索 UI，此处不再保留空方法。
-        // MainViewModel 中保留了 SearchTasks 数据库查询能力，未来重新加 UI 时可直接绑定 SearchCommand。
+        private void SearchButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (DataContext is MainViewModel vm)
+                {
+                    vm.IsSearchMode = !vm.IsSearchMode;
+                    if (vm.IsSearchMode)
+                    {
+                        Dispatcher.BeginInvoke(new Action(() => SearchInput.Focus()), DispatcherPriority.Background);
+                    }
+                    else
+                    {
+                        vm.ClearSearchCommand.Execute(null);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SearchButton_Click error: {ex.Message}");
+            }
+        }
 
-        #endregion
-
-        #region 任务详情
+        private void SearchInput_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                try
+                {
+                    if (DataContext is MainViewModel vm)
+                    {
+                        vm.SearchCommand.Execute(null);
+                    }
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"SearchInput_KeyDown error: {ex.Message}"); }
+            }
+        }
 
         private void TaskListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -750,8 +981,6 @@ namespace TodoSidebar
 
         // Win32 API
         private const int HWND_TOPMOST = -1;
-        private const uint SWP_NOMOVE = 0x0002;
-        private const uint SWP_NOSIZE = 0x0001;
         private const uint SWP_SHOWWINDOW = 0x0040;
 
         [DllImport("user32.dll")]

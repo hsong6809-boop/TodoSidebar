@@ -3,7 +3,8 @@ namespace TodoSidebar.Services
     /// <summary>
     /// Feature Flag 服务接口。
     /// 控制 Pro 功能的可见性和可用性。
-    /// 基于 ILicenseService 动态判断：Free 用户所有 Pro 功能禁用。
+    /// 当前阶段：许可/支付服务未接入，所有功能对所有用户开放（全量开放策略）。
+    /// 许可服务接入后，改为基于 ILicenseService 动态判断：Free 用户禁用 Pro 功能。
     /// </summary>
     public interface IFeatureFlagService
     {

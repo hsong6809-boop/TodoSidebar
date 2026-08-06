@@ -55,6 +55,35 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private int _templatesCount;
 
+        // ===== 升级系统 =====
+        [ObservableProperty]
+        private int _level = 1;
+
+        [ObservableProperty]
+        private string _levelTitle = "初出茅庐";
+
+        [ObservableProperty]
+        private double _levelProgress;
+
+        [ObservableProperty]
+        private string _levelProgressText = "0/100 XP";
+
+        [ObservableProperty]
+        private string _levelDisplay = "Lv.1 初出茅庐";
+
+        /// <summary>连击展示文本，如 "🔥 x7"（无连击为空）</summary>
+        [ObservableProperty]
+        private string _comboDisplay = "";
+
+        /// <summary>升级事件（窗口订阅显示横幅与粒子）</summary>
+        public event EventHandler<LevelUpEventArgs>? LevelUpOccurred;
+
+        /// <summary>成就解锁事件（窗口订阅显示横幅）</summary>
+        public event EventHandler<AchievementUnlockedEventArgs>? AchievementUnlockedOccurred;
+
+        /// <summary>连击结算事件（窗口订阅刷新显示）</summary>
+        public event EventHandler<ComboSettledEventArgs>? ComboSettledOccurred;
+
         /// <summary>午夜刷新定时器，用于重置每日任务状态</summary>
         private DispatcherTimer? _midnightTimer;
 
@@ -73,7 +102,7 @@ namespace TodoSidebar.ViewModels
         public MainViewModel()
         {
             _dbService = DatabaseService.Instance;
-            _taskService = new TaskService(_dbService, MessageService.Instance);
+            _taskService = new TaskService(_dbService);
             _messageService = MessageService.Instance;
             _templateService = new TaskTemplateService();
             _templatesCount = Templates.Count;
@@ -93,26 +122,117 @@ namespace TodoSidebar.ViewModels
             // 午夜刷新：在每天零点自动重新加载每日任务
             ScheduleMidnightRefresh();
 
+            // 升级系统：初始化等级信息并订阅升级事件
+            LevelService.Instance.LevelUp += OnLevelUp;
+            LevelService.Instance.XpChanged += OnXpChanged;
+            LevelService.Instance.ComboSettled += OnComboSettled;
+            AchievementService.Instance.AchievementUnlocked += OnAchievementUnlocked;
+            LoadLevelInfo();
+            UpdateComboDisplay();
+
+            // 成就补检（启动时检查已达标未解锁的徽章）
+            AchievementService.Instance.CheckAll();
+
             LoadData();
+        }
+
+        private void OnComboSettled(object? sender, ComboSettledEventArgs e)
+        {
+            UpdateComboDisplay();
+            ComboSettledOccurred?.Invoke(this, e);
+        }
+
+        private void OnAchievementUnlocked(object? sender, AchievementUnlockedEventArgs e)
+        {
+            AchievementUnlockedOccurred?.Invoke(this, e);
+        }
+
+        private void UpdateComboDisplay()
+        {
+            var combo = LevelService.Instance.GetGrowth().ComboDays;
+            ComboDisplay = combo > 0 ? $"🔥 x{combo}" : "";
+        }
+
+        private void LoadLevelInfo()
+        {
+            try
+            {
+                var growth = LevelService.Instance.GetGrowth();
+                var info = LevelService.Instance.GetLevelInfo(growth);
+                Level = info.Level;
+                LevelTitle = info.Title;
+                LevelProgress = info.Progress;
+                LevelProgressText = info.ProgressText;
+                LevelDisplay = LevelService.FormatLevelDisplay(info.Level, info.Title);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadLevelInfo error: {ex.Message}");
+            }
+        }
+
+        private void OnLevelUp(object? sender, LevelUpEventArgs e)
+        {
+            // 刷新等级显示（可能跨线程，但升级事件由 UI 线程任务操作触发，此处直接更新）
+            Level = e.NewLevel;
+            LevelTitle = e.NewTitle;
+            LevelProgress = 0;
+            LevelProgressText = $"0/{LevelService.XpForNextLevel(e.NewLevel)} XP";
+            LevelDisplay = LevelService.FormatLevelDisplay(e.NewLevel, e.NewTitle);
+            LevelUpOccurred?.Invoke(this, e);
+        }
+
+        /// <summary>
+        /// 经验变更（未升级）：只刷新经验进度条。
+        /// </summary>
+        private void OnXpChanged(object? sender, EventArgs e)
+        {
+            var growth = LevelService.Instance.GetGrowth();
+            Level = growth.Level;
+            LevelTitle = growth.Title;
+            LevelProgress = growth.Xp / (double)LevelService.XpForNextLevel(growth.Level);
+            LevelProgressText = $"{growth.Xp}/{LevelService.XpForNextLevel(growth.Level)} XP";
+            LevelDisplay = LevelService.FormatLevelDisplay(growth.Level, growth.Title);
         }
 
         private void ScheduleMidnightRefresh()
         {
             var now = DateTime.Now;
             var midnight = now.Date.AddDays(1);
-            var msUntilMidnight = (midnight - now).TotalMilliseconds;
+            // 下限 1 秒保护：时钟调整/闰秒等场景下 Interval 不能为负
+            var msUntilMidnight = Math.Max(1000, (midnight - now).TotalMilliseconds);
 
-            _midnightTimer = new DispatcherTimer
+            if (_midnightTimer == null)
             {
-                Interval = TimeSpan.FromMilliseconds(msUntilMidnight)
-            };
-            _midnightTimer.Tick += (s, e) =>
-            {
-                _midnightTimer?.Stop();
-                LoadData();
-                ScheduleMidnightRefresh();
-            };
+                _midnightTimer = new DispatcherTimer();
+                _midnightTimer.Tick += (s, e) =>
+                {
+                    _midnightTimer?.Stop();
+                    OnMidnightRollover();
+                    ScheduleMidnightRefresh();
+                };
+            }
+
+            _midnightTimer.Interval = TimeSpan.FromMilliseconds(msUntilMidnight);
             _midnightTimer.Start();
+        }
+
+        /// <summary>
+        /// 每日零点结算：连击结算（全清+1 / 断连清零）→ 成就检查 → 刷新数据。
+        /// </summary>
+        private void OnMidnightRollover()
+        {
+            try
+            {
+                LevelService.Instance.SettleCombo();
+                UpdateComboDisplay();
+                AchievementService.Instance.CheckAll();
+                LoadData();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Midnight rollover error: {ex.Message}");
+            }
         }
 
         private void OnTaskCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -124,7 +244,10 @@ namespace TodoSidebar.ViewModels
             else if (sender == CurrentTasks) OnPropertyChanged(nameof(CurrentTasksCount));
         }
 
-        private void LoadData()
+        /// <summary>
+        /// 重新加载全部任务数据（公共入口，供番茄钟/外部组件刷新用）。
+        /// </summary>
+        public void LoadData()
         {
             LoadDailyTasks();
             LoadDeadlineTasks();
@@ -229,15 +352,8 @@ namespace TodoSidebar.ViewModels
         private void CompleteTask(TaskItem? task)
         {
             if (task == null) return;
-            try
-            {
-                _taskService.CompleteTask(task);
-                LoadData();
-            }
-            catch (Exception ex)
-            {
-                _messageService.ShowError($"完成任务失败: {ex.Message}", "错误");
-            }
+            _taskService.CompleteTask(task);
+            LoadData();
         }
 
         [RelayCommand]
@@ -354,14 +470,13 @@ namespace TodoSidebar.ViewModels
         }
 
         /// <summary>
-        /// 尝试立即刷新子任务相关 UI 绑定（后续 LoadData 也会完整刷新）
+        /// 刷新子任务相关 UI 绑定（在 TaskItem 实例上触发通知，确保 UI 收到）
         /// </summary>
         private void RefreshTaskProperties(TaskItem task)
         {
-            // 通知 UI 刷新子任务相关的绑定属性
-            OnPropertyChanged(nameof(TaskItem.SubTasksList));
-            OnPropertyChanged(nameof(TaskItem.SubTasksProgressText));
-            OnPropertyChanged(nameof(TaskItem.HasSubTasks));
+            if (task == null) return;
+            // SubTasksList/SubTasksProgressText/HasSubTasks 是 TaskItem 的属性，须在 task 上触发通知
+            task.NotifySubTaskPropertiesChanged();
         }
 
         public void SaveSubTasksToDb(TaskItem task)
@@ -417,13 +532,18 @@ namespace TodoSidebar.ViewModels
 
         public void Dispose()
         {
+            LevelService.Instance.LevelUp -= OnLevelUp;
+            LevelService.Instance.XpChanged -= OnXpChanged;
+            LevelService.Instance.ComboSettled -= OnComboSettled;
+            AchievementService.Instance.AchievementUnlocked -= OnAchievementUnlocked;
             DailyTasks.CollectionChanged -= OnTaskCollectionChanged;
             DeadlineTasks.CollectionChanged -= OnTaskCollectionChanged;
             HistoryTasks.CollectionChanged -= OnTaskCollectionChanged;
             CurrentTasks.CollectionChanged -= OnTaskCollectionChanged;
             TodayCompletedTasks.CollectionChanged -= OnTaskCollectionChanged;
             SyncViewModel.OnSyncCompleted = null;
-            _midnightTimer?.Stop();  // 修复 B8：移除重复调用
+            _midnightTimer?.Stop();
+            _midnightTimer = null;
         }
     }
 }

@@ -113,7 +113,10 @@ namespace TodoSidebar.Services
             }
 
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(path, json);
+            // 原子写：临时文件 + 替换，避免写一半崩溃损坏日志文件
+            var tempPath = path + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, path, overwrite: true);
             return path;
         }
 

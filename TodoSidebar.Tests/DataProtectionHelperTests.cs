@@ -31,19 +31,21 @@ namespace TodoSidebar.Tests
         }
 
         [Fact]
-        public void Unprotect_EmptyString_ShouldReturnEmpty()
+        public void Unprotect_EmptyString_ShouldReturnNull()
         {
-            DataProtectionHelper.Unprotect("").Should().Be("");
-            DataProtectionHelper.Unprotect(null!).Should().Be("");
+            // 空输入不是合法密文，返回 null（调用方应清除并重新登录）
+            DataProtectionHelper.Unprotect("").Should().BeNull();
+            DataProtectionHelper.Unprotect(null!).Should().BeNull();
         }
 
         [Fact]
-        public void Unprotect_PlainText_ShouldThrow()
+        public void Unprotect_PlainText_ShouldReturnNull()
         {
-            // 安全修复：解密失败必须抛异常，绝不返回明文（防止误把密文当明文用）
+            // 安全策略：拒绝明文数据，不再兼容旧版明文存储（防止凭据明文落盘通道）
             var plainText = "old format session data";
-            Action act = () => DataProtectionHelper.Unprotect(plainText);
-            act.Should().Throw<Exception>();
+            var result = DataProtectionHelper.Unprotect(plainText);
+            result.Should().BeNull();
+            DataProtectionHelper.IsProtected(plainText).Should().BeFalse();
         }
 
         [Fact]

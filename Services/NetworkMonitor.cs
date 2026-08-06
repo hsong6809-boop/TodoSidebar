@@ -10,11 +10,14 @@ namespace TodoSidebar.Services
     /// </summary>
     public class NetworkMonitor : IDisposable
     {
-        private static NetworkMonitor? _instance;
-        public static NetworkMonitor Instance => _instance ??= new NetworkMonitor();
+        // Lazy 线程安全单例，避免首访并发创建双实例导致事件双重订阅
+        private static readonly Lazy<NetworkMonitor> _lazy = new(() => new NetworkMonitor());
+        public static NetworkMonitor Instance => _lazy.Value;
+
+        private volatile bool _isOnline;
 
         /// <summary>当前是否在线</summary>
-        public bool IsOnline { get; private set; } = true;
+        public bool IsOnline => _isOnline;
 
         /// <summary>离线开始时间</summary>
         public DateTime? OfflineSince { get; private set; }
@@ -24,8 +27,8 @@ namespace TodoSidebar.Services
 
         private NetworkMonitor()
         {
-            IsOnline = NetworkInterface.GetIsNetworkAvailable();
-            if (!IsOnline)
+            _isOnline = NetworkInterface.GetIsNetworkAvailable();
+            if (!_isOnline)
                 OfflineSince = DateTime.Now;
 
             NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
@@ -45,9 +48,9 @@ namespace TodoSidebar.Services
 
         private void UpdateStatus(bool online)
         {
-            if (IsOnline == online) return;
+            if (_isOnline == online) return;
 
-            IsOnline = online;
+            _isOnline = online;
             if (!online)
             {
                 OfflineSince = DateTime.Now;

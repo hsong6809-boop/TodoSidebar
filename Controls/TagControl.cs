@@ -10,9 +10,10 @@ namespace TodoSidebar.Controls
 {
     public class TagControl : Control
     {
+        // 默认值必须为 null：DependencyProperty 的默认实例会被所有未显式设置的控件共享
         public static readonly DependencyProperty TagsProperty =
             DependencyProperty.Register("Tags", typeof(ObservableCollection<string>), typeof(TagControl),
-                new PropertyMetadata(new ObservableCollection<string>()));
+                new PropertyMetadata(null));
 
         public static readonly DependencyProperty TagBrushProperty =
             DependencyProperty.Register("TagBrush", typeof(Brush), typeof(TagControl),
@@ -28,7 +29,15 @@ namespace TodoSidebar.Controls
 
         public ObservableCollection<string> Tags
         {
-            get => (ObservableCollection<string>)GetValue(TagsProperty);
+            get
+            {
+                // 未显式绑定时按需创建独立集合，避免所有实例共享同一个集合
+                if (GetValue(TagsProperty) == null)
+                {
+                    SetValue(TagsProperty, new ObservableCollection<string>());
+                }
+                return (ObservableCollection<string>)GetValue(TagsProperty);
+            }
             set => SetValue(TagsProperty, value);
         }
 

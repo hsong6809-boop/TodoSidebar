@@ -9,23 +9,23 @@ namespace TodoSidebar.Controls
     {
         public static readonly DependencyProperty ProgressProperty =
             DependencyProperty.Register("Progress", typeof(double), typeof(CircularProgress),
-                new PropertyMetadata(0.0, OnProgressChanged));
+                new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender, OnProgressChanged));
 
         public static readonly DependencyProperty StrokeThicknessProperty =
             DependencyProperty.Register("StrokeThickness", typeof(double), typeof(CircularProgress),
-                new PropertyMetadata(4.0));
+                new FrameworkPropertyMetadata(4.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public static readonly DependencyProperty ProgressBrushProperty =
             DependencyProperty.Register("ProgressBrush", typeof(Brush), typeof(CircularProgress),
-                new PropertyMetadata(Brushes.DodgerBlue));
+                new FrameworkPropertyMetadata(Brushes.DodgerBlue, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public static readonly DependencyProperty BackgroundBrushProperty =
             DependencyProperty.Register("BackgroundBrush", typeof(Brush), typeof(CircularProgress),
-                new PropertyMetadata(Brushes.LightGray));
+                new FrameworkPropertyMetadata(Brushes.LightGray, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public static readonly DependencyProperty SizeProperty =
             DependencyProperty.Register("Size", typeof(double), typeof(CircularProgress),
-                new PropertyMetadata(60.0));
+                new FrameworkPropertyMetadata(60.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public double Progress
         {
@@ -67,6 +67,13 @@ namespace TodoSidebar.Controls
         {
             if (d is CircularProgress control)
             {
+                // 绑定绕过 CLR setter 直接 SetValue，此处统一钳制到 [0,1]
+                var value = (double)e.NewValue;
+                if (value < 0 || value > 1)
+                {
+                    control.SetValue(ProgressProperty, Math.Clamp(value, 0, 1));
+                    return;
+                }
                 control.InvalidateCachedPens();
                 control.InvalidateVisual();
             }
@@ -81,11 +88,21 @@ namespace TodoSidebar.Controls
             _cachedProgressPen = null;
         }
 
+        /// <summary>
+        /// 声明期望尺寸 = Size（修复无模板 Control 默认尺寸为 0，
+        /// 导致环形与相邻元素重叠的布局问题）。
+        /// </summary>
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            return new Size(Size, Size);
+        }
+
         protected override void OnRender(DrawingContext drawingContext)
         {
             base.OnRender(drawingContext);
 
-            var radius = (Size - StrokeThickness) / 2;
+            // 保护：StrokeThickness 大于 Size 时半径为负，绘制会异常
+            var radius = Math.Max(0, (Size - StrokeThickness) / 2);
             var center = new Point(Size / 2, Size / 2);
 
             // 缓存 Pen 避免每帧创建

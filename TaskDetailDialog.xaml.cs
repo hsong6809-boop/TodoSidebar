@@ -188,7 +188,14 @@ namespace TodoSidebar
 
         private void Header_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            DragMove();
+            try
+            {
+                DragMove();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Header drag error: {ex.Message}");
+            }
         }
     }
 }

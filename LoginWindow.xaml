@@ -189,8 +189,7 @@
                                    Foreground="#666666"
                                    FontSize="12"
                                    VerticalAlignment="Center"/>
-                        <Button x:Name="RegisterButton"
-                                Content="立即注册"
+                        <Button Content="立即注册"
                                 Style="{StaticResource LinkButton}"
                                 Click="RegisterButton_Click"/>
                     </StackPanel>

@@ -43,10 +43,8 @@ namespace TodoSidebar.Services
         {
             var daily = GetDailyTasks();
             var deadline = GetDeadlineTasks();
-            // 修复 B7：优先按 SortOrder（用户拖拽顺序）排列，其次按类型/截止日期
             return daily.Concat(deadline)
-                .OrderBy(t => t.SortOrder)
-                .ThenBy(t => t.Type)
+                .OrderBy(t => t.Type)
                 .ThenBy(t => t.Deadline)
                 .ToList();
         }
@@ -78,6 +76,7 @@ namespace TodoSidebar.Services
                     _db.MarkDailyTaskCompleted(task.Id, today);
                     _db.MarkTaskDirty(task.Id); // 标记需要同步
                     task.IsTodayCompleted = true;
+                    RewardTaskComplete(task);
                 }
                 else
                 {
@@ -85,11 +84,53 @@ namespace TodoSidebar.Services
                     task.IsCompleted = true;
                     task.CompletedAt = DateTime.Now;
                     _db.UpdateTask(task);
+                    RewardTaskComplete(task);
                 }
             }
             catch (Exception ex)
             {
                 _messageService.ShowError($"完成任务失败: {ex.Message}", "错误");
+            }
+        }
+
+        /// <summary>
+        /// 完成任务后发放经验（升级系统打点）：
+        /// 每日 +10 / 截止 +15；按时完成 +5；高优先级 +5、中优先级 +3。
+        /// </summary>
+        private void RewardTaskComplete(TaskItem task)
+        {
+            try
+            {
+                int xp = task.Type == TaskType.Deadline ? 15 : 10;
+
+                // 截止任务按时完成奖励
+                bool onTime = task.Type == TaskType.Deadline && task.Deadline.HasValue && DateTime.Now <= task.Deadline.Value;
+                if (onTime)
+                    xp += 5;
+
+                // 优先级加成（Low 无加成）
+                xp += task.Priority switch
+                {
+                    TaskPriority.High => 5,
+                    TaskPriority.Medium => 3,
+                    _ => 0
+                };
+
+                LevelService.Instance.Reward("task_complete", xp, task.Id);
+
+                // 每日挑战进度推进（每日任务 / 按时截止任务）
+                if (task.Type == TaskType.Daily)
+                    DailyChallengeService.Instance.RegisterProgress("complete_daily_tasks");
+                else if (onTime)
+                    DailyChallengeService.Instance.RegisterProgress("deadline_on_time");
+
+                // 成就检查（任务类/单日全清/彩蛋徽章）
+                AchievementService.Instance.CheckAll();
+            }
+            catch (Exception ex)
+            {
+                // 升级/成就/挑战系统异常不应影响任务完成主流程
+                System.Diagnostics.Debug.WriteLine($"Reward XP failed: {ex.Message}");
             }
         }
 

@@ -25,9 +25,21 @@ namespace TodoSidebar.Models
     {
         public event PropertyChangedEventHandler? PropertyChanged;
         
-        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        public void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        /// <summary>
+        /// 通知子任务相关派生属性变化（子任务勾选/增删后由 ViewModel 调用）。
+        /// </summary>
+        public void NotifySubTaskPropertiesChanged()
+        {
+            OnPropertyChanged(nameof(SubTasksList));
+            OnPropertyChanged(nameof(SubTasksProgressText));
+            OnPropertyChanged(nameof(SubTasksCount));
+            OnPropertyChanged(nameof(HasSubTasks));
+            OnPropertyChanged(nameof(AllSubTasksCompleted));
         }
 
         public int Id { get; set; }

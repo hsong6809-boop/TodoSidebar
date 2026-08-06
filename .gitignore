@@ -49,3 +49,11 @@ publish/
 
 # PowerShell scripts (generated)
 *.ps1
+
+# WorkBuddy 项目数据
+.workbuddy/
+
+# 测试残留输出
+binTestOut*/
+proc_probe.txt
+*.bak

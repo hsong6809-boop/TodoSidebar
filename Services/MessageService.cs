@@ -15,7 +15,8 @@ namespace TodoSidebar.Services
 
         public void ShowMessage(string message, string title = "提示")
         {
-            Application.Current?.Dispatcher.Invoke(() =>
+            // 异步封送，避免阻塞调用方（如后台线程）
+            Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
             });
@@ -23,7 +24,7 @@ namespace TodoSidebar.Services
 
         public void ShowWarning(string message, string title = "警告")
         {
-            Application.Current?.Dispatcher.Invoke(() =>
+            Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
             });
@@ -31,7 +32,7 @@ namespace TodoSidebar.Services
 
         public void ShowError(string message, string title = "错误")
         {
-            Application.Current?.Dispatcher.Invoke(() =>
+            Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             });

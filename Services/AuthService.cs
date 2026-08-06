@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Supabase.Gotrue;
 using Supabase.Gotrue.Interfaces;
+using static Supabase.Gotrue.Constants;
 using TodoSidebar.Config;
 
 namespace TodoSidebar.Services
@@ -66,17 +67,25 @@ namespace TodoSidebar.Services
             try
             {
                 await SupabaseClientService.InitializeAsync();
-                
+
+                // 订阅 token 自动刷新事件：刷新后回写 session 文件，避免重启后使用过期 refresh token 被静默登出
+                SupabaseClientService.Client.Auth.AddStateChangedListener(OnAuthStateChanged);
+
                 // 尝试从本地文件恢复 session
                 var savedSession = LoadSessionFromFile();
                 if (savedSession != null)
                 {
                     try
                     {
-                        // 使用保存的 session 恢复登录状态
+                        // 使用保存的 session 恢复登录状态（token 为空时清除文件，避免异常）
+                        if (string.IsNullOrEmpty(savedSession.AccessToken) || string.IsNullOrEmpty(savedSession.RefreshToken))
+                        {
+                            DeleteSessionFile();
+                            return;
+                        }
                         var session = await SupabaseClientService.Client.Auth.SetSession(
-                            savedSession.AccessToken, 
-                            savedSession.RefreshToken);
+                            savedSession.AccessToken!, 
+                            savedSession.RefreshToken!);
                         
                         if (session?.User != null)
                         {
@@ -91,22 +100,29 @@ namespace TodoSidebar.Services
                         DeleteSessionFile();
                     }
                 }
-
-                // 修复：session 不存在/过期/恢复失败时，确保状态一致（避免 CurrentUser 残留旧值）
-                if (CurrentUser != null)
-                {
-                    CurrentUser = null;
-                    LoginStateChanged?.Invoke(this, false);
-                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"AuthService Initialize error: {ex.Message}");
-                // 修复：初始化失败时同样清理状态
-                if (CurrentUser != null)
+            }
+        }
+
+        /// <summary>
+        /// Gotrue 认证状态变化回调：token 自动刷新后将新凭据回写本地文件。
+        /// </summary>
+        private void OnAuthStateChanged(object sender, AuthState state)
+        {
+            if (state == AuthState.TokenRefreshed)
+            {
+                try
                 {
-                    CurrentUser = null;
-                    LoginStateChanged?.Invoke(this, false);
+                    var session = SupabaseClientService.Client.Auth.CurrentSession;
+                    if (session != null)
+                        SaveSessionToFile(session);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Save refreshed session failed: {ex.Message}");
                 }
             }
         }
@@ -208,7 +224,7 @@ namespace TodoSidebar.Services
         // ========== Session 持久化方法 ==========
         
         /// <summary>
-        /// 保存 session 到本地文件
+        /// 保存 session 到本地文件（DPAPI 加密 + 原子写，加密失败不落盘）
         /// </summary>
         private void SaveSessionToFile(Session session)
         {
@@ -232,15 +248,21 @@ namespace TodoSidebar.Services
                 { 
                     WriteIndented = true 
                 });
-                // DPAPI 加密后再写入文件
+                // DPAPI 加密：失败会抛异常（DataProtectionHelper 不再回退明文），此处不落盘
                 var encrypted = DataProtectionHelper.Protect(json);
-                File.WriteAllText(SessionFilePath, encrypted);
+
+                // 原子写：先写临时文件再替换，避免中途崩溃损坏 session 文件
+                var tempPath = SessionFilePath + ".tmp";
+                File.WriteAllText(tempPath, encrypted);
+                File.Move(tempPath, SessionFilePath, overwrite: true);
                 
                 System.Diagnostics.Debug.WriteLine("Session saved to file");
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"SaveSessionToFile error: {ex.Message}");
+                // 加密/写盘失败：为保证安全，删除可能存在的旧明文/半成品文件
+                try { if (File.Exists(SessionFilePath)) File.Delete(SessionFilePath); } catch { }
             }
         }
         
@@ -255,14 +277,18 @@ namespace TodoSidebar.Services
                     return null;
                 
                 var raw = File.ReadAllText(SessionFilePath);
-                // DPAPI 解密（兼容旧版明文格式）
-                var json = DataProtectionHelper.IsProtected(raw) 
-                    ? DataProtectionHelper.Unprotect(raw) 
-                    : raw;
+                // 仅接受 DPAPI 密文；解密失败/明文数据一律清除并重新登录，杜绝明文凭据通道
+                var json = DataProtectionHelper.Unprotect(raw);
+                if (json == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("Session file is not valid DPAPI data, clearing");
+                    DeleteSessionFile();
+                    return null;
+                }
                 var sessionData = JsonSerializer.Deserialize<SessionData>(json);
                 
-                // 检查 session 是否过期
-                if (sessionData?.ExpiresAt != null && sessionData.ExpiresAt < DateTime.UtcNow)
+                // 检查 session 是否过期（统一转 UTC 比较，避免 Kind 差异导致 8 小时偏差）
+                if (sessionData?.ExpiresAt != null && sessionData.ExpiresAt.Value.ToUniversalTime() < DateTime.UtcNow)
                 {
                     System.Diagnostics.Debug.WriteLine("Session expired, deleting file");
                     DeleteSessionFile();

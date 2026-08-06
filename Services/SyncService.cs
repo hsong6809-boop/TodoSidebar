@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Data.Sqlite;
-using Newtonsoft.Json;
 using Supabase;
 using TodoSidebar.Config;
 using TodoSidebar.Models;
@@ -187,7 +185,17 @@ namespace TodoSidebar.Services
                 result.Downloaded = downloadResult.downloaded;
                 result.Conflicts = downloadResult.conflicts;
                 
-                // 3. 定期清理软删除记录（30天前的）
+                // 3. 成长数据同步（XP 流水/番茄会话上传 + 用户档案合并；尽力而为，失败不影响主流程）
+                try
+                {
+                    await SyncGrowthDataAsync();
+                }
+                catch (Exception growthEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Growth sync skipped: {growthEx.Message}");
+                }
+
+                // 4. 定期清理软删除记录（30天前的）
                 _dbService.PurgeDeletedTasks(30);
                 
                 result.Success = true;
@@ -256,30 +264,9 @@ namespace TodoSidebar.Services
                 var syncTasks = new List<SyncTask>();
                 var taskMapping = new List<(int localId, SyncTask syncTask)>();
                 
-                // 今日日期（用于每日任务完成状态同步）
-                var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-                
                 foreach (var task in dirtyTasks)
                 {
                     var syncId = string.IsNullOrEmpty(task.SyncId) ? Guid.NewGuid() : Guid.Parse(task.SyncId);
-                    
-                    // 修复 B2：每日任务的"今日完成"状态 → 云端 is_completed/completed_at
-                    // 本地 DailyTaskCompletion 表记录按天完成状态，同步时转换为云端布尔字段
-                    bool syncCompleted;
-                    DateTime? syncCompletedAt;
-                    
-                    if (task.Type == TaskType.Daily)
-                    {
-                        var todayCompleted = _dbService.IsDailyTaskCompletedOnDate(task.Id, todayStr);
-                        syncCompleted = todayCompleted;
-                        syncCompletedAt = todayCompleted ? DateTime.Now : (DateTime?)null;
-                    }
-                    else
-                    {
-                        syncCompleted = task.IsCompleted;
-                        syncCompletedAt = task.CompletedAt;
-                    }
-                    
                     var syncTask = new SyncTask
                     {
                         Id = syncId,
@@ -287,10 +274,10 @@ namespace TodoSidebar.Services
                         Title = task.Title,
                         Type = (int)task.Type,
                         Priority = (int)task.Priority,
-                        IsCompleted = syncCompleted,
+                        IsCompleted = task.IsCompleted,
                         CreatedAt = task.CreatedAt,
                         Deadline = task.Deadline,
-                        CompletedAt = syncCompletedAt,
+                        CompletedAt = task.CompletedAt,
                         Description = task.Description,
                         Tags = task.Tags,
                         SortOrder = task.SortOrder,
@@ -322,6 +309,7 @@ namespace TodoSidebar.Services
                     
                     // 批量失败时逐条重试（指数退避）
                     int uploaded = 0;
+                    int failed = 0;
                     int retryDelay = 500; // 初始 500ms
                     foreach (var (localId, syncTask) in taskMapping)
                     {
@@ -335,19 +323,23 @@ namespace TodoSidebar.Services
                         catch (Exception itemEx)
                         {
                             System.Diagnostics.Debug.WriteLine($"Upload task {localId} error: {itemEx.Message}");
+                            failed++;
                             // IsDirty 保持为1，下次同步会重试
                             await Task.Delay(retryDelay);
                             retryDelay = Math.Min(retryDelay * 2, 5000); // 最大 5 秒
                         }
                     }
                     
+                    // 全部失败视为同步失败（让 SyncAsync 感知），部分成功则返回成功条数
+                    if (failed > 0 && uploaded == 0)
+                        throw new InvalidOperationException($"批量上传全部失败（{failed} 条），稍后重试");
                     return uploaded;
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"UploadLocalChanges error: {ex.Message}");
-                return 0;
+                throw;
             }
         }
         
@@ -393,44 +385,23 @@ namespace TodoSidebar.Services
                 {
                     try
                     {
-                        // 修复 B2：每日任务的云端完成状态 → 本地 DailyTaskCompletion 表
-                        // 云端 is_completed=true 且 completed_at 是今天 → 标记本地今日完成
-                        if (remoteTask.Type == (int)TaskType.Daily 
-                            && remoteTask.IsCompleted 
-                            && remoteTask.CompletedAt.HasValue 
-                            && remoteTask.CompletedAt.Value.Date == DateTime.Today)
-                        {
-                            var existingBySyncId = _dbService.GetTaskBySyncId(remoteTask.Id.ToString());
-                            if (existingBySyncId != null)
-                            {
-                                var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-                                if (!_dbService.IsDailyTaskCompletedOnDate(existingBySyncId.Id, todayStr))
-                                {
-                                    _dbService.MarkDailyTaskCompleted(existingBySyncId.Id, todayStr);
-                                    downloaded++;
-                                }
-                            }
-                        }
-                        
                         var localTask = new TaskItem
                         {
                             SyncId = remoteTask.Id.ToString(),
                             Title = remoteTask.Title,
                             Type = (TaskType)remoteTask.Type,
                             Priority = (TaskPriority)remoteTask.Priority,
-                            // 修复 B2：每日任务的完成状态不写入本地 IsCompleted 字段
-                            // （本地每日任务完成状态只存 DailyTaskCompletion 表，IsCompleted 恒为 false）
-                            IsCompleted = remoteTask.Type == (int)TaskType.Daily ? false : remoteTask.IsCompleted,
+                            IsCompleted = remoteTask.IsCompleted,
                             CreatedAt = remoteTask.CreatedAt,
                             Deadline = remoteTask.Deadline,
-                            CompletedAt = remoteTask.Type == (int)TaskType.Daily ? null : remoteTask.CompletedAt,
+                            CompletedAt = remoteTask.CompletedAt,
                             Description = remoteTask.Description,
                             Tags = remoteTask.Tags,
                             SortOrder = remoteTask.SortOrder,
                             SubTasksJson = remoteTask.SubtasksJson,
                             IsDeleted = remoteTask.IsDeleted,
                             IsDirty = false,
-                            LastSyncedAt = DateTime.Now
+                            LastSyncedAt = DateTime.UtcNow  // 与数据库 LastSyncedAt 存储格式（UTC）一致
                         };
                         
                         // LWW 冲突解决
@@ -483,10 +454,110 @@ namespace TodoSidebar.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"DownloadRemoteChanges error: {ex.Message}");
-                return (0, 0);
+                throw; // 让 SyncAsync 感知下载失败，避免误报同步成功
             }
         }
         
+        /// <summary>
+        /// 成长数据同步（P5，尽力而为）：
+        /// 1) 上传本地待同步的 XP 流水与番茄会话（IsDirty=1）；
+        /// 2) 用户成长档案跨设备合并：按累计总经验"大者胜"。
+        /// 流水以本机为准（跨设备 TaskId 不对应，避免重复合并）；等级一致性由 TotalXp 兜底。
+        /// 需 Supabase 存在 xp_log / pomodoro_session / user_profile 表。
+        /// </summary>
+        private async Task SyncGrowthDataAsync()
+        {
+            var client = SupabaseClientService.Client;
+            var userId = _authService.CurrentUser?.Id;
+            if (string.IsNullOrEmpty(userId))
+                return;
+
+            // 1. 上传 XP 流水
+            var dirtyXp = _dbService.GetDirtyXpLogs();
+            if (dirtyXp.Count > 0)
+            {
+                var batch = dirtyXp.Select(x => new SyncXpLog
+                {
+                    UserId = userId,
+                    Source = x.Source,
+                    Amount = x.Amount,
+                    TaskId = x.TaskId,
+                    Date = x.Date,
+                    CreatedAt = x.CreatedAt
+                }).ToList();
+                await client.From<SyncXpLog>().Upsert(batch);
+                foreach (var x in dirtyXp)
+                    _dbService.MarkXpLogSynced(x.Id);
+            }
+
+            // 2. 上传番茄会话
+            var dirtyPomo = _dbService.GetDirtyPomodoroSessions();
+            if (dirtyPomo.Count > 0)
+            {
+                var batch = dirtyPomo.Select(p => new SyncPomodoroSession
+                {
+                    UserId = userId,
+                    TaskId = p.TaskId,
+                    StartTime = p.StartTime,
+                    EndTime = p.EndTime,
+                    DurationMinutes = p.DurationMinutes,
+                    Completed = p.Completed,
+                    Date = p.Date
+                }).ToList();
+                await client.From<SyncPomodoroSession>().Upsert(batch);
+                foreach (var p in dirtyPomo)
+                    _dbService.MarkPomodoroSynced(p.Id);
+            }
+
+            // 3. 用户档案合并（TotalXp 大者胜）
+            var local = _dbService.GetUserGrowth();
+            var remoteList = await client.From<SyncUserProfile>()
+                .Where(x => x.UserId == userId)
+                .Get();
+            var remote = remoteList.Models.FirstOrDefault();
+
+            if (remote == null)
+            {
+                // 云端无档案：上传本地
+                await client.From<SyncUserProfile>().Upsert(new SyncUserProfile
+                {
+                    UserId = userId,
+                    Level = local.Level,
+                    Xp = local.Xp,
+                    TotalXp = local.TotalXp,
+                    ComboDays = local.ComboDays,
+                    BestComboDays = local.BestComboDays,
+                    Title = local.Title
+                });
+            }
+            else if (remote.TotalXp > local.TotalXp)
+            {
+                // 云端更大：拉取合并到本地（按 TotalXp 重算等级）
+                var (level, xp) = LevelService.DeriveFromTotal(remote.TotalXp);
+                local.Level = level;
+                local.Xp = xp;
+                local.TotalXp = remote.TotalXp;
+                local.ComboDays = Math.Max(local.ComboDays, remote.ComboDays);
+                local.BestComboDays = Math.Max(local.BestComboDays, remote.BestComboDays);
+                local.Title = LevelService.TitleForLevel(level);
+                _dbService.SaveUserGrowth(local);
+            }
+            else if (local.TotalXp > remote.TotalXp)
+            {
+                // 本地更大：覆盖云端
+                await client.From<SyncUserProfile>().Upsert(new SyncUserProfile
+                {
+                    UserId = userId,
+                    Level = local.Level,
+                    Xp = local.Xp,
+                    TotalXp = local.TotalXp,
+                    ComboDays = local.ComboDays,
+                    BestComboDays = local.BestComboDays,
+                    Title = local.Title
+                });
+            }
+        }
+
         /// <summary>
         /// 手动触发同步（UI 调用）
         /// </summary>
@@ -505,18 +576,35 @@ namespace TodoSidebar.Services
         }
         
         /// <summary>
-        /// 停止同步服务
+        /// 停止同步服务（幂等；Stop 后可再次 InitializeAsync 重启）
         /// </summary>
         public void Stop()
         {
-            _cts?.Cancel();
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 已释放，忽略
+            }
+
             _syncTimer?.Dispose();
             _cts?.Dispose();
+
+            // 清理引用，允许再次初始化
+            _syncTimer = null;
+            _cts = null;
+            _syncLoopTask = null;
+
             if (_networkHandler != null)
             {
                 _network.ConnectivityChanged -= _networkHandler;
                 _networkHandler = null;
             }
+
+            // 复位防重入标记，避免停止后再启动时卡死
+            Interlocked.Exchange(ref _syncInProgress, 0);
         }
     }
 }

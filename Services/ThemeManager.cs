@@ -21,9 +21,6 @@ namespace TodoSidebar.Services
         private ThemeType _currentTheme = ThemeType.Light;
         private readonly DatabaseService _dbService;
 
-        // 修复 F4：System 模式下监听系统主题变化，实时跟随
-        private bool _isSystemThemeListenerRegistered = false;
-
         public ThemeType CurrentTheme
         {
             get => _currentTheme;
@@ -52,44 +49,6 @@ namespace TodoSidebar.Services
                 _currentTheme = theme;
             }
             ApplyTheme(_currentTheme);
-            // 修复 F4：加载后注册系统主题监听（仅 System 模式需要，但统一注册更简单）
-            RegisterSystemThemeListener();
-        }
-
-        // 修复 F4：注册系统主题变化监听
-        private void RegisterSystemThemeListener()
-        {
-            if (_isSystemThemeListenerRegistered) return;
-            try
-            {
-                SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
-                _isSystemThemeListenerRegistered = true;
-                System.Diagnostics.Debug.WriteLine("[ThemeManager] 已注册系统主题监听");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ThemeManager] 注册系统主题监听失败: {ex.Message}");
-            }
-        }
-
-        private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
-        {
-            // 只有 System 模式需要实时跟随
-            if (_currentTheme != ThemeType.System) return;
-            if (e.Category != UserPreferenceCategory.General) return;
-
-            try
-            {
-                // 必须切回 UI 线程应用主题
-                Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    ApplyTheme(ThemeType.System);
-                }));
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ThemeManager] 系统主题变化处理失败: {ex.Message}");
-            }
         }
 
         private void SaveThemePreference(ThemeType theme)
@@ -109,7 +68,7 @@ namespace TodoSidebar.Services
                 if (key?.GetValue("AppsUseLightTheme") is int value)
                     return value == 0;
             }
-            catch { /* 注册表读取失败，默认浅色 */ }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ThemeManager: 读取系统主题注册表失败: {ex.Message}"); }
             return false;
         }
 

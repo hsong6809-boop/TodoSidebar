@@ -55,6 +55,99 @@ namespace TodoSidebar.Models
         [Column("is_deleted")]
         public bool IsDeleted { get; set; }
     }
+
+    /// <summary>
+    /// 同步用的 XP 流水模型（对应 Supabase xp_log 表）
+    /// </summary>
+    [Table("xp_log")]
+    public class SyncXpLog : BaseModel
+    {
+        [PrimaryKey("id")]
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        [Column("user_id")]
+        public string? UserId { get; set; }
+
+        [Column("source")]
+        public string Source { get; set; } = "";
+
+        [Column("amount")]
+        public int Amount { get; set; }
+
+        [Column("task_id")]
+        public int? TaskId { get; set; }
+
+        [Column("date")]
+        public string Date { get; set; } = "";
+
+        [Column("created_at")]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// 同步用的番茄会话模型（对应 Supabase pomodoro_session 表）
+    /// </summary>
+    [Table("pomodoro_session")]
+    public class SyncPomodoroSession : BaseModel
+    {
+        [PrimaryKey("id")]
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        [Column("user_id")]
+        public string? UserId { get; set; }
+
+        [Column("task_id")]
+        public int? TaskId { get; set; }
+
+        [Column("start_time")]
+        public DateTime StartTime { get; set; }
+
+        [Column("end_time")]
+        public DateTime? EndTime { get; set; }
+
+        [Column("duration_minutes")]
+        public int DurationMinutes { get; set; }
+
+        [Column("completed")]
+        public bool Completed { get; set; }
+
+        [Column("date")]
+        public string Date { get; set; } = "";
+    }
+
+    /// <summary>
+    /// 同步用的用户成长档案（对应 Supabase user_profile 表）
+    /// </summary>
+    [Table("user_profile")]
+    public class SyncUserProfile : BaseModel
+    {
+        [PrimaryKey("id")]
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        [Column("user_id")]
+        public string? UserId { get; set; }
+
+        [Column("level")]
+        public int Level { get; set; } = 1;
+
+        [Column("xp")]
+        public int Xp { get; set; }
+
+        [Column("total_xp")]
+        public int TotalXp { get; set; }
+
+        [Column("combo_days")]
+        public int ComboDays { get; set; }
+
+        [Column("best_combo_days")]
+        public int BestComboDays { get; set; }
+
+        [Column("title")]
+        public string Title { get; set; } = "初出茅庐";
+
+        [Column("updated_at")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
     
     /// <summary>
     /// 同步状态

@@ -37,8 +37,10 @@ namespace TodoSidebar.Services
             if (_overrides.TryGetValue(featureKey, out var overrideValue))
                 return overrideValue;
 
-            // 当前阶段：所有功能对所有用户开放（不根据 License 限制）
-            // 等商业化验证通过后再启用 License 检查
+            // 商业化策略（当前阶段）：许可/支付服务尚未接入，所有功能对所有用户开放。
+            // 接入许可服务后，改为以下判定：
+            //   return _licenseService.IsPro || !IsProFeature(featureKey);
+            // 同时将 IFeatureFlagService 的注释契约同步为"Free 用户禁用 Pro 功能"。
             return true;
         }
 
