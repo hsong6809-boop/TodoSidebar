@@ -135,9 +135,15 @@ namespace TodoSidebar
             // 鼠标检测在首次收起后启动，初始展开状态不需要
             _dateTimeTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(30)
+                // L23 修复：间隔 30 秒 → 1 秒，与 HH:mm:ss 秒级显示匹配（DispatcherTimer 开销可忽略）
+                Interval = TimeSpan.FromSeconds(1)
             };
-            _dateTimeTimer.Tick += (s, args) => UpdateDateTime();
+            _dateTimeTimer.Tick += (s, args) =>
+            {
+                UpdateDateTime();
+                // L23 配套：顺带刷新可见任务的截止紧急程度文本，避免"3小时后"停滞
+                RefreshVisibleDeadlineUrgency();
+            };
             _dateTimeTimer.Start();
             UpdateDateTime(); // 立即更新一次
             
@@ -839,7 +845,32 @@ namespace TodoSidebar
             // 仅关心重建动作；逐个 Add 时容器尚未生成，延迟到布局完成后再恢复
             if (e.Action != System.Collections.Specialized.NotifyCollectionChangedAction.Reset) return;
 
-            Dispatcher.BeginInvoke(new Action(RestoreExpandedCard), DispatcherPriority.Background);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                RestoreExpandedCard();
+                // L23 配套：LoadCurrentTasks 重建集合后立即按当前时间刷新紧急程度文本
+                RefreshVisibleDeadlineUrgency();
+            }), DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// L23 配套：对当前可见任务调用 RefreshDeadlineUrgency（L13 新增），
+        /// 让"3小时后"等文本按当前时间重算；配合 1 秒定时器保持实时。
+        /// </summary>
+        private void RefreshVisibleDeadlineUrgency()
+        {
+            try
+            {
+                foreach (var item in TaskListBox.Items)
+                {
+                    if (item is TaskItem task)
+                        task.RefreshDeadlineUrgency();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"RefreshVisibleDeadlineUrgency error: {ex.Message}");
+            }
         }
 
         /// <summary>

@@ -4,10 +4,13 @@ namespace TodoSidebar.Services
 {
     /// <summary>
     /// Feature Flag 服务 — 基于 ILicenseService 动态判断。
-    /// Pro 功能在 Free 模式下全部禁用。
+    /// L14 修复：当前阶段所有 Pro 功能对 Free 用户开放（许可/支付服务尚未接入），
+    /// 接许可服务时再收紧为"Free 用户禁用 Pro 功能"（见 IsEnabled 内注释）。
     /// </summary>
     public class FeatureFlagService : IFeatureFlagService
     {
+        // L14 修复：预留字段 — 接入许可服务后用于按授权收紧 Pro 功能；
+        // 当前 IsEnabled 暂未消费，保留注入以免破坏构造函数签名
         private readonly ILicenseService _licenseService;
 
         /// <summary>手动覆盖的 flag（用于测试或特殊场景）</summary>

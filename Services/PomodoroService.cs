@@ -90,7 +90,7 @@ namespace TodoSidebar.Services
         /// </summary>
         public (int completed, int interrupted, int focusMinutes) GetTodayStats()
         {
-            var date = DateTime.Today.ToString("yyyy-MM-dd");
+            var date = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // L7 修复：InvariantCulture 防区域差异
             var (completed, interrupted) = _db.GetPomodoroCountByDate(date);
             var minutes = _db.GetFocusMinutesByDate(date);
             return (completed, interrupted, minutes);
@@ -104,6 +104,9 @@ namespace TodoSidebar.Services
             if (State == PomodoroState.Focus || State == PomodoroState.Paused)
                 return;
 
+            // L8 修复说明：Break 状态走到这里即"静默结束休息"——不结算任何会话，
+            // 直接覆盖为新的专注参数进入 Focus（计时器本就在跑且间隔不变，无需额外处理），
+            // 用户不必干等休息结束就能开始下一个番茄。
             BoundTaskId = taskId;
             BoundTaskTitle = taskTitle ?? "";
             TotalSeconds = Math.Max(1, minutes) * 60;
@@ -131,9 +134,20 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 停止当前番茄。complete=false 视为中断（不计 XP）。
         /// M16 修复：请求完成但实际专注时长不足 MinFocusSeconds 时强制按中断处理。
+        /// L8 修复：休息中调用则直接取消休息回 Idle，不结算任何会话。
         /// </summary>
         public void Stop(bool complete)
         {
+            // L8 修复：Break（休息中）也允许停止——此前休息中既不能 Stop 也不能 Pause，只能干等结束
+            if (State == PomodoroState.Break)
+            {
+                _timer.Stop();
+                // 休息中直接回 Idle，不结算任何会话；补发一次 Tick 让 UI 刷新到待机显示
+                SetState(PomodoroState.Idle);
+                Tick?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
             if (State != PomodoroState.Focus && State != PomodoroState.Paused)
                 return;
 
@@ -164,7 +178,7 @@ namespace TodoSidebar.Services
                 FinishSession(complete: true);
                 SetState(PomodoroState.Break);
 
-                int breakMinutes = (_db.GetPomodoroCountByDate(DateTime.Today.ToString("yyyy-MM-dd")).completed % RoundsPerCycle == 0)
+                int breakMinutes = (_db.GetPomodoroCountByDate(DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).completed % RoundsPerCycle == 0) // L7 修复：InvariantCulture 防区域差异
                     ? LongBreakMinutes : ShortBreakMinutes;
                 RemainingSeconds = breakMinutes * 60;
                 TotalSeconds = RemainingSeconds;
@@ -187,7 +201,7 @@ namespace TodoSidebar.Services
             // 原实现按墙钟差计算，暂停 2 小时会把 145 分钟记成专注时长
             var focusedSeconds = Math.Max(0, TotalSeconds - RemainingSeconds);
             var minutes = Math.Max(1, (int)Math.Round(focusedSeconds / 60.0));
-            var date = DateTime.Today.ToString("yyyy-MM-dd");
+            var date = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // L7 修复：InvariantCulture 防区域差异
 
             _db.AddPomodoroSession(BoundTaskId, _sessionStart, DateTime.Now, minutes, complete, date);
 

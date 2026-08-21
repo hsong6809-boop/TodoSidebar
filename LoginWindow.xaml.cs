@@ -16,6 +16,9 @@ namespace TodoSidebar
         // 异步操作进行中标记，防止登录/注册/忘记密码并发提交
         private bool _isBusy;
 
+        /// <summary>L22 修复：UI 展示的模糊配置提示（不含任何 AnonKey 片段）</summary>
+        private const string ConfigHint = "\n\n[诊断] 配置可能有误，详见日志";
+
         public LoginWindow()
         {
             InitializeComponent();
@@ -82,6 +85,14 @@ namespace TodoSidebar
             {
                 System.Diagnostics.Debug.WriteLine($"DragMove error: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// L22 修复：无边框窗口没有系统标题栏，补充关闭按钮（见 LoginWindow.xaml 标题栏 ✕）。
+        /// </summary>
+        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
         }
         
         /// <summary>
@@ -165,16 +176,19 @@ namespace TodoSidebar
                 }
                 else
                 {
+                    // L22 修复：完整诊断（含 AnonKey 前 24 字符片段）只写入日志文件，
+                    // UI 仅显示模糊提示，避免把 Key 片段暴露在界面上
                     var errMsg = (result.Error ?? "登录失败") + BuildConfigDiag();
                     LogLoginDiag(errMsg);
-                    ShowError(errMsg);
+                    ShowError((result.Error ?? "登录失败") + ConfigHint);
                 }
             }
             catch (Exception ex)
             {
+                // L22 修复：同上，诊断细节仅入日志
                 var errMsg = $"登录出错: {ex.Message}" + BuildConfigDiag();
                 LogLoginDiag(errMsg);
-                ShowError(errMsg);
+                ShowError($"登录出错: {ex.Message}" + ConfigHint);
             }
             finally
             {
@@ -291,7 +305,8 @@ namespace TodoSidebar
         }
 
         /// <summary>
-        /// 登录失败时附加配置诊断（URL 与 Key 前缀），用于排查 Invalid API key。
+        /// 登录失败时生成配置诊断（URL 与 Key 前缀），用于排查 Invalid API key。
+        /// L22 修复：本方法结果仅允许写入 login_diag.txt 日志，禁止直接展示到 UI；
         /// 仅显示 Key 前 24 字符，不回显完整凭据。
         /// </summary>
         private static string BuildConfigDiag()

@@ -14,10 +14,11 @@ namespace TodoSidebar.Services
         private static readonly Lazy<NetworkMonitor> _lazy = new(() => new NetworkMonitor());
         public static NetworkMonitor Instance => _lazy.Value;
 
-        private volatile bool _isOnline;
+        // L29 修复：bool 的 check-then-set 非原子，改用 int + Interlocked（0=离线，1=在线）
+        private int _isOnline;
 
         /// <summary>当前是否在线</summary>
-        public bool IsOnline => _isOnline;
+        public bool IsOnline => Volatile.Read(ref _isOnline) != 0;
 
         /// <summary>离线开始时间</summary>
         public DateTime? OfflineSince { get; private set; }
@@ -27,8 +28,8 @@ namespace TodoSidebar.Services
 
         private NetworkMonitor()
         {
-            _isOnline = NetworkInterface.GetIsNetworkAvailable();
-            if (!_isOnline)
+            _isOnline = NetworkInterface.GetIsNetworkAvailable() ? 1 : 0;
+            if (_isOnline == 0)
                 OfflineSince = DateTime.Now;
 
             NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
@@ -48,9 +49,12 @@ namespace TodoSidebar.Services
 
         private void UpdateStatus(bool online)
         {
-            if (_isOnline == online) return;
+            // L29 修复：Interlocked.Exchange 原子交换并用旧值判断状态是否翻转，
+            // 并发网络回调下不会重复触发或丢失 ConnectivityChanged 事件
+            var newValue = online ? 1 : 0;
+            var oldValue = Interlocked.Exchange(ref _isOnline, newValue);
+            if (oldValue == newValue) return;
 
-            _isOnline = online;
             if (!online)
             {
                 OfflineSince = DateTime.Now;

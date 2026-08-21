@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 2. 创建任务表
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,  -- L5：保持可空以兼容历史行，新行务必携带
     title TEXT NOT NULL,
     type INTEGER NOT NULL DEFAULT 0,          -- 0=每日任务, 1=项目制任务(有截止日期)
     priority INTEGER DEFAULT 1,               -- 0=低, 1=中, 2=高
@@ -22,6 +22,22 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TIMESTAMPTZ DEFAULT now(),
     is_deleted BOOLEAN DEFAULT false          -- 软删除
 );
+
+-- L5 修复：拦截 user_id 为空的插入，杜绝 RLS 下"任何人都看不到的幽灵行"
+CREATE OR REPLACE FUNCTION assert_task_user_id() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.user_id IS NULL THEN
+        RAISE EXCEPTION 'tasks.user_id 不能为空';
+    END IF;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+DROP TRIGGER IF EXISTS tasks_assert_user_id ON tasks;
+CREATE TRIGGER tasks_assert_user_id
+    BEFORE INSERT ON tasks
+    FOR EACH ROW
+    EXECUTE FUNCTION assert_task_user_id();
 
 -- 3. 创建设备表（可选，用于多设备管理）
 CREATE TABLE IF NOT EXISTS devices (
@@ -58,36 +74,46 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_conflicts ENABLE ROW LEVEL SECURITY;
 
--- 任务表策略：用户只能访问自己的任务
+-- 任务表策略：用户只能访问自己的任务（L5：幂等化，可重复执行）
+DROP POLICY IF EXISTS "Users can view own tasks" ON tasks;
 CREATE POLICY "Users can view own tasks" ON tasks
     FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own tasks" ON tasks;
 CREATE POLICY "Users can insert own tasks" ON tasks
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own tasks" ON tasks;
 CREATE POLICY "Users can update own tasks" ON tasks
     FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own tasks" ON tasks;
 CREATE POLICY "Users can delete own tasks" ON tasks
     FOR DELETE USING (auth.uid() = user_id);
 
--- 设备表策略
+-- 设备表策略（L5：幂等化）
+DROP POLICY IF EXISTS "Users can view own devices" ON devices;
 CREATE POLICY "Users can view own devices" ON devices
     FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own devices" ON devices;
 CREATE POLICY "Users can insert own devices" ON devices
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own devices" ON devices;
 CREATE POLICY "Users can update own devices" ON devices
     FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own devices" ON devices;
 CREATE POLICY "Users can delete own devices" ON devices
     FOR DELETE USING (auth.uid() = user_id);
 
--- 同步冲突表策略
+-- 同步冲突表策略（L5：幂等化）
+DROP POLICY IF EXISTS "Users can view own sync_conflicts" ON sync_conflicts;
 CREATE POLICY "Users can view own sync_conflicts" ON sync_conflicts
     FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own sync_conflicts" ON sync_conflicts;
 CREATE POLICY "Users can insert own sync_conflicts" ON sync_conflicts
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
@@ -100,7 +126,8 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- 8. 为 tasks 表创建触发器
+-- 8. 为 tasks 表创建触发器（L5：幂等化）
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
 CREATE TRIGGER update_tasks_updated_at
     BEFORE UPDATE ON tasks
     FOR EACH ROW

@@ -181,6 +181,12 @@ namespace TodoSidebar.Models
                     return $"{(int)timeLeft.TotalDays}天后";
             }
         }
+
+        /// <summary>
+        /// L13 修复：DeadlineUrgency 依赖 DateTime.Now 计算但没有 setter 可触发通知，
+        /// 文本会停滞（如一直显示"3小时后"）。供外部（定时器/列表刷新）调用以强制重算。
+        /// </summary>
+        public void RefreshDeadlineUrgency() => OnPropertyChanged(nameof(DeadlineUrgency));
         
         // 标签列表
         public List<string> TagList

@@ -5,10 +5,13 @@ namespace TodoSidebar.Services
     /// <summary>
     /// License 管理服务 — 初始骨架实现。
     /// 所有人都是 Free，Trial 逻辑为空。后期接入支付时填充。
+    /// L15 说明：Trial 起始时间仅存内存，应用重启即重置；
+    /// 接入支付时须将 Trial 状态持久化写入 Settings 表。
     /// </summary>
     public class LicenseService : ILicenseService
     {
         private LicenseTier _currentTier = LicenseTier.Free;
+        // L15 说明：仅内存存储、未持久化，重启即重置（接入支付时写入 Settings 表）
         private DateTime? _trialStartDate;
 
         public LicenseTier CurrentTier => _currentTier;
@@ -52,6 +55,7 @@ namespace TodoSidebar.Services
 
         public void StartTrial()
         {
+            // L15 说明：当前未持久化，重启即重置；接入支付时须写入 Settings 表
             if (!_trialStartDate.HasValue)
             {
                 _trialStartDate = DateTime.Now;

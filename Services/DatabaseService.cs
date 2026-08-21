@@ -11,7 +11,7 @@ namespace TodoSidebar.Services
 {
     public partial class DatabaseService : IDatabaseService, IDisposable
     {
-        private static DatabaseService? _instance;
+        private static volatile DatabaseService? _instance; // L2 修复：volatile 保证双检锁发布安全
         private static readonly object _lock = new object();
         
         public static DatabaseService Instance
@@ -544,17 +544,29 @@ namespace TodoSidebar.Services
         /// </summary>
         public void PurgeDeletedTasks(int daysOld = 30) => ExecuteLocked(() =>
         {
-            // LastSyncedAt 存储为 ISO-8601 "O" 格式（UTC），用同格式字符串比较，避免 SQLite datetime() 格式不匹配
-            var cutoff = DateTime.UtcNow.AddDays(-daysOld).ToString("O");
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = @"
-                DELETE FROM Tasks
-                WHERE IsDeleted = 1
-                  AND IsDirty = 0
-                  AND LastSyncedAt IS NOT NULL
-                  AND LastSyncedAt < @cutoff";
-            cmd.Parameters.AddWithValue("@cutoff", cutoff);
-            cmd.ExecuteNonQuery();
+            // L3 修复：在 C# 侧解析 LastSyncedAt 后比较时间，
+            // 避免历史数据混入本地偏移格式时 SQL 字符串比较失效导致漏删
+            var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+            var ids = new List<int>();
+            using (var selectCmd = _connection!.CreateCommand())
+            {
+                selectCmd.CommandText = "SELECT Id, LastSyncedAt FROM Tasks WHERE IsDeleted = 1 AND IsDirty = 0 AND LastSyncedAt IS NOT NULL";
+                using var reader = selectCmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var synced = ReadDateTime(reader, "LastSyncedAt");
+                    if (synced.HasValue && synced.Value < cutoff)
+                        ids.Add(reader.GetInt32(0));
+                }
+            }
+
+            foreach (var id in ids)
+            {
+                using var delCmd = _connection.CreateCommand();
+                delCmd.CommandText = "DELETE FROM Tasks WHERE Id = @id";
+                delCmd.Parameters.AddWithValue("@id", id);
+                delCmd.ExecuteNonQuery();
+            }
         });
 
         public List<TaskItem> GetTasks(TaskType? type = null, bool? completed = null) => ExecuteLocked(() =>
@@ -648,6 +660,8 @@ namespace TodoSidebar.Services
             var raw = reader.GetString(reader.GetOrdinal(columnName));
             if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var result))
                 return result;
+            // L1 修复：解析失败不再无声回退，留痕便于排查"时间莫名变成现在"类问题
+            System.Diagnostics.Debug.WriteLine($"[DatabaseService] 列 {columnName} 日期解析失败，原始值: {raw}");
             return null;
         }
 

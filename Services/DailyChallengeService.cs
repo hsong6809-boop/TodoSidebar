@@ -43,7 +43,7 @@ namespace TodoSidebar.Services
         /// </summary>
         public List<DailyChallenge> GetTodayChallenges()
         {
-            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // L7 修复：InvariantCulture 防区域差异
             var challenges = _db.GetDailyChallenges(today);
             if (challenges.Count == 0)
             {
@@ -81,7 +81,7 @@ namespace TodoSidebar.Services
         /// </summary>
         public void RegisterProgress(string typePrefix, int amount = 1)
         {
-            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // L7 修复：InvariantCulture 防区域差异
             var challenges = _db.GetDailyChallenges(today);
             var changed = false;
 

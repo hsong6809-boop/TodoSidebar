@@ -443,7 +443,8 @@ namespace TodoSidebar.Services
                                 {
                                     Action = "conflict",
                                     Success = true,
-                                    Details = $"冲突解决(LWW-远程胜): \"{existing.Title}\" → 远程覆盖本地"
+                                    // L30 修复：标题脱敏，防 sync_log.json 泄露隐私
+                                    Details = $"冲突解决(LWW-远程胜): \"{SanitizeTitle(existing.Title)}\" → 远程覆盖本地"
                                 });
                             }
                             else
@@ -455,7 +456,8 @@ namespace TodoSidebar.Services
                                 {
                                     Action = "conflict",
                                     Success = true,
-                                    Details = $"冲突解决(LWW-本地胜): \"{existing.Title}\" → 保留本地版本"
+                                    // L30 修复：标题脱敏，防 sync_log.json 泄露隐私
+                                    Details = $"冲突解决(LWW-本地胜): \"{SanitizeTitle(existing.Title)}\" → 保留本地版本"
                                 });
                             }
                         }
@@ -485,6 +487,17 @@ namespace TodoSidebar.Services
                 System.Diagnostics.Debug.WriteLine($"DownloadRemoteChanges error: {ex.Message}");
                 throw; // 让 SyncAsync 感知下载失败，避免误报同步成功
             }
+        }
+
+        /// <summary>
+        /// L30 修复：脱敏任务标题——只保留前 8 个字符加省略号，
+        /// 避免 conflict 日志（导出 sync_log.json）明文泄露任务内容隐私。
+        /// </summary>
+        private static string SanitizeTitle(string title)
+        {
+            if (string.IsNullOrEmpty(title))
+                return string.Empty;
+            return title.Length <= 8 ? title : title.Substring(0, 8) + "…";
         }
 
         /// <summary>
@@ -619,6 +632,25 @@ namespace TodoSidebar.Services
         {
             return await SyncAsync();
         }
+
+        /// <summary>
+        /// 尝试占用手动同步防重入标记（L28 修复）：
+        /// 手动上传/下载原先绕过 _syncInProgress 守卫，可与后台同步循环并发写库。
+        /// 与 SyncAsync 共用同一标记实现互斥；占用成功返回 true，
+        /// 调用方完成后必须配对调用 EndManualSync()（建议 try/finally）。
+        /// </summary>
+        public bool TryBeginManualSync()
+        {
+            return Interlocked.CompareExchange(ref _syncInProgress, 1, 0) == 0;
+        }
+
+        /// <summary>
+        /// 释放 TryBeginManualSync 占用的手动同步防重入标记（L28 修复）。
+        /// </summary>
+        public void EndManualSync()
+        {
+            Interlocked.Exchange(ref _syncInProgress, 0);
+        }
         
         /// <summary>
         /// 设置同步状态
@@ -643,6 +675,14 @@ namespace TodoSidebar.Services
                 // 已释放，忽略
             }
 
+            // L27 修复：Cancel 后先等在途同步循环退出（最多 5 秒）再 Dispose CTS/Timer，
+            // 避免在途同步仍持有已释放的资源；Wait 会把任务异常包装成 AggregateException 抛出，连同超时一并吞掉
+            try { _syncLoopTask?.Wait(TimeSpan.FromSeconds(5)); }
+            catch { }
+
+            // L27 修复：防重入标记复位移到等待之后——等待期间在途同步可能仍依赖该标记的互斥语义
+            Interlocked.Exchange(ref _syncInProgress, 0);
+
             _syncTimer?.Dispose();
             _cts?.Dispose();
 
@@ -656,9 +696,6 @@ namespace TodoSidebar.Services
                 _network.ConnectivityChanged -= _networkHandler;
                 _networkHandler = null;
             }
-
-            // 复位防重入标记，避免停止后再启动时卡死
-            Interlocked.Exchange(ref _syncInProgress, 0);
         }
     }
 }

@@ -83,6 +83,14 @@ namespace TodoSidebar.ViewModels
                 return;
             }
 
+            // L28 修复：手动上传前先占用防重入标记，避免与后台同步循环并发写库
+            if (!_syncService.TryBeginManualSync())
+            {
+                SyncStatusText = "正在同步中，请稍后再试";
+                _messageService.ShowWarning("已有同步正在进行，请稍后再试", "同步进行中");
+                return;
+            }
+
             IsSyncing = true;
             SyncStatusText = "正在上传本地数据...";
 
@@ -100,6 +108,8 @@ namespace TodoSidebar.ViewModels
             }
             finally
             {
+                // L28 修复：finally 中配对释放防重入标记，异常路径也能复位
+                _syncService.EndManualSync();
                 IsSyncing = false;
             }
         }
@@ -110,6 +120,14 @@ namespace TodoSidebar.ViewModels
             if (!AuthService.Instance.IsLoggedIn)
             {
                 _messageService.ShowWarning("请先登录后再下载", "未登录");
+                return;
+            }
+
+            // L28 修复：手动下载前先占用防重入标记，避免与后台同步循环并发写库
+            if (!_syncService.TryBeginManualSync())
+            {
+                SyncStatusText = "正在同步中，请稍后再试";
+                _messageService.ShowWarning("已有同步正在进行，请稍后再试", "同步进行中");
                 return;
             }
 
@@ -131,6 +149,8 @@ namespace TodoSidebar.ViewModels
             }
             finally
             {
+                // L28 修复：finally 中配对释放防重入标记，异常路径也能复位
+                _syncService.EndManualSync();
                 IsSyncing = false;
             }
         }

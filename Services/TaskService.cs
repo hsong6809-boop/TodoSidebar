@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using TodoSidebar.Models;
@@ -74,7 +75,7 @@ namespace TodoSidebar.Services
                 if (task.Type == TaskType.Daily)
                 {
                     // 每日任务：记录今天的完成状态，不修改任务本身的 IsCompleted
-                    var today = DateTime.Today.ToString("yyyy-MM-dd");
+                    var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
                     _db.MarkDailyTaskCompleted(task.Id, today);
                     _db.MarkTaskDirty(task.Id); // 标记需要同步
                     task.IsTodayCompleted = true;
@@ -144,7 +145,7 @@ namespace TodoSidebar.Services
                 if (task.Type == TaskType.Daily)
                 {
                     // 每日任务：删除今天的完成记录
-                    var today = DateTime.Today.ToString("yyyy-MM-dd");
+                    var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
                     _db.UnmarkDailyTaskCompleted(task.Id, today);
                     _db.MarkTaskDirty(task.Id); // 标记需要同步
                     task.IsTodayCompleted = false;

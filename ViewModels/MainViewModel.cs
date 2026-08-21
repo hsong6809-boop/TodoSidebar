@@ -48,13 +48,6 @@ namespace TodoSidebar.ViewModels
 
         public ObservableCollection<TaskItem> SearchResults { get; } = new();
 
-        // 模板相关
-        private readonly TaskTemplateService _templateService;
-        public List<TaskTemplate> Templates => _templateService.GetTemplates();
-
-        [ObservableProperty]
-        private int _templatesCount;
-
         // ===== 升级系统 =====
         [ObservableProperty]
         private int _level = 1;
@@ -104,9 +97,7 @@ namespace TodoSidebar.ViewModels
             _dbService = DatabaseService.Instance;
             _taskService = new TaskService(_dbService);
             _messageService = MessageService.Instance;
-            _templateService = new TaskTemplateService();
-            _templatesCount = Templates.Count;
-            
+
             // 初始化子 ViewModel
             StatisticsViewModel = new StatisticsViewModel(_dbService);
             SyncViewModel = new SyncViewModel(SyncService.Instance, _messageService);
@@ -403,17 +394,6 @@ namespace TodoSidebar.ViewModels
             SearchResults.Clear();
         }
 
-        // ========== 模板操作 ==========
-
-        [RelayCommand]
-        private void ApplyTemplate(TaskTemplate? template)
-        {
-            if (template == null) return;
-            var task = _templateService.CreateTaskFromTemplate(template);
-            _dbService.InsertTask(task);
-            LoadData();
-        }
-
         // ========== 子任务操作 ==========
 
         [RelayCommand]
@@ -522,20 +502,9 @@ namespace TodoSidebar.ViewModels
                 allTasks[i].SortOrder = i;
                 orders.Add((allTasks[i].Id, i));
             }
-            
+
             _dbService.UpdateTaskOrder(orders);
             LoadCurrentTasks();
-        }
-
-        [RelayCommand]
-        private void SaveTaskOrder(object? param)
-        {
-            if (param is not IList<TaskItem> tasks) return;
-            
-            var orders = new List<(int id, int order)>();
-            for (int i = 0; i < tasks.Count; i++)
-                orders.Add((tasks[i].Id, i));
-            _dbService.UpdateTaskOrder(orders);
         }
 
         public void Dispose()

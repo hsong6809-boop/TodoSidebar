@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -54,13 +55,17 @@ namespace TodoSidebar.Services
 
         public void Start()
         {
+            // L20 修复：Start 同时恢复检查与零点两个计时器（与 Stop 成对）
             _checkTimer.Start();
+            _midnightTimer.Start();
             CheckNotifications();
         }
 
         public void Stop()
         {
+            // L20 修复：原实现漏停 _midnightTimer，Stop 后零点清理逻辑仍在后台运行
             _checkTimer.Stop();
+            _midnightTimer.Stop();
         }
 
         private void CheckTimer_Tick(object? sender, EventArgs e)
@@ -140,6 +145,10 @@ namespace TodoSidebar.Services
         private const int NotificationHeight = 100;
         private const double AutoCloseSeconds = 3;
 
+        // L20 修复：静态活跃通知计数，多条通知按序号×80px 垂直错开，不再同位置重叠
+        private static int _activeNotifications;
+        private readonly int _slotIndex;
+
         public NotificationWindow(string title, string message)
         {
             Title = title;
@@ -192,7 +201,12 @@ namespace TodoSidebar.Services
             // 位置：当前屏幕右下角（适配多屏）
             var workArea = SystemParameters.WorkArea;
             Left = workArea.Right - Width - 20;
-            Top = workArea.Bottom - Height - 60;
+            // L20 修复：占用一个层叠序号并按序号×80px 下移 Top（构造时计数，早于 Show 完成定位无跳动）
+            _slotIndex = Interlocked.Increment(ref _activeNotifications) - 1;
+            Top = workArea.Bottom - Height - 60 - (_slotIndex * 80);
+
+            // L20 修复：窗口关闭时归还层叠序号
+            Closed += (s, e) => Interlocked.Decrement(ref _activeNotifications);
 
             // 自动关闭
             var closeTimer = new DispatcherTimer

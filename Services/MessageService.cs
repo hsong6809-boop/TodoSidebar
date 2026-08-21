@@ -38,6 +38,11 @@ namespace TodoSidebar.Services
             });
         }
 
+        /// <summary>
+        /// 显示是/否确认对话框并返回用户选择。
+        /// L4 修复：内部使用 Dispatcher.Invoke 同步封送，存在死锁窗口——仅限 UI 线程调用，
+        /// 不要在持有 UI 线程所等资源（锁/任务结果）的后台线程上调用。
+        /// </summary>
         public bool ShowConfirmation(string message, string title = "确认")
         {
             return Application.Current?.Dispatcher.Invoke(() =>

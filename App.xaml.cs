@@ -232,6 +232,14 @@ namespace TodoSidebar
         {
             try
             {
+                // L9 修复：退出时若有进行中的番茄会话，按中断落一条会话记录，
+                // 避免用户已专注的时间静默蒸发（无 XP，但保留时长统计）
+                var pomoState = PomodoroService.Instance.State;
+                if (pomoState == PomodoroState.Focus || pomoState == PomodoroState.Paused)
+                {
+                    PomodoroService.Instance.Stop(false);
+                }
+
                 _hotkeyService?.Dispose();
                 NotificationService.Instance.Stop();
                 SyncService.Instance.Stop();

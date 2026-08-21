@@ -18,6 +18,9 @@ namespace TodoSidebar
         private readonly MainViewModel _viewModel;
         private readonly ObservableCollection<SubTask> _subTasks;
         private bool _hasChanges;
+        // L21 修复：构造函数设置优先级默认值会触发 Priority_Checked，
+        // 初始化完成前置 false，避免"仅查看就保存"产生多余 DB 写
+        private bool _initialized;
 
         public TaskDetailDialog(TaskItem task, MainViewModel viewModel)
         {
@@ -25,6 +28,7 @@ namespace TodoSidebar
             _viewModel = viewModel;
             _subTasks = new ObservableCollection<SubTask>(SubTaskHelper.ParseSubTasks(task.SubTasksJson));
             _hasChanges = false;
+            _initialized = false; // L21 修复：初始化期间不记录变更
 
             InitializeComponent();
             DataContext = this;
@@ -60,6 +64,9 @@ namespace TodoSidebar
 
             SubTasksItemsControl.ItemsSource = _subTasks;
             UpdateProgress();
+
+            // L21 修复：初始化完成，此后用户操作才计入 _hasChanges
+            _initialized = true;
         }
 
         private void UpdateProgress()
@@ -118,6 +125,9 @@ namespace TodoSidebar
 
         private void Priority_Checked(object sender, RoutedEventArgs e)
         {
+            // L21 修复：构造函数设置默认选中会触发本事件，初始化完成前忽略
+            if (!_initialized) return;
+
             if (sender is RadioButton rb)
             {
                 _hasChanges = true;
@@ -157,6 +167,17 @@ namespace TodoSidebar
             if (_task.Type == TaskType.Deadline)
             {
                 var newDeadline = DeadlinePicker.SelectedDate;
+
+                // L21 修复：编辑后的截止日期早于今天时二次确认（取消则不保存），
+                // 与新增流程"截止日期不能早于今天"的校验行为对齐
+                if (newDeadline.HasValue && newDeadline.Value.Date < DateTime.Today)
+                {
+                    var confirm = MessageBox.Show("截止日期已过去，确定保存吗？",
+                        "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (confirm != MessageBoxResult.Yes)
+                        return;
+                }
+
                 if (newDeadline != _task.Deadline)
                 {
                     _task.Deadline = newDeadline;

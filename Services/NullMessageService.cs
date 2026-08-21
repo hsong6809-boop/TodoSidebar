@@ -11,9 +11,9 @@ namespace TodoSidebar.Services
         public void ShowError(string message, string title = "错误") { }
         public bool ShowConfirmation(string message, string title = "确认")
         {
-            // 无 UI 环境下默认允许操作，避免阻塞
-            System.Diagnostics.Debug.WriteLine($"[NullMessageService] Confirmation: {title} - {message} (auto-accepted)");
-            return true;
+            // L4 修复：无 UI 环境下无法让用户确认，拒绝破坏性操作比默认自动放行更安全
+            System.Diagnostics.Debug.WriteLine($"[NullMessageService] Confirmation: {title} - {message} (auto-rejected)");
+            return false;
         }
     }
 }

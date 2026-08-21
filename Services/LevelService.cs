@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using TodoSidebar.Models;
 
 namespace TodoSidebar.Services
@@ -112,7 +113,7 @@ namespace TodoSidebar.Services
         {
             if (amount <= 0) return;
 
-            var date = DateTime.Today.ToString("yyyy-MM-dd");
+            var date = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
             var dedup = !RepeatableSources.Contains(source);
 
             // M14 修复：查重、档案更新、流水写入在单锁单事务内原子完成，
@@ -221,7 +222,7 @@ namespace TodoSidebar.Services
         /// </summary>
         private SettleResult SettleComboForDate(DateTime date)
         {
-            var dateStr = date.ToString("yyyy-MM-dd");
+            var dateStr = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
             var growth = GetGrowth();
 
             // 幂等兜底：该日已有 combo 流水则只推进游标

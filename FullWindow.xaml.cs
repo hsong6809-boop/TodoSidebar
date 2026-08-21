@@ -5,7 +5,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using TodoSidebar.Helpers;
 using TodoSidebar.Models;
 using TodoSidebar.Services;
 using TodoSidebar.ViewModels;
@@ -436,15 +435,29 @@ namespace TodoSidebar
 
         private void AnimateLastItem(ListBox listBox)
         {
-            if (listBox.Items.Count > 0)
+            // L19 修复：新增任务后立即取容器时 ItemContainerGenerator 尚未生成容器，
+            // ContainerFromItem 返回 null 导致动画基本不生效；延迟到 Loaded 优先级
+            //（布局完成、容器已生成）后再执行原动画逻辑
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
             {
-                var lastItem = listBox.Items[listBox.Items.Count - 1];
-                var container = listBox.ItemContainerGenerator.ContainerFromItem(lastItem) as FrameworkElement;
-                if (container != null)
+                try
                 {
-                    AnimationService.AnimateAdd(container);
+                    if (listBox.Items.Count > 0)
+                    {
+                        var lastItem = listBox.Items[listBox.Items.Count - 1];
+                        // L19 修复：取容器前判空保护，极端情况下容器仍可能未生成
+                        var container = listBox.ItemContainerGenerator.ContainerFromItem(lastItem) as FrameworkElement;
+                        if (container != null)
+                        {
+                            AnimationService.AnimateAdd(container);
+                        }
+                    }
                 }
-            }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"AnimateLastItem error: {ex.Message}");
+                }
+            }));
         }
 
         private void Tab_Checked(object sender, RoutedEventArgs e)
