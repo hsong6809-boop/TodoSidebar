@@ -375,27 +375,33 @@ namespace TodoSidebar.Services
                 if (string.IsNullOrEmpty(userId))
                     return (0, 0);
                 
-                // 增量同步：只拉取上次同步后有更新的任务
-                Supabase.Postgrest.Responses.ModeledResponse<SyncTask> response;
-                
-                if (_lastSyncTimeUtc.HasValue)
+                // 增量同步：只拉取上次同步后有更新的任务。
+                // M12 修复：分页拉取——服务端 PostgREST 有单页行数上限（托管版默认 1000），
+                // 原实现一次 Get() 超限时静默截断，多设备"看似同步成功实则缺数据"
+                const int PageSize = 500;
+                var remoteTasks = new List<SyncTask>();
+                int offset = 0;
+                while (true)
                 {
-                    // 拉取上次同步后更新的任务（包括新创建的和已删除的）
-                    response = await client.From<SyncTask>()
-                        .Where(x => x.UserId == userId && x.UpdatedAt >= _lastSyncTimeUtc.Value)
-                        .Get();
+                    var query = client.From<SyncTask>().Where(x => x.UserId == userId);
+                    if (_lastSyncTimeUtc.HasValue)
+                    {
+                        // 拉取上次同步后更新的任务（包括新创建的和已删除的）
+                        query = query.Where(x => x.UpdatedAt >= _lastSyncTimeUtc.Value);
+                    }
+
+                    var response = await query.Range(offset, offset + PageSize - 1).Get();
+                    var page = response.Models ?? new List<SyncTask>();
+                    remoteTasks.AddRange(page);
+
+                    // 返回不足一页说明已取完
+                    if (page.Count < PageSize) break;
+
+                    offset += PageSize;
+                    if (offset > 50000) break; // 安全上限，防异常死循环
                 }
-                else
-                {
-                    // 首次同步：拉取所有任务
-                    response = await client.From<SyncTask>()
-                        .Where(x => x.UserId == userId)
-                        .Get();
-                }
-                
-                var remoteTasks = response.Models;
-                
-                if (remoteTasks == null || remoteTasks.Count() == 0)
+
+                if (remoteTasks.Count == 0)
                     return (0, 0);
                 
                 int downloaded = 0;
