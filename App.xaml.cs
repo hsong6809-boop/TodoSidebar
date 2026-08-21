@@ -196,7 +196,14 @@ namespace TodoSidebar
                     try
                     {
                         if (isLoggedIn)
+                        {
+                            // S6 修复：登录/切换账号时校验本地数据归属
+                            var uid = AuthService.Instance.CurrentUser?.Id;
+                            if (!string.IsNullOrEmpty(uid))
+                                DatabaseService.Instance.EnsureUserScope(uid);
+
                             await SyncService.Instance.InitializeAsync();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -204,6 +211,16 @@ namespace TodoSidebar
                     }
                 };
                 AuthService.Instance.LoginStateChanged += _loginStateHandler;
+
+                // S4 修复：会话恢复成功时 LoginStateChanged 事件在订阅之前就已发出，
+                // 处理器收不到通知导致自动同步永不启动。此处补一次显式检查。
+                if (AuthService.Instance.IsLoggedIn)
+                {
+                    var restoredUserId = AuthService.Instance.CurrentUser?.Id;
+                    if (!string.IsNullOrEmpty(restoredUserId))
+                        DatabaseService.Instance.EnsureUserScope(restoredUserId);
+                    await SyncService.Instance.InitializeAsync();
+                }
             }
             catch (Exception ex)
             {

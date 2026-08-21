@@ -81,6 +81,10 @@ create table if not exists public.user_profile (
 
 alter table public.user_profile enable row level security;
 
+-- S5 修复：保证每个用户只有一行成长档案，使 upsert 语义正确。
+-- 注意：若历史数据已产生重复行，需先按 user_id 去重后再执行本语句。
+create unique index if not exists user_profile_user_id_unique on public.user_profile(user_id);
+
 drop policy if exists "user_profile_select_own" on public.user_profile;
 drop policy if exists "user_profile_insert_own" on public.user_profile;
 drop policy if exists "user_profile_update_own" on public.user_profile;

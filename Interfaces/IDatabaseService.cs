@@ -30,9 +30,12 @@ namespace TodoSidebar.Services
 
         // 同步支持
         List<TaskItem> GetDirtyTasks();
-        void MarkTaskSynced(int localId, string syncId);
+        void MarkTaskSynced(int localId, string syncId, string? expectedLocalUpdatedAt = null);
         TaskItem? GetTaskBySyncId(string syncId);
         void UpsertTaskFromRemote(TaskItem task);
         void PurgeDeletedTasks(int daysOld = 30);
+
+        // 多用户隔离
+        void EnsureUserScope(string userId);
     }
 }

@@ -21,6 +21,9 @@ namespace TodoSidebar.Services
         private static readonly string SessionFilePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "TodoSidebar", "session.json");
+
+        /// <summary>session 文件读写锁（M9 修复：并发保存串行化）</summary>
+        private static readonly object _sessionFileLock = new object();
         
         public static AuthService Instance
         {
@@ -84,15 +87,21 @@ namespace TodoSidebar.Services
                             return;
                         }
                         var session = await SupabaseClientService.Client.Auth.SetSession(
-                            savedSession.AccessToken!, 
+                            savedSession.AccessToken!,
                             savedSession.RefreshToken!);
-                        
+
                         if (session?.User != null)
                         {
                             CurrentUser = session.User;
                             LoginStateChanged?.Invoke(this, true);
                             return;
                         }
+                    }
+                    catch (Exception ex) when (IsTransientNetworkError(ex))
+                    {
+                        // M7 修复：网络未就绪等瞬态故障不删除凭据文件，
+                        // 保留供下次启动重试（原实现一律删文件导致开机离线时被登出）
+                        System.Diagnostics.Debug.WriteLine($"Restore session skipped (transient network error): {ex.Message}");
                     }
                     catch (Exception ex)
                     {
@@ -228,41 +237,51 @@ namespace TodoSidebar.Services
         /// </summary>
         private void SaveSessionToFile(Session session)
         {
-            try
+            // M9 修复：TokenRefreshed（Gotrue 后台线程）与登录保存（UI 线程）可能并发写文件，串行化
+            lock (_sessionFileLock)
             {
-                var dir = Path.GetDirectoryName(SessionFilePath);
-                if (dir != null && !Directory.Exists(dir))
+                try
                 {
-                    Directory.CreateDirectory(dir);
-                }
-                
-                var sessionData = new SessionData
-                {
-                    AccessToken = session.AccessToken,
-                    RefreshToken = session.RefreshToken,
-                    ExpiresAt = session.ExpiresAt(),
-                    UserId = session.User?.Id
-                };
-                
-                var json = JsonSerializer.Serialize(sessionData, new JsonSerializerOptions 
-                { 
-                    WriteIndented = true 
-                });
-                // DPAPI 加密：失败会抛异常（DataProtectionHelper 不再回退明文），此处不落盘
-                var encrypted = DataProtectionHelper.Protect(json);
+                    var dir = Path.GetDirectoryName(SessionFilePath);
+                    if (dir != null && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
 
-                // 原子写：先写临时文件再替换，避免中途崩溃损坏 session 文件
-                var tempPath = SessionFilePath + ".tmp";
-                File.WriteAllText(tempPath, encrypted);
-                File.Move(tempPath, SessionFilePath, overwrite: true);
-                
-                System.Diagnostics.Debug.WriteLine("Session saved to file");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"SaveSessionToFile error: {ex.Message}");
-                // 加密/写盘失败：为保证安全，删除可能存在的旧明文/半成品文件
-                try { if (File.Exists(SessionFilePath)) File.Delete(SessionFilePath); } catch { }
+                    var sessionData = new SessionData
+                    {
+                        AccessToken = session.AccessToken,
+                        RefreshToken = session.RefreshToken,
+                        ExpiresAt = session.ExpiresAt(),
+                        UserId = session.User?.Id
+                    };
+
+                    var json = JsonSerializer.Serialize(sessionData, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+                    // DPAPI 加密：失败会抛异常（DataProtectionHelper 不再回退明文），此处不落盘
+                    var encrypted = DataProtectionHelper.Protect(json);
+
+                    // 原子写：先写随机名临时文件再替换（M9 修复：固定 .tmp 名在并发时会互相踩踏抛 IOException）
+                    var tempPath = SessionFilePath + $".{Guid.NewGuid():N}.tmp";
+                    try
+                    {
+                        File.WriteAllText(tempPath, encrypted);
+                        File.Move(tempPath, SessionFilePath, overwrite: true);
+                        System.Diagnostics.Debug.WriteLine("Session saved to file");
+                    }
+                    finally
+                    {
+                        try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // M9 修复：写盘瞬时失败只记录日志并保留旧 session 文件，
+                    // 不再删除唯一凭据导致莫名登出（加密失败本就不会落盘，无需清理）
+                    System.Diagnostics.Debug.WriteLine($"SaveSessionToFile error: {ex.Message}");
+                }
             }
         }
         
@@ -286,15 +305,11 @@ namespace TodoSidebar.Services
                     return null;
                 }
                 var sessionData = JsonSerializer.Deserialize<SessionData>(json);
-                
-                // 检查 session 是否过期（统一转 UTC 比较，避免 Kind 差异导致 8 小时偏差）
-                if (sessionData?.ExpiresAt != null && sessionData.ExpiresAt.Value.ToUniversalTime() < DateTime.UtcNow)
-                {
-                    System.Diagnostics.Debug.WriteLine("Session expired, deleting file");
-                    DeleteSessionFile();
-                    return null;
-                }
-                
+
+                // M8 修复：移除 access token 过期预检——access token 默认 1 小时过期，
+                // 但 refresh token 通常仍有效，SetSession 会自动刷新续期。
+                // 原实现关闭超过 1 小时后再打开就直接删凭据强制重新登录，体验极差。
+
                 return sessionData;
             }
             catch (Exception ex)
@@ -304,6 +319,27 @@ namespace TodoSidebar.Services
             }
         }
         
+        /// <summary>
+        /// 判断是否为瞬态网络类异常（M7 修复）。
+        /// 此类错误下保留本地凭据文件，下次启动重试；仅凭据确认失效时才删除。
+        /// </summary>
+        private static bool IsTransientNetworkError(Exception ex)
+        {
+            switch (ex)
+            {
+                case System.Net.Http.HttpRequestException:
+                case System.Net.Sockets.SocketException:
+                case System.Net.WebException:
+                case TaskCanceledException: // 超时
+                    return true;
+            }
+            var msg = ex.Message ?? string.Empty;
+            return msg.Contains("network", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("connection", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("name or service", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("temporary failure", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// 删除本地 session 文件
         /// </summary>

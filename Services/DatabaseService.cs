@@ -24,8 +24,11 @@ namespace TodoSidebar.Services
                     {
                         if (_instance == null)
                         {
-                            _instance = new DatabaseService();
-                            _instance.Initialize();
+                            // S2 修复：先在局部变量上完成初始化，成功后才发布到 _instance，
+                            // 避免初始化抛异常后留下 _connection 为 null 的僵尸单例
+                            var instance = new DatabaseService();
+                            instance.Initialize();
+                            _instance = instance;
                         }
                     }
                 }
@@ -70,29 +73,17 @@ namespace TodoSidebar.Services
                     walCmd.ExecuteNonQuery();
                 }
             }
-            catch (Exception ex)
+            catch (SqliteException ex) when (IsCorruptionError(ex))
             {
-                // 数据库连接失败，尝试备份后重建
-                System.Diagnostics.Debug.WriteLine($"数据库连接失败: {ex.Message}，将尝试备份后重建");
+                // 仅在数据库文件确认损坏时才备份后重建（S1 修复：
+                // 瞬时占用/磁盘满/杀软锁定等可恢复错误不再触发毁坏性删库）
+                System.Diagnostics.Debug.WriteLine($"数据库文件损坏: {ex.Message}，将备份后重建");
 
                 try
                 {
                     _connection?.Dispose();
-                    if (File.Exists(_dbPath))
-                    {
-                        // 备份损坏的数据库文件，避免数据丢失
-                        var backupPath = _dbPath + ".corrupted.bak";
-                        try
-                        {
-                            File.Copy(_dbPath, backupPath, overwrite: true);
-                            System.Diagnostics.Debug.WriteLine($"已备份损坏的数据库到: {backupPath}");
-                        }
-                        catch (Exception backupEx)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"备份损坏数据库失败: {backupEx.Message}");
-                        }
-                        File.Delete(_dbPath);
-                    }
+                    _connection = null;
+                    BackupCorruptedDatabase();
                     _connection = new SqliteConnection($"Data Source={_dbPath}");
                     _connection.Open();
                     using (var walCmd = _connection.CreateCommand())
@@ -171,6 +162,76 @@ namespace TodoSidebar.Services
             // ===== 升级系统表 =====
             CreateGrowthTables();
             EnsureGrowthSyncColumns();
+        }
+
+        /// <summary>
+        /// 判断是否为数据库文件损坏类错误（S1 修复）。
+        /// 只有确认损坏（SQLITE_CORRUPT / SQLITE_NOTADB）才允许走"备份后重建"路径，
+        /// 其余异常（占用、权限、磁盘满等）直接向上抛出，避免误删用户数据。
+        /// </summary>
+        private static bool IsCorruptionError(SqliteException ex)
+        {
+            // 11 = SQLITE_CORRUPT, 26 = SQLITE_NOTADB
+            if (ex.SqliteErrorCode == 11 || ex.SqliteErrorCode == 26)
+                return true;
+            // 扩展错误码兜底（如 SQLITE_CORRUPT_VFS 等变体）
+            var ext = ex.SqliteExtendedErrorCode & 0xFF;
+            if (ext == 11 || ext == 26)
+                return true;
+            var msg = ex.Message ?? string.Empty;
+            return msg.Contains("corrupt", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("not a database", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("malformed", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 备份损坏的数据库文件（含 -wal/-shm），带时间戳保留最近 3 份，然后删除原文件重建。
+        /// </summary>
+        private void BackupCorruptedDatabase()
+        {
+            if (!File.Exists(_dbPath)) return;
+
+            var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var candidates = new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" };
+            try
+            {
+                foreach (var src in candidates)
+                {
+                    if (!File.Exists(src)) continue;
+                    File.Copy(src, $"{src}.corrupted-{stamp}.bak", overwrite: false);
+                }
+                System.Diagnostics.Debug.WriteLine($"已备份损坏的数据库到: {_dbPath}.corrupted-{stamp}.bak");
+            }
+            catch (Exception backupEx)
+            {
+                // 备份失败也要继续尝试重建（否则应用完全不可用），但必须记录
+                System.Diagnostics.Debug.WriteLine($"备份损坏数据库失败: {backupEx.Message}");
+            }
+
+            foreach (var src in candidates)
+            {
+                try { if (File.Exists(src)) File.Delete(src); }
+                catch (Exception delEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"删除损坏数据库文件失败: {src}: {delEx.Message}");
+                }
+            }
+
+            // 只保留最近 3 份损坏备份，避免无限膨胀
+            try
+            {
+                var dir = Path.GetDirectoryName(_dbPath) ?? ".";
+                var name = Path.GetFileName(_dbPath);
+                var oldBackups = Directory.GetFiles(dir, $"{name}.corrupted-*.bak")
+                    .Concat(Directory.GetFiles(dir, $"{name}-*.corrupted-*.bak"))
+                    .OrderByDescending(f => f)
+                    .Skip(3);
+                foreach (var old in oldBackups)
+                {
+                    try { File.Delete(old); } catch { /* 尽力清理 */ }
+                }
+            }
+            catch { /* 清理失败不影响主流程 */ }
         }
 
         private void CreateGrowthTables()
@@ -258,7 +319,9 @@ namespace TodoSidebar.Services
                 { "SyncId", "TEXT" },
                 { "IsDirty", "INTEGER DEFAULT 1" },
                 { "LastSyncedAt", "TEXT" },
-                { "IsDeleted", "INTEGER DEFAULT 0" }
+                { "IsDeleted", "INTEGER DEFAULT 0" },
+                // S7 修复：本地编辑时间戳（UTC），用于同步冲突时与云端 UpdatedAt 做真正的 LWW 比较
+                { "LocalUpdatedAt", "TEXT" }
             };
 
             foreach (var column in columnsToCheck)
@@ -293,8 +356,8 @@ namespace TodoSidebar.Services
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, IsDirty)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, 1);
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, IsDirty, LocalUpdatedAt)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, 1, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
             cmd.Parameters.AddWithValue("@title", task.Title);
@@ -309,6 +372,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
@@ -320,8 +384,8 @@ namespace TodoSidebar.Services
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted);
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
             cmd.Parameters.AddWithValue("@title", task.Title);
@@ -341,6 +405,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
             cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+            cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
 
@@ -360,7 +425,8 @@ namespace TodoSidebar.Services
                     EstimatedMinutes = @estimatedMinutes,
                     ActualMinutes = @actualMinutes,
                     SubTasksJson = @subTasksJson,
-                    IsDirty = 1
+                    IsDirty = 1,
+                    LocalUpdatedAt = @localUpdatedAt
                 WHERE Id = @id
             ";
             cmd.Parameters.AddWithValue("@id", task.Id);
@@ -375,6 +441,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         });
 
@@ -382,8 +449,9 @@ namespace TodoSidebar.Services
         {
             // 软删除：标记 IsDeleted + IsDirty，同步时会上传到云端
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1 WHERE Id = @id";
+            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id";
             cmd.Parameters.AddWithValue("@id", id);
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         });
 
@@ -494,7 +562,8 @@ namespace TodoSidebar.Services
                 SyncId = reader.IsDBNull(reader.GetOrdinal("SyncId")) ? null : reader.GetString(reader.GetOrdinal("SyncId")),
                 IsDirty = reader.IsDBNull(reader.GetOrdinal("IsDirty")) ? true : reader.GetInt32(reader.GetOrdinal("IsDirty")) == 1,
                 LastSyncedAt = ReadDateTime(reader, "LastSyncedAt"),
-                IsDeleted = reader.IsDBNull(reader.GetOrdinal("IsDeleted")) ? false : reader.GetInt32(reader.GetOrdinal("IsDeleted")) == 1
+                IsDeleted = reader.IsDBNull(reader.GetOrdinal("IsDeleted")) ? false : reader.GetInt32(reader.GetOrdinal("IsDeleted")) == 1,
+                LocalUpdatedAt = ReadDateTime(reader, "LocalUpdatedAt")
             };
         }
 
@@ -514,14 +583,17 @@ namespace TodoSidebar.Services
 
         // ==================== 设置 ====================
 
-        public string? GetSetting(string key) => ExecuteLocked(() =>
+        public string? GetSetting(string key) => ExecuteLocked(() => GetSettingCore(key));
+
+        /// <summary>无锁版设置读取（供已持有 _dbLock 的内部方法复用）</summary>
+        private string? GetSettingCore(string key)
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "SELECT Value FROM Settings WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
             var result = cmd.ExecuteScalar();
             return result?.ToString();
-        });
+        }
 
         public void SetSetting(string key, string value) => ExecuteLocked(() =>
         {
@@ -617,8 +689,9 @@ namespace TodoSidebar.Services
         public void MarkTaskDirty(int taskId) => ExecuteLocked(() =>
         {
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "UPDATE Tasks SET IsDirty = 1 WHERE Id = @id";
+            cmd.CommandText = "UPDATE Tasks SET IsDirty = 1, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id";
             cmd.Parameters.AddWithValue("@id", taskId);
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         });
 
@@ -715,9 +788,11 @@ namespace TodoSidebar.Services
                 {
                     using var cmd = _connection!.CreateCommand();
                     cmd.Transaction = transaction;
-                    cmd.CommandText = "UPDATE Tasks SET SortOrder = @order WHERE Id = @id";
+                    // S11 修复：排序变更置脏，使 SortOrder 能同步到云端
+                    cmd.CommandText = "UPDATE Tasks SET SortOrder = @order, IsDirty = 1, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id";
                     cmd.Parameters.AddWithValue("@id", id);
                     cmd.Parameters.AddWithValue("@order", order);
+                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
@@ -751,23 +826,27 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// 标记任务已同步
+        /// 标记任务已同步。
+        /// S7 修复：带乐观守卫——仅当任务的 LocalUpdatedAt 仍等于上传时的快照值时才清除 IsDirty，
+        /// 防止"上传期间用户又编辑了任务"导致新修改被误标为已同步而丢失。
         /// </summary>
-        public void MarkTaskSynced(int localId, string syncId)
+        public void MarkTaskSynced(int localId, string syncId, string? expectedLocalUpdatedAt = null)
         {
             ExecuteLocked(() =>
             {
                 using var cmd = _connection!.CreateCommand();
                 cmd.CommandText = @"
-                    UPDATE Tasks SET 
-                        SyncId = @syncId, 
-                        IsDirty = 0, 
-                        LastSyncedAt = @syncedAt 
+                    UPDATE Tasks SET
+                        SyncId = @syncId,
+                        IsDirty = 0,
+                        LastSyncedAt = @syncedAt
                     WHERE Id = @id
+                      AND (@expected IS NULL OR LocalUpdatedAt IS NULL OR LocalUpdatedAt = @expected)
                 ";
                 cmd.Parameters.AddWithValue("@id", localId);
                 cmd.Parameters.AddWithValue("@syncId", syncId);
                 cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
+                cmd.Parameters.AddWithValue("@expected", expectedLocalUpdatedAt ?? (object)DBNull.Value);
                 cmd.ExecuteNonQuery();
             });
         }
@@ -818,7 +897,8 @@ namespace TodoSidebar.Services
                             SubTasksJson = @subTasksJson,
                             IsDeleted = @isDeleted,
                             IsDirty = 0,
-                            LastSyncedAt = @syncedAt
+                            LastSyncedAt = @syncedAt,
+                            LocalUpdatedAt = @localUpdatedAt
                         WHERE SyncId = @syncId
                     ";
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
@@ -835,6 +915,7 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
+                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                 }
                 else
@@ -842,8 +923,8 @@ namespace TodoSidebar.Services
                     // 插入新任务
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted)
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -859,37 +940,43 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
+                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                 }
             });
         }
 
         /// <summary>
-        /// 原子替换全部任务（备份恢复用）：单事务内软删现有任务 + 插入恢复的任务。
-        /// 任一步失败整体回滚，避免"先删光再导入失败"导致数据丢失。
+        /// 原子替换全部任务（备份恢复用）：单事务内物理删除现有任务 + 按原始 Id 插入恢复的任务
+        /// + 清理子表孤儿记录。任一步失败整体回滚，避免"先删光再导入失败"导致数据丢失。
         /// </summary>
         public void ReplaceAllTasks(List<TaskItem> tasks) => ExecuteLocked(() =>
         {
             using var transaction = _connection!.BeginTransaction();
             try
             {
-                // 1. 软删全部现有任务
+                // 1. 物理删除全部现有任务（S3 修复：原实现软删后按新自增 Id 插入，
+                //    导致 DailyTaskCompletion/XpLog/PomodoroSession 的 TaskId 全部孤儿化，
+                //    且新旧行并存产生重复 SyncId 干扰同步匹配。
+                //    恢复语义 = 回到备份快照，物理删除 + 保留备份中的原始 Id，
+                //    使子表引用在"同源恢复"场景下天然保持有效）
                 using (var deleteCmd = _connection.CreateCommand())
                 {
                     deleteCmd.Transaction = transaction;
-                    deleteCmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1";
+                    deleteCmd.CommandText = "DELETE FROM Tasks";
                     deleteCmd.ExecuteNonQuery();
                 }
 
-                // 2. 插入恢复的任务（保留 SyncId/IsDirty，避免云端重复）
+                // 2. 插入恢复的任务（保留原始 Id 与 SyncId/IsDirty，避免云端重复）
                 foreach (var task in tasks)
                 {
                     using var cmd = _connection!.CreateCommand();
                     cmd.Transaction = transaction;
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted)
+                        INSERT INTO Tasks (Id, Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
+                        VALUES (@id, @title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @localUpdatedAt)
                     ";
+                    cmd.Parameters.AddWithValue("@id", task.Id);
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
                     cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
@@ -907,7 +994,18 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
                     cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
+                }
+
+                // 3. 清理子表中指向已不存在任务的孤儿记录（跨源恢复时旧 Id 可能失效），
+                //    避免污染连击结算与统计
+                foreach (var table in new[] { "DailyTaskCompletion", "XpLog", "PomodoroSession" })
+                {
+                    using var cleanupCmd = _connection.CreateCommand();
+                    cleanupCmd.Transaction = transaction;
+                    cleanupCmd.CommandText = $"DELETE FROM {table} WHERE TaskId IS NOT NULL AND TaskId NOT IN (SELECT Id FROM Tasks)";
+                    cleanupCmd.ExecuteNonQuery();
                 }
 
                 transaction.Commit();
@@ -918,6 +1016,74 @@ namespace TodoSidebar.Services
                 throw;
             }
         });
+
+        // ==================== 多用户隔离（S6 修复） ====================
+
+        /// <summary>
+        /// 确保本地数据归属当前登录用户（S6 修复）。
+        /// 检测到切换账号时清空本地业务数据，防止前一用户的任务/成长数据
+        /// 被显示给新用户、或在下次同步时被上传到新账号名下。
+        /// 同一账号重复登录不受影响（保留本地数据）。
+        /// </summary>
+        public void EnsureUserScope(string userId)
+        {
+            if (string.IsNullOrEmpty(userId)) return;
+
+            ExecuteLocked(() =>
+            {
+                var lastUserId = GetSettingCore("LastUserId");
+                if (lastUserId == userId)
+                    return; // 同一用户，保留本地数据
+
+                using var transaction = _connection!.BeginTransaction();
+                try
+                {
+                    foreach (var table in new[] { "Tasks", "DailyTaskCompletion", "XpLog", "PomodoroSession", "AchievementUnlocks", "DailyChallenge" })
+                    {
+                        using var cmd = _connection.CreateCommand();
+                        cmd.Transaction = transaction;
+                        cmd.CommandText = $"DELETE FROM {table}";
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // 重置成长档案
+                    using (var resetProfile = _connection.CreateCommand())
+                    {
+                        resetProfile.Transaction = transaction;
+                        resetProfile.CommandText = "DELETE FROM UserProfile";
+                        resetProfile.ExecuteNonQuery();
+                    }
+
+                    // 清理同步游标（旧账号的增量游标对新账号无意义）
+                    using (var clearCursor = _connection.CreateCommand())
+                    {
+                        clearCursor.Transaction = transaction;
+                        clearCursor.CommandText = "DELETE FROM Settings WHERE Key LIKE 'LastSyncTimeUtc%'";
+                        clearCursor.ExecuteNonQuery();
+                    }
+
+                    // 记录当前用户
+                    using (var saveUser = _connection.CreateCommand())
+                    {
+                        saveUser.Transaction = transaction;
+                        saveUser.CommandText = @"
+                            INSERT INTO Settings (Key, Value) VALUES ('LastUserId', @uid)
+                            ON CONFLICT(Key) DO UPDATE SET Value = @uid
+                        ";
+                        saveUser.Parameters.AddWithValue("@uid", userId);
+                        saveUser.ExecuteNonQuery();
+                    }
+
+                    transaction.Commit();
+                    System.Diagnostics.Debug.WriteLine($"检测到账号切换，已清空本地数据（{lastUserId ?? "无"} → {userId}）");
+                }
+                catch
+                {
+                    try { transaction.Rollback(); } catch { /* 已回滚或连接异常 */ }
+                    throw;
+                }
+            });
+        }
 
         // ==================== 升级系统数据访问 ====================
 
@@ -1370,8 +1536,12 @@ namespace TodoSidebar.Services
 
         public void Dispose()
         {
-            _dbLock?.Dispose();
+            // S2 修复：先释放连接、再释放信号量（后台线程可能仍阻塞在 _dbLock.Wait()，
+            // 先释放信号量会使其抛 ObjectDisposedException），最后清除单例引用
             _connection?.Dispose();
+            _connection = null;
+            _dbLock?.Dispose();
+            _instance = null;
         }
 
         /// <summary>

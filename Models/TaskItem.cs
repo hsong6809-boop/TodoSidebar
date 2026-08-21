@@ -96,6 +96,13 @@ namespace TodoSidebar.Models
         /// 最后同步时间
         /// </summary>
         public DateTime? LastSyncedAt { get; set; }
+
+        /// <summary>
+        /// 本地最后编辑时间（UTC，S7 修复）。
+        /// 用于同步冲突时与云端 UpdatedAt 做真正的 LWW 比较，
+        /// 替代原先错误使用的 LastSyncedAt 基线。
+        /// </summary>
+        public DateTime? LocalUpdatedAt { get; set; }
         
         /// <summary>
         /// 是否已软删除

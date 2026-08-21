@@ -121,8 +121,11 @@ namespace TodoSidebar.Models
     [Table("user_profile")]
     public class SyncUserProfile : BaseModel
     {
+        // S5 修复：不再默认生成新 GUID——Upsert 按主键解析冲突，
+        // 每次实例化新 Guid 会让 upsert 退化为无限插入新行。
+        // Id 由调用方显式赋值（复用云端已有行的 Id，或首次上传时生成一次）。
         [PrimaryKey("id")]
-        public Guid Id { get; set; } = Guid.NewGuid();
+        public Guid Id { get; set; }
 
         [Column("user_id")]
         public string? UserId { get; set; }

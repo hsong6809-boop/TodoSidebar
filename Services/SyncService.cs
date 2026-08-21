@@ -92,21 +92,31 @@ namespace TodoSidebar.Services
         {
             // 防止重复初始化
             if (_cts != null) return;
-            
+
             await SupabaseClientService.InitializeAsync();
-            
-            // 从数据库恢复上次同步时间
-            var savedSyncTime = _dbService.GetSetting("LastSyncTimeUtc");
-            if (!string.IsNullOrEmpty(savedSyncTime) && DateTime.TryParse(savedSyncTime, out var parsed))
+
+            // 从数据库恢复上次同步时间（S8 修复：游标按用户隔离，
+            // 避免切换账号后沿用前一用户的增量游标导致云端任务大面积不下载）
+            var userId = _authService.CurrentUser?.Id;
+            if (!string.IsNullOrEmpty(userId))
             {
-                _lastSyncTimeUtc = parsed;
+                var savedSyncTime = _dbService.GetSetting(CursorKey(userId));
+                if (string.IsNullOrEmpty(savedSyncTime))
+                {
+                    // 迁移兼容：老版本使用全局键，首次按新键读取不到时回退一次
+                    savedSyncTime = _dbService.GetSetting("LastSyncTimeUtc");
+                }
+                if (!string.IsNullOrEmpty(savedSyncTime) && DateTime.TryParse(savedSyncTime, out var parsed))
+                {
+                    _lastSyncTimeUtc = parsed;
+                }
             }
-            
+
             // 用 PeriodicTimer 替代 System.Timers.Timer，正确处理 async
             _cts = new CancellationTokenSource();
             _syncTimer = new PeriodicTimer(TimeSpan.FromSeconds(SupabaseConfig.SyncIntervalSeconds));
             _syncLoopTask = RunSyncLoopAsync(_cts.Token);
-            
+
             // 网络恢复时自动触发同步（保存引用以便 Stop 时取消订阅）
             _networkHandler = async (_, online) =>
             {
@@ -118,6 +128,9 @@ namespace TodoSidebar.Services
             };
             _network.ConnectivityChanged += _networkHandler;
         }
+
+        /// <summary>同步游标的设置键（按用户隔离）</summary>
+        private static string CursorKey(string userId) => $"LastSyncTimeUtc:{userId}";
         
         /// <summary>
         /// 同步循环 — 用 PeriodicTimer 正确处理 async + 异常
@@ -201,9 +214,11 @@ namespace TodoSidebar.Services
                 result.Success = true;
                 LastSyncTime = DateTime.Now;
                 
-                // 保存同步时间到数据库
+                // 保存同步时间到数据库（S8 修复：按用户隔离的游标键）
                 _lastSyncTimeUtc = DateTime.UtcNow;
-                _dbService.SetSetting("LastSyncTimeUtc", _lastSyncTimeUtc.Value.ToString("O"));
+                var currentUserId = AuthService.Instance.CurrentUser?.Id;
+                if (!string.IsNullOrEmpty(currentUserId))
+                    _dbService.SetSetting(CursorKey(currentUserId), _lastSyncTimeUtc.Value.ToString("O"));
                 
                 SetStatus(SyncStatus.Idle);
                 SyncCompleted?.Invoke(this, result);
@@ -262,11 +277,15 @@ namespace TodoSidebar.Services
                 
                 // 构建批量同步列表
                 var syncTasks = new List<SyncTask>();
-                var taskMapping = new List<(int localId, SyncTask syncTask)>();
-                
+                var taskMapping = new List<(int localId, SyncTask syncTask, string? expectedLocalUpdatedAt)>();
+
                 foreach (var task in dirtyTasks)
                 {
-                    var syncId = string.IsNullOrEmpty(task.SyncId) ? Guid.NewGuid() : Guid.Parse(task.SyncId);
+                    // M11 修复：SyncId 损坏时不再让整个上传流程卡死，视为无 SyncId 重新生成
+                    Guid syncId;
+                    if (string.IsNullOrEmpty(task.SyncId) || !Guid.TryParse(task.SyncId, out syncId))
+                        syncId = Guid.NewGuid();
+
                     var syncTask = new SyncTask
                     {
                         Id = syncId,
@@ -285,38 +304,39 @@ namespace TodoSidebar.Services
                         UpdatedAt = DateTime.UtcNow,
                         IsDeleted = task.IsDeleted
                     };
-                    
+
                     syncTasks.Add(syncTask);
-                    taskMapping.Add((task.Id, syncTask));
+                    // S7 修复：记录上传时的 LocalUpdatedAt 快照，标记已同步时做乐观校验
+                    taskMapping.Add((task.Id, syncTask, task.LocalUpdatedAt?.ToString("O")));
                 }
-                
+
                 // 批量 upsert（一次 HTTP 请求）
                 try
                 {
                     await client.From<SyncTask>().Upsert(syncTasks);
-                    
+
                     // 全部成功，标记本地任务已同步
-                    foreach (var (localId, syncTask) in taskMapping)
+                    foreach (var (localId, syncTask, expected) in taskMapping)
                     {
-                        _dbService.MarkTaskSynced(localId, syncTask.Id.ToString());
+                        _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
                     }
-                    
+
                     return syncTasks.Count;
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Batch upload error: {ex.Message}");
-                    
+
                     // 批量失败时逐条重试（指数退避）
                     int uploaded = 0;
                     int failed = 0;
                     int retryDelay = 500; // 初始 500ms
-                    foreach (var (localId, syncTask) in taskMapping)
+                    foreach (var (localId, syncTask, expected) in taskMapping)
                     {
                         try
                         {
                             await client.From<SyncTask>().Upsert(syncTask);
-                            _dbService.MarkTaskSynced(localId, syncTask.Id.ToString());
+                            _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
                             uploaded++;
                             retryDelay = 500; // 成功则重置
                         }
@@ -404,13 +424,16 @@ namespace TodoSidebar.Services
                             LastSyncedAt = DateTime.UtcNow  // 与数据库 LastSyncedAt 存储格式（UTC）一致
                         };
                         
-                        // LWW 冲突解决
+                        // LWW 冲突解决（S7 修复：基线从 LastSyncedAt 改为 LocalUpdatedAt。
+                        // 原实现拿"上次同步时间"当本地编辑时间，本地根本没有编辑时间戳，
+                        // 导致部分上传失败时几乎恒判"远程胜"，静默覆盖本地较新的修改）
                         var existing = _dbService.GetTaskBySyncId(remoteTask.Id.ToString());
-                        
+
                         if (existing != null && existing.IsDirty)
                         {
                             // 冲突：本地有未同步的修改 + 远程也有修改
-                            if (remoteTask.UpdatedAt > existing.LastSyncedAt)
+                            var localEditTime = existing.LocalUpdatedAt ?? existing.LastSyncedAt ?? DateTime.MinValue;
+                            if (remoteTask.UpdatedAt > localEditTime)
                             {
                                 // 远程更新，覆盖本地
                                 _dbService.UpsertTaskFromRemote(localTask);
@@ -514,13 +537,20 @@ namespace TodoSidebar.Services
             var remoteList = await client.From<SyncUserProfile>()
                 .Where(x => x.UserId == userId)
                 .Get();
-            var remote = remoteList.Models.FirstOrDefault();
+            // S5 修复：客户端按 UpdatedAt 取最新一行，避免多行时任意取值
+            var remote = remoteList.Models
+                .OrderByDescending(m => m.UpdatedAt)
+                .FirstOrDefault();
+
+            // S5 修复：上传时复用云端已有行的主键，保证 upsert 是"更新"而非"插入"
+            var profileId = remote?.Id ?? Guid.NewGuid();
 
             if (remote == null)
             {
                 // 云端无档案：上传本地
                 await client.From<SyncUserProfile>().Upsert(new SyncUserProfile
                 {
+                    Id = profileId,
                     UserId = userId,
                     Level = local.Level,
                     Xp = local.Xp,
@@ -547,6 +577,7 @@ namespace TodoSidebar.Services
                 // 本地更大：覆盖云端
                 await client.From<SyncUserProfile>().Upsert(new SyncUserProfile
                 {
+                    Id = profileId,
                     UserId = userId,
                     Level = local.Level,
                     Xp = local.Xp,
