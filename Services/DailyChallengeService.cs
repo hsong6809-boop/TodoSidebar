@@ -119,24 +119,31 @@ namespace TodoSidebar.Services
 
         /// <summary>
         /// 用日期种子生成当日 3 个挑战（同一天结果固定）。
+        /// M18 修复：string.GetHashCode 在 .NET 8 中是进程级随机化的，
+        /// 重启/多设备会生成不同挑战；改用稳定的 FNV-1a 哈希保证跨进程一致。
         /// </summary>
         private static List<DailyChallenge> GenerateForDate(string date)
         {
-            var seed = date.GetHashCode();
-            var rng = new Random(seed);
-            var selected = Pool.OrderBy(_ => rng.Next()).Take(3).ToList();
-
-            return selected.Select((t, i) => new DailyChallenge
+            unchecked
             {
-                Date = date,
-                Type = $"{t.type}_{t.target}",
-                Title = t.title,
-                Icon = t.icon,
-                Target = t.target,
-                Xp = t.xp,
-                Progress = 0,
-                Completed = false
-            }).ToList();
+                var seed = (int)2166136261; // FNV-1a offset basis
+                foreach (var c in date)
+                    seed = (seed ^ c) * 16777619;
+                var rng = new Random(seed);
+                var selected = Pool.OrderBy(_ => rng.Next()).Take(3).ToList();
+
+                return selected.Select((t, i) => new DailyChallenge
+                {
+                    Date = date,
+                    Type = $"{t.type}_{t.target}",
+                    Title = t.title,
+                    Icon = t.icon,
+                    Target = t.target,
+                    Xp = t.xp,
+                    Progress = 0,
+                    Completed = false
+                }).ToList();
+            }
         }
     }
 }

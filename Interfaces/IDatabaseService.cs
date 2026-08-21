@@ -27,6 +27,7 @@ namespace TodoSidebar.Services
 
         // 批量操作
         void UpdateTaskOrder(List<(int id, int order)> orders);
+        int ImportTasksUnique(List<TaskItem> tasks);
 
         // 同步支持
         List<TaskItem> GetDirtyTasks();

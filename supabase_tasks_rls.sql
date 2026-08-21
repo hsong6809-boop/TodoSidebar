@@ -16,7 +16,29 @@ where n.nspname = 'public'
   and c.relname in ('tasks','xp_log','pomodoro_session','user_profile')
 order by c.relname;
 
--- ========== 2. tasks 表兜底：开启 RLS + 策略（幂等） ==========
+-- ========== 2. tasks 表兜底：建表（幂等）+ 开启 RLS + 策略 ==========
+-- M13 修复：tasks 表的建表语句此前不在仓库中，全新环境执行到 alter table 会报错中断，
+-- 后续 4 条策略全部不创建。此处按 SyncTask 模型补齐幂等建表语句。
+create table if not exists public.tasks (
+    id            uuid primary key default gen_random_uuid(),
+    user_id       text,
+    title         text not null,
+    type          integer not null default 0,                -- 0=Daily, 1=Deadline
+    priority      integer not null default 1,                -- 0=Low, 1=Med, 2=High
+    is_completed  boolean not null default false,
+    created_at    timestamptz not null default now(),
+    deadline      timestamptz,
+    completed_at  timestamptz,
+    description   text,
+    tags          text,
+    sort_order    integer not null default 0,
+    subtasks_json text,
+    updated_at    timestamptz not null default now(),
+    is_deleted    boolean not null default false
+);
+
+create index if not exists tasks_user_updated_idx on public.tasks (user_id, updated_at);
+
 alter table public.tasks enable row level security;
 
 drop policy if exists "tasks_select_own" on public.tasks;

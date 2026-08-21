@@ -461,7 +461,13 @@ namespace TodoSidebar.Services
                         }
                         else
                         {
-                            // 无冲突：直接更新/插入
+                            // 无冲突：直接更新/插入。
+                            // M10 缓解：内容与本地一致时跳过回写（刚上传的行会被"回声下载"拉回，
+                            // 原实现每次都整行重写，downloaded 统计虚高且产生写放大）
+                            if (existing != null && !existing.IsDirty && TaskContentEquals(existing, remoteTask))
+                            {
+                                continue;
+                            }
                             _dbService.UpsertTaskFromRemote(localTask);
                             downloaded++;
                         }
@@ -479,6 +485,23 @@ namespace TodoSidebar.Services
                 System.Diagnostics.Debug.WriteLine($"DownloadRemoteChanges error: {ex.Message}");
                 throw; // 让 SyncAsync 感知下载失败，避免误报同步成功
             }
+        }
+
+        /// <summary>
+        /// 比较本地任务与远程任务的业务内容是否一致（M10 缓解：回声下载跳过用）。
+        /// 不比较 SyncId/IsDirty/LastSyncedAt 等同步元数据。
+        /// </summary>
+        private static bool TaskContentEquals(TaskItem local, SyncTask remote)
+        {
+            return local.Title == remote.Title
+                && (int)local.Type == remote.Type
+                && (int)local.Priority == remote.Priority
+                && local.IsCompleted == remote.IsCompleted
+                && local.Description == remote.Description
+                && local.Tags == remote.Tags
+                && local.SortOrder == remote.SortOrder
+                && local.SubTasksJson == remote.SubtasksJson
+                && local.IsDeleted == remote.IsDeleted;
         }
         
         /// <summary>

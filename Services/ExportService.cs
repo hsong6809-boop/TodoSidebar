@@ -55,25 +55,37 @@ namespace TodoSidebar.Services
             try
             {
                 var tasks = _dbService.GetTasks();
-                using var writer = new StreamWriter(filePath);
 
-                // 写入表头
-                writer.WriteLine("Id,Title,Type,Priority,IsCompleted,CreatedAt,Deadline,CompletedAt,Tags");
-
-                // 写入数据
-                foreach (var task in tasks)
+                // M5 修复：UTF-8 带 BOM，Excel 直接打开中文不乱码；临时文件+原子替换防截断
+                var tempPath = filePath + $".{Guid.NewGuid():N}.tmp";
+                try
                 {
-                    writer.WriteLine(string.Join(",",
-                        task.Id,
-                        EscapeCsvField(task.Title),
-                        task.Type switch { TaskType.Daily => "每日", TaskType.Deadline => "截止", _ => task.Type.ToString() },
-                        task.Priority switch { TaskPriority.High => "高", TaskPriority.Medium => "中", TaskPriority.Low => "低", _ => task.Priority.ToString() },
-                        task.IsCompleted,
-                        task.CreatedAt.ToString("O"),
-                        task.Deadline?.ToString("O") ?? "",
-                        task.CompletedAt?.ToString("O") ?? "",
-                        EscapeCsvField(task.Tags ?? "")
-                    ));
+                    using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+                    {
+                        // 写入表头
+                        writer.WriteLine("Id,Title,Type,Priority,IsCompleted,CreatedAt,Deadline,CompletedAt,Tags");
+
+                        // 写入数据
+                        foreach (var task in tasks)
+                        {
+                            writer.WriteLine(string.Join(",",
+                                task.Id,
+                                EscapeCsvField(task.Title),
+                                task.Type switch { TaskType.Daily => "每日", TaskType.Deadline => "截止", _ => task.Type.ToString() },
+                                task.Priority switch { TaskPriority.High => "高", TaskPriority.Medium => "中", TaskPriority.Low => "低", _ => task.Priority.ToString() },
+                                task.IsCompleted,
+                                task.CreatedAt.ToString("O"),
+                                task.Deadline?.ToString("O") ?? "",
+                                task.CompletedAt?.ToString("O") ?? "",
+                                EscapeCsvField(task.Tags ?? "")
+                            ));
+                        }
+                    }
+                    File.Move(tempPath, filePath, overwrite: true);
+                }
+                finally
+                {
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
                 }
             }
             catch (Exception ex)
@@ -86,7 +98,13 @@ namespace TodoSidebar.Services
         private static string EscapeCsvField(string field)
         {
             if (string.IsNullOrEmpty(field)) return "\"\"";
-            
+
+            // M6 修复：以 = + - @ 开头的字段前置单引号，防止 Excel 将其当公式执行（CSV 注入）
+            if (field[0] is '=' or '+' or '-' or '@')
+            {
+                field = "'" + field;
+            }
+
             // 如果包含逗号、引号、换行符，需要转义
             if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
             {
@@ -110,17 +128,11 @@ namespace TodoSidebar.Services
                 var importData = JsonSerializer.Deserialize<ExportData>(json, options);
                 if (importData?.Tasks == null) return 0;
 
-                int importedCount = 0;
-
-                // 导入任务（跳过无效任务）；保留 SyncId/IsDirty，避免导入后云端产生重复任务
-                foreach (var task in importData.Tasks)
-                {
-                    if (string.IsNullOrWhiteSpace(task.Title))
-                        continue;
-                    task.Id = 0;
-                    _dbService.InsertImportedTask(task);
-                    importedCount++;
-                }
+                // M4 修复：单事务导入 + 按 SyncId 去重（失败整体回滚，重复导入不再翻倍）
+                var validTasks = importData.Tasks
+                    .Where(t => !string.IsNullOrWhiteSpace(t.Title))
+                    .ToList();
+                int importedCount = _dbService.ImportTasksUnique(validTasks);
 
                 // 导入设置（仅导入非敏感设置）
                 if (importData.Settings != null)
@@ -175,10 +187,10 @@ namespace TodoSidebar.Services
                 throw new InvalidOperationException("备份文件格式无效或没有任务数据");
 
             var tasks = importData.Tasks.Where(t => !string.IsNullOrWhiteSpace(t.Title)).ToList();
-            foreach (var task in tasks)
-                task.Id = 0; // 使用新自增 Id，保留 SyncId
+            // S3 修复：保留备份中的原始 Id（ReplaceAllTasks 已改为物理删除 + 按 Id 插入，
+            // 子表 TaskId 引用在同源恢复场景下保持有效）
 
-            // 2. 单事务替换：软删现有 + 插入备份任务
+            // 2. 单事务替换：物理删除现有 + 按原始 Id 插入 + 清理子表孤儿
             _dbService.ReplaceAllTasks(tasks);
 
             // 3. 导入设置（仅导入非敏感设置）

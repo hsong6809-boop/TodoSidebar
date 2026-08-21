@@ -50,6 +50,9 @@ namespace TodoSidebar.Services
         public const int RoundsPerCycle = 4;
         public const int DailyTarget = 4;
 
+        /// <summary>M16 修复：有效完成的最短专注秒数，低于此值强制按中断处理（防秒刷经验）</summary>
+        public const int MinFocusSeconds = 60;
+
         private readonly DatabaseService _db;
         private readonly TaskService _taskService;
         private readonly DispatcherTimer _timer;
@@ -127,6 +130,7 @@ namespace TodoSidebar.Services
 
         /// <summary>
         /// 停止当前番茄。complete=false 视为中断（不计 XP）。
+        /// M16 修复：请求完成但实际专注时长不足 MinFocusSeconds 时强制按中断处理。
         /// </summary>
         public void Stop(bool complete)
         {
@@ -134,6 +138,10 @@ namespace TodoSidebar.Services
                 return;
 
             _timer.Stop();
+
+            if (complete && (TotalSeconds - RemainingSeconds) < MinFocusSeconds)
+                complete = false;
+
             FinishSession(complete);
             SetState(PomodoroState.Idle);
         }
@@ -174,7 +182,11 @@ namespace TodoSidebar.Services
         /// </summary>
         private void FinishSession(bool complete)
         {
-            var minutes = Math.Max(1, (int)Math.Round((DateTime.Now - _sessionStart).TotalMinutes));
+            // M15 修复：专注时长用计时器推导（TotalSeconds - RemainingSeconds），
+            // 暂停期间计时器已停、RemainingSeconds 不变，天然排除暂停时长；
+            // 原实现按墙钟差计算，暂停 2 小时会把 145 分钟记成专注时长
+            var focusedSeconds = Math.Max(0, TotalSeconds - RemainingSeconds);
+            var minutes = Math.Max(1, (int)Math.Round(focusedSeconds / 60.0));
             var date = DateTime.Today.ToString("yyyy-MM-dd");
 
             _db.AddPomodoroSession(BoundTaskId, _sessionStart, DateTime.Now, minutes, complete, date);
@@ -194,9 +206,11 @@ namespace TodoSidebar.Services
                     }
                 }
 
-                // 发经验：绑定任务 +10（5 基础 + 5 联动），未绑定 +5
+                // 发经验：绑定任务 +10（5 基础 + 5 联动），未绑定 +5。
+                // M17 修复：taskId 传 null——"pomodoro" 在 RepeatableSources 白名单中按会话独立计奖，
+                // 原实现传 BoundTaskId 会命中（同任务同天）防重，导致第 2+ 个番茄零经验
                 var xp = BoundTaskId.HasValue ? 10 : 5;
-                LevelService.Instance.Reward("pomodoro", xp, BoundTaskId);
+                LevelService.Instance.Reward("pomodoro", xp, null);
 
                 // 每日第 4 个番茄：整轮奖励
                 var (completedToday, _, _) = GetTodayStats();

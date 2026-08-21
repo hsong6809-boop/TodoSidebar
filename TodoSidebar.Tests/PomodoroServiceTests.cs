@@ -58,18 +58,21 @@ namespace TodoSidebar.Tests
         }
 
         [Fact]
-        public void CompleteSession_ShouldRecordAndRewardXp()
+        public void InstantComplete_ShouldBeTreatedAsInterruption()
         {
+            // M16 修复后的预期行为：开始后立刻请求"完成"（专注时长 < MinFocusSeconds）
+            // 强制按中断处理——不记完成数、不发 XP，防止秒刷番茄经验
             var pomo = PomodoroService.Instance;
             var beforeXp = LevelService.Instance.GetGrowth().TotalXp;
             var beforeStats = pomo.GetTodayStats();
 
             pomo.Start(null, "", 1);
-            pomo.Stop(true);
+            pomo.Stop(true); // 立即"完成"
 
             var afterStats = pomo.GetTodayStats();
-            afterStats.completed.Should().Be(beforeStats.completed + 1);
-            LevelService.Instance.GetGrowth().TotalXp.Should().Be(beforeXp + 5); // 未绑定任务 +5
+            afterStats.completed.Should().Be(beforeStats.completed);
+            afterStats.interrupted.Should().Be(beforeStats.interrupted + 1);
+            LevelService.Instance.GetGrowth().TotalXp.Should().Be(beforeXp); // 无 XP
         }
 
         [Fact]

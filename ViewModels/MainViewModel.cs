@@ -426,9 +426,10 @@ namespace TodoSidebar.ViewModels
             
             _taskService.UpdateSubTasks(task, SubTaskHelper.SerializeSubTasks(subTasks));
             NewSubTaskTitle = string.Empty;
-            
+
             RefreshTaskProperties(task);
-            LoadCurrentTasks();
+            // M22 修复：全量刷新，保证 FullWindow 的 Daily/Deadline 集合同步更新
+            LoadData();
         }
 
         [RelayCommand]
@@ -454,7 +455,8 @@ namespace TodoSidebar.ViewModels
 
             _taskService.UpdateSubTasks(task, SubTaskHelper.SerializeSubTasks(task.SubTasksList));
             RefreshTaskProperties(task);
-            LoadCurrentTasks();
+            // M22 修复：全量刷新，保证 FullWindow 的 Daily/Deadline 集合同步更新
+            LoadData();
         }
 
         [RelayCommand]
@@ -469,7 +471,8 @@ namespace TodoSidebar.ViewModels
                 subTasks.RemoveAt(index);
                 _taskService.UpdateSubTasks(task, SubTaskHelper.SerializeSubTasks(subTasks));
                 RefreshTaskProperties(task);
-                LoadCurrentTasks();
+                // M22 修复：全量刷新，保证 FullWindow 的 Daily/Deadline 集合同步更新
+                LoadData();
             }
         }
 

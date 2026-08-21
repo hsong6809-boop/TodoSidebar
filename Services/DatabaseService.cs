@@ -159,6 +159,19 @@ namespace TodoSidebar.Services
             // 检查并添加新列（Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes）
             MigrateDatabase();
 
+            // M1 修复：为存活任务的 SyncId 建唯一部分索引，从根上杜绝重复 SyncId 行
+            // （历史数据若已有重复会创建失败，记录但不阻断启动）
+            try
+            {
+                using var idxCmd = _connection.CreateCommand();
+                idxCmd.CommandText = "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_syncid_live ON Tasks(SyncId) WHERE SyncId IS NOT NULL AND IsDeleted = 0";
+                idxCmd.ExecuteNonQuery();
+            }
+            catch (Exception idxEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"创建 SyncId 唯一索引失败(可能存在历史重复数据): {idxEx.Message}");
+            }
+
             // ===== 升级系统表 =====
             CreateGrowthTables();
             EnsureGrowthSyncColumns();
@@ -343,7 +356,9 @@ namespace TodoSidebar.Services
                     }
                     catch (Exception alterEx)
                     {
-                        System.Diagnostics.Debug.WriteLine($"ALTER TABLE ADD COLUMN {column.Key} 失败: {alterEx.Message}");
+                        // M3 修复：迁移失败不再静默吞掉——缺失列会让后续写入持续报错，
+                        // 提前失败并给出明确原因远好于"完成任务不发经验"这类难排查故障
+                        throw new InvalidOperationException($"数据库迁移失败：ALTER TABLE Tasks ADD COLUMN {column.Key}", alterEx);
                     }
                 }
             }
@@ -454,6 +469,60 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@id", id);
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
+        });
+
+        /// <summary>
+        /// 事务化导入任务（M4 修复）：单事务包裹整批插入（失败整体回滚），
+        /// 且按 SyncId 去重——已存在同 SyncId 存活任务时跳过，防止重复导入产生整套重复数据。
+        /// 返回实际导入条数。
+        /// </summary>
+        public int ImportTasksUnique(List<TaskItem> tasks) => ExecuteLocked(() =>
+        {
+            using var transaction = _connection!.BeginTransaction();
+            try
+            {
+                int imported = 0;
+                foreach (var task in tasks)
+                {
+                    // SyncId 去重：已存在同 SyncId 的存活任务则跳过
+                    if (!string.IsNullOrEmpty(task.SyncId) && GetTaskBySyncIdCore(task.SyncId) != null)
+                        continue;
+
+                    using var cmd = _connection.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @localUpdatedAt)
+                    ";
+                    cmd.Parameters.AddWithValue("@title", task.Title);
+                    cmd.Parameters.AddWithValue("@type", (int)task.Type);
+                    cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
+                    cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
+                    cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
+                    cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+                    cmd.ExecuteNonQuery();
+                    imported++;
+                }
+                transaction.Commit();
+                return imported;
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { /* 已回滚或连接异常 */ }
+                throw;
+            }
         });
 
         /// <summary>
@@ -643,7 +712,12 @@ namespace TodoSidebar.Services
             var ids = new HashSet<int>();
             var today = DateTime.Today.ToString("yyyy-MM-dd");
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT TaskId FROM DailyTaskCompletion WHERE Date = @date";
+            // M20 修复：过滤已删任务的孤儿记录
+            cmd.CommandText = @"
+                SELECT d.TaskId FROM DailyTaskCompletion d
+                INNER JOIN Tasks t ON t.Id = d.TaskId AND t.IsDeleted = 0
+                WHERE d.Date = @date
+            ";
             cmd.Parameters.AddWithValue("@date", today);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -705,7 +779,12 @@ namespace TodoSidebar.Services
             var result = new Dictionary<string, HashSet<int>>();
             var startDate = DateTime.Today.AddDays(-(days - 1)).ToString("yyyy-MM-dd");
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT Date, TaskId FROM DailyTaskCompletion WHERE Date >= @startDate";
+            // M20 修复：JOIN 过滤已删任务的孤儿完成记录
+            cmd.CommandText = @"
+                SELECT d.Date, d.TaskId FROM DailyTaskCompletion d
+                INNER JOIN Tasks t ON t.Id = d.TaskId AND t.IsDeleted = 0
+                WHERE d.Date >= @startDate
+            ";
             cmd.Parameters.AddWithValue("@startDate", startDate);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -907,9 +986,7 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
                     cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
                     cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-                    cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
-                    cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
+                    AddRemoteTimeParams(cmd, task);
                     cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
@@ -931,9 +1008,7 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
                     cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
                     cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-                    cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
-                    cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
+                    AddRemoteTimeParams(cmd, task);
                     cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
@@ -945,6 +1020,17 @@ namespace TodoSidebar.Services
                     cmd.ExecuteNonQuery();
                 }
             });
+        }
+
+        /// <summary>
+        /// 远端任务时间列参数（M2 修复）：远端时间为 UTC，统一转本地偏移格式落库，
+        /// 避免同一列混存 "...Z" 与 "+08:00" 两种文本导致 ORDER BY / 范围比较失真。
+        /// </summary>
+        private static void AddRemoteTimeParams(SqliteCommand cmd, TaskItem task)
+        {
+            cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToLocalTime().ToString("O"));
+            cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToLocalTime().ToString("O") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToLocalTime().ToString("O") ?? (object)DBNull.Value);
         }
 
         /// <summary>
@@ -1265,7 +1351,12 @@ namespace TodoSidebar.Services
         public int GetCompletedDailyTaskCountByDate(string date) => ExecuteLocked(() =>
         {
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(DISTINCT TaskId) FROM DailyTaskCompletion WHERE Date = @date";
+            // M20 修复：过滤已删任务的孤儿记录，避免虚高完成数/追溯误判全清
+            cmd.CommandText = @"
+                SELECT COUNT(DISTINCT d.TaskId) FROM DailyTaskCompletion d
+                INNER JOIN Tasks t ON t.Id = d.TaskId AND t.IsDeleted = 0
+                WHERE d.Date = @date
+            ";
             cmd.Parameters.AddWithValue("@date", date);
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
@@ -1435,7 +1526,8 @@ namespace TodoSidebar.Services
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"ALTER {table} ADD {column} failed: {ex.Message}");
+                            // M3 修复：同 MigrateDatabase，迁移失败上抛而非静默
+                            throw new InvalidOperationException($"数据库迁移失败：ALTER TABLE {table} ADD COLUMN {column}", ex);
                         }
                     }
                 }
