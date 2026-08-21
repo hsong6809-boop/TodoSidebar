@@ -203,7 +203,9 @@ namespace TodoSidebar.Services
                 if (completedToday == RoundsPerCycle)
                     LevelService.Instance.Reward("pomodoro_round", 15, null);
 
-                // 每日目标（4 个）达成
+                // 每日目标（4 个）达成：一次性奖励。
+                // S10 修复：LevelService.Reward 现在对 null-taskId 来源按（来源,日期）防重，
+                // 第 5、6、7…个番茄不会再重复发放这 10 XP。
                 if (completedToday >= DailyTarget)
                     LevelService.Instance.Reward("pomodoro_daily", 10, null);
 

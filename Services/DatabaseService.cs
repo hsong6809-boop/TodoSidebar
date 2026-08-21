@@ -249,7 +249,8 @@ namespace TodoSidebar.Services
                     ComboDays INTEGER NOT NULL DEFAULT 0,
                     BestComboDays INTEGER NOT NULL DEFAULT 0,
                     Title TEXT NOT NULL DEFAULT '初出茅庐',
-                    LastXpDate TEXT
+                    LastXpDate TEXT,
+                    LastComboSettledDate TEXT
                 );
             ";
             profileCmd.ExecuteNonQuery();
@@ -1093,7 +1094,7 @@ namespace TodoSidebar.Services
         public UserGrowth GetUserGrowth() => ExecuteLocked(() =>
         {
             using var selectCmd = _connection!.CreateCommand();
-            selectCmd.CommandText = "SELECT Id, Level, Xp, TotalXp, ComboDays, BestComboDays, Title, LastXpDate FROM UserProfile WHERE Id = 1";
+            selectCmd.CommandText = "SELECT Id, Level, Xp, TotalXp, ComboDays, BestComboDays, Title, LastXpDate, LastComboSettledDate FROM UserProfile WHERE Id = 1";
             using var reader = selectCmd.ExecuteReader();
             if (reader.Read())
             {
@@ -1106,7 +1107,8 @@ namespace TodoSidebar.Services
                     ComboDays = reader.GetInt32(4),
                     BestComboDays = reader.GetInt32(5),
                     Title = reader.GetString(6),
-                    LastXpDate = reader.IsDBNull(7) ? null : reader.GetString(7)
+                    LastXpDate = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    LastComboSettledDate = reader.IsDBNull(8) ? null : reader.GetString(8)
                 };
             }
 
@@ -1131,7 +1133,8 @@ namespace TodoSidebar.Services
                     ComboDays = @comboDays,
                     BestComboDays = @bestComboDays,
                     Title = @title,
-                    LastXpDate = @lastXpDate
+                    LastXpDate = @lastXpDate,
+                    LastComboSettledDate = @lastComboSettledDate
                 WHERE Id = 1
             ";
             cmd.Parameters.AddWithValue("@level", growth.Level);
@@ -1141,6 +1144,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@bestComboDays", growth.BestComboDays);
             cmd.Parameters.AddWithValue("@title", growth.Title);
             cmd.Parameters.AddWithValue("@lastXpDate", (object?)growth.LastXpDate ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@lastComboSettledDate", (object?)growth.LastComboSettledDate ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         });
 
@@ -1410,7 +1414,8 @@ namespace TodoSidebar.Services
                 var columns = new (string table, string column, string def)[]
                 {
                     ("XpLog", "IsDirty", "INTEGER DEFAULT 0"),
-                    ("PomodoroSession", "IsDirty", "INTEGER DEFAULT 0")
+                    ("PomodoroSession", "IsDirty", "INTEGER DEFAULT 0"),
+                    ("UserProfile", "LastComboSettledDate", "TEXT") // S9 修复：连击结算游标
                 };
                 foreach (var (table, column, def) in columns)
                 {

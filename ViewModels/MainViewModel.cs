@@ -130,6 +130,10 @@ namespace TodoSidebar.ViewModels
             LoadLevelInfo();
             UpdateComboDisplay();
 
+            // S9 修复：启动时补结算错过的连击（应用未在午夜运行的场景）
+            try { LevelService.Instance.SettleCombo(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Startup combo settle error: {ex.Message}"); }
+
             // 成就补检（启动时检查已达标未解锁的徽章）
             AchievementService.Instance.CheckAll();
 
@@ -500,7 +504,8 @@ namespace TodoSidebar.ViewModels
             if (args[0] is not TaskItem draggedTask || args[1] is not TaskItem targetTask) return;
             if (draggedTask.Id == targetTask.Id) return;
 
-            var allTasks = CurrentTasks.OrderBy(t => t.SortOrder).ThenBy(t => t.CreatedAt).ToList();
+            // 排序键与 GetCurrentTasks/数据库查询保持一致（SortOrder, CreatedAt DESC）
+            var allTasks = CurrentTasks.OrderBy(t => t.SortOrder).ThenByDescending(t => t.CreatedAt).ToList();
             allTasks.Remove(draggedTask);
             
             int targetIndex = allTasks.IndexOf(targetTask);

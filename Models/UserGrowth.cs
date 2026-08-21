@@ -30,6 +30,12 @@ namespace TodoSidebar.Models
 
         /// <summary>最近一次获得经验日期（yyyy-MM-dd，防重复结算）</summary>
         public string? LastXpDate { get; set; }
+
+        /// <summary>
+        /// 连击结算游标（yyyy-MM-dd，S9 修复）。
+        /// 记录已结算到哪一天，应用错过午夜后可从此处补结算。
+        /// </summary>
+        public string? LastComboSettledDate { get; set; }
     }
 
     /// <summary>

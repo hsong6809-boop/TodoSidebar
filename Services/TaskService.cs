@@ -43,9 +43,11 @@ namespace TodoSidebar.Services
         {
             var daily = GetDailyTasks();
             var deadline = GetDeadlineTasks();
+            // S11 修复：按 SortOrder 排序（与 ReorderTasks 的排序键一致），
+            // 原实现按 Type/Deadline 重排导致拖拽排序写库后被立即打回
             return daily.Concat(deadline)
-                .OrderBy(t => t.Type)
-                .ThenBy(t => t.Deadline)
+                .OrderBy(t => t.SortOrder)
+                .ThenByDescending(t => t.CreatedAt)
                 .ToList();
         }
 
