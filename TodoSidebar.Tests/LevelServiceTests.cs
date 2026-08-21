@@ -113,8 +113,14 @@ namespace TodoSidebar.Tests
             var beforeCombo = service.GetGrowth().ComboDays;
             var beforeXp = service.GetGrowth().TotalXp;
 
-            // 插入一个每日任务，并登记昨天完成（确保昨天全清判定通过）
-            var task = new TaskItem { Title = "combo_ut_" + Guid.NewGuid().ToString("N"), Type = TaskType.Daily };
+            // 插入一个每日任务（M19 时点语义：任务须存在于被结算日"昨天"），
+            // 并登记昨天完成（确保昨天全清判定通过）
+            var task = new TaskItem
+            {
+                Title = "combo_ut_" + Guid.NewGuid().ToString("N"),
+                Type = TaskType.Daily,
+                CreatedAt = DateTime.Today.AddDays(-1)
+            };
             var taskId = db.InsertTask(task);
             db.MarkDailyTaskCompleted(taskId, DateTime.Today.AddDays(-1).ToString("yyyy-MM-dd"));
 

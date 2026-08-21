@@ -21,6 +21,11 @@ namespace TodoSidebar
         private bool _isDragging;
         private TaskItem? _draggedTask;
 
+        // 今日统计缓存（M35）：番茄钟每秒 Tick 都会触发 UpdateFocusPanel，
+        // 缓存后统计文本仅在过期/事件时查库，避免每秒 2 次 GetTodayStats() 的 SQLite 查询
+        private (int completed, int interrupted, int minutes) _cachedTodayStats;
+        private DateTime _statsLastRefreshed;
+
         public FullWindow()
         {
             InitializeComponent();
@@ -176,10 +181,17 @@ namespace TodoSidebar
 
         private void OnFocusTick(object? sender, EventArgs e) => UpdateFocusPanel();
 
-        private void OnFocusStateChanged(object? sender, PomodoroState state) => UpdateFocusPanel();
+        private void OnFocusStateChanged(object? sender, PomodoroState state)
+        {
+            // 状态切换（开始/暂停/结束）会改变今日统计，先失效缓存再刷新
+            InvalidateTodayStatsCache();
+            UpdateFocusPanel();
+        }
 
         private void OnFocusSessionCompleted(object? sender, PomodoroSessionCompletedEventArgs e)
         {
+            // 会话完成（含中断）会改变今日统计，先失效缓存再刷新
+            InvalidateTodayStatsCache();
             UpdateFocusPanel();
             if (!e.Completed) return;
 
@@ -223,10 +235,24 @@ namespace TodoSidebar
 
             FocusStartButton.Content = pomo.State == PomodoroState.Paused ? "▶ 继续" : "▶ 开始专注";
 
-            var (completed, interrupted, minutes) = pomo.GetTodayStats();
+            // 今日统计读缓存（M35）：Tick 每秒触发本方法，统计文本仅每 30 秒
+            // （或状态变化/会话完成事件强制失效后）重新查库一次
+            RefreshTodayStatsCache();
+            var (completed, interrupted, minutes) = _cachedTodayStats;
             FocusTodayText.Text = $"今日番茄：{completed} 个 · 专注 {minutes} 分钟{(interrupted > 0 ? $" · 中断 {interrupted}" : "")}";
             FocusRoundText.Text = $"本轮：{completed % PomodoroService.RoundsPerCycle}/{PomodoroService.RoundsPerCycle} · 每日目标 {completed}/{PomodoroService.DailyTarget}";
         }
+
+        /// <summary>缓存超过 30 秒未更新则重新查询今日统计，否则直接复用</summary>
+        private void RefreshTodayStatsCache()
+        {
+            if ((DateTime.Now - _statsLastRefreshed).TotalSeconds < 30) return;
+            _cachedTodayStats = PomodoroService.Instance.GetTodayStats();
+            _statsLastRefreshed = DateTime.Now;
+        }
+
+        /// <summary>强制下次 UpdateFocusPanel 重新查询今日统计</summary>
+        private void InvalidateTodayStatsCache() => _statsLastRefreshed = DateTime.MinValue;
 
         private void FocusStart_Click(object sender, RoutedEventArgs e)
         {
@@ -342,6 +368,9 @@ namespace TodoSidebar
             // 关闭完整窗口，打开侧边栏窗口
             var sidebarWindow = new MainWindow();
             sidebarWindow.Show();
+            // M28 修复：热键注册绑定在窗口句柄上，旧窗口销毁会自动注销全部热键，
+            // 切换后必须重注册到新窗口，否则 Ctrl+Alt+T 等全局热键静默失效
+            Services.HotkeyService.Current?.ReRegisterHotkeys(sidebarWindow);
             this.Close();
         }
 
@@ -468,6 +497,13 @@ namespace TodoSidebar
                     var dialog = new TaskDetailDialog(task, vm);
                     dialog.Owner = this;
                     dialog.ShowDialog();
+
+                    // 保存成功且任务未完成时，清除该任务的已通知记录（M34）：
+                    // 修改后的截止日期才能重新触发到期提醒
+                    if (dialog.DialogResult == true && !task.IsCompleted)
+                    {
+                        NotificationService.Instance.ClearNotifiedTask(task.Id);
+                    }
                 }
             }
         }

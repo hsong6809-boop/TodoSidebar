@@ -113,31 +113,29 @@ namespace TodoSidebar.Services
             if (amount <= 0) return;
 
             var date = DateTime.Today.ToString("yyyy-MM-dd");
+            var dedup = !RepeatableSources.Contains(source);
 
-            // 防重复结算：同源 + 同任务 + 同日期。
-            // S10 修复：null-taskId 来源同样按（来源, 日期）防重——
-            // 原实现 taskId.HasValue && 短路导致 pomodoro_daily 等每日奖励被反复发放；
-            // 可重复来源（如未绑定番茄）通过白名单豁免。
-            if (!RepeatableSources.Contains(source) && _db.HasXpLog(source, taskId, date))
-                return;
+            // M14 修复：查重、档案更新、流水写入在单锁单事务内原子完成，
+            // 消除并发绕过与"档案已写/流水未写"的崩溃窗口
+            var leveledUp = false;
+            var newLevel = 0;
+            var newTitle = "";
+            var applied = _db.TryRewardXp(source, taskId, date, dedup, g =>
+            {
+                g.Xp += amount;
+                g.TotalXp += amount;
+                g.LastXpDate = date;
+                leveledUp = ApplyLevelUps(g);
+                newLevel = g.Level;
+                newTitle = g.Title;
+                return amount; // 实发经验
+            });
 
-            var growth = GetGrowth();
-            growth.Xp += amount;
-            growth.TotalXp += amount;
-            growth.LastXpDate = date;
+            if (!applied) return; // 命中防重，未发放
 
-            // 升级判定（可能一次跨多级）
-            var leveledUp = ApplyLevelUps(growth);
-
-            // 写库
-            _db.SaveUserGrowth(growth);
-            _db.AddXpLog(source, amount, taskId, date);
-
-            // 触发升级事件（写库成功后）
+            // 触发事件（事务提交成功后）
             if (leveledUp)
-                LevelUp?.Invoke(this, new LevelUpEventArgs(growth.Level, growth.Title));
-
-            // 触发经验变更事件（UI 刷新经验条）
+                LevelUp?.Invoke(this, new LevelUpEventArgs(newLevel, newTitle));
             XpChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -194,18 +192,22 @@ namespace TodoSidebar.Services
             var brokeLast = false;
             for (var date = start; date <= endDate; date = date.AddDays(1))
             {
-                var result = SettleComboForDate(date, growth);
+                var result = SettleComboForDate(date);
                 if (result == SettleResult.FullClear) anyFullClear = true;
                 brokeLast = result == SettleResult.Broken;
             }
 
             // 聚合触发一次事件（补结算多天时不刷屏）
-            if (brokeLast)
-                ComboSettled?.Invoke(this, new ComboSettledEventArgs(growth.ComboDays, true));
-            else if (anyFullClear)
+            if (brokeLast || anyFullClear)
             {
-                ComboSettled?.Invoke(this, new ComboSettledEventArgs(growth.ComboDays, false));
-                XpChanged?.Invoke(this, EventArgs.Empty);
+                var final = GetGrowth();
+                if (brokeLast)
+                    ComboSettled?.Invoke(this, new ComboSettledEventArgs(final.ComboDays, true));
+                else
+                {
+                    ComboSettled?.Invoke(this, new ComboSettledEventArgs(final.ComboDays, false));
+                    XpChanged?.Invoke(this, EventArgs.Empty);
+                }
             }
         }
 
@@ -215,10 +217,12 @@ namespace TodoSidebar.Services
         /// 结算指定日期的连击（幂等，由结算游标与 combo 流水双重保证）。
         /// 该日全清 → 连击 +1 并发放连击经验（连击天数 × 2）；
         /// 该日有每日任务但未全清 → 连击清零；无每日任务 → 保持不动。
+        /// 每日独立加载档案（M14 复盘：共享可变对象曾导致过期状态覆盖已提交数据）。
         /// </summary>
-        private SettleResult SettleComboForDate(DateTime date, UserGrowth growth)
+        private SettleResult SettleComboForDate(DateTime date)
         {
             var dateStr = date.ToString("yyyy-MM-dd");
+            var growth = GetGrowth();
 
             // 幂等兜底：该日已有 combo 流水则只推进游标
             if (_db.HasXpLog("combo", null, dateStr))
@@ -228,7 +232,9 @@ namespace TodoSidebar.Services
                 return SettleResult.None;
             }
 
-            var dailyCount = _db.GetDailyTaskCount();
+            // M19 修复：用"该日期时点已存在的每日任务数"判定全清，
+            // 原实现用当前任务数，今天增删任务会追溯改写历史连击
+            var dailyCount = _db.GetDailyTaskCountAsOf(dateStr);
             if (dailyCount <= 0)
             {
                 // 没有每日任务，不参与连击，推进游标避免重复扫描
@@ -242,27 +248,36 @@ namespace TodoSidebar.Services
 
             if (isFullClear)
             {
-                // 连击 +1
-                var newCombo = growth.ComboDays + 1;
-                growth.ComboDays = newCombo;
-                if (newCombo > growth.BestComboDays)
-                    growth.BestComboDays = newCombo;
+                // 连击 +1 + 连击经验（连击天数 × 2），M14：原子写入
+                var leveledUp = false;
+                var newLevel = 0;
+                var newTitle = "";
+                var applied = _db.TryRewardXp("combo", null, dateStr, dedup: true, g =>
+                {
+                    g.ComboDays++;
+                    if (g.ComboDays > g.BestComboDays)
+                        g.BestComboDays = g.ComboDays;
 
-                // 连击经验：连击天数 × 2
-                var xp = newCombo * 2;
-                growth.Xp += xp;
-                growth.TotalXp += xp;
-                growth.LastXpDate = dateStr;
-                var leveledUp = ApplyLevelUps(growth);
+                    var xp = g.ComboDays * 2;
+                    g.Xp += xp;
+                    g.TotalXp += xp;
+                    g.LastXpDate = dateStr;
+                    leveledUp = ApplyLevelUps(g);
+                    newLevel = g.Level;
+                    newTitle = g.Title;
+                    return xp; // 实发经验：连击天数 × 2
+                });
 
-                _db.SaveUserGrowth(growth);
-                _db.AddXpLog("combo", xp, null, dateStr);
+                if (!applied)
+                    return SettleResult.None; // 并发下已被结算
 
                 if (leveledUp)
-                    LevelUp?.Invoke(this, new LevelUpEventArgs(growth.Level, growth.Title));
+                    LevelUp?.Invoke(this, new LevelUpEventArgs(newLevel, newTitle));
 
-                growth.LastComboSettledDate = dateStr;
-                _db.SaveUserGrowth(growth);
+                // 推进结算游标（重新加载，避免用过期对象覆盖刚提交的数据）
+                var fresh = GetGrowth();
+                fresh.LastComboSettledDate = dateStr;
+                _db.SaveUserGrowth(fresh);
                 return SettleResult.FullClear;
             }
 

@@ -14,6 +14,11 @@ namespace TodoSidebar
     {
         private readonly StatisticsViewModel _viewModel;
 
+        // 动态区域容器与卡片引用（L18）：供「刷新」按钮清除旧卡片后重建
+        private StackPanel? _dynamicCardsHost;
+        private Border? _focusStatsCard;
+        private Border? _growthChartCard;
+
         public StatisticsWindow()
         {
             _viewModel = new StatisticsViewModel(DatabaseService.Instance);
@@ -139,17 +144,10 @@ namespace TodoSidebar
                     ("连续天数", $"{_viewModel.StreakDays}天", "#FFB800")
                 )));
 
-            // 专注统计（番茄钟）
-            var (pomoCompleted, pomoInterrupted, focusMinutes) = PomodoroService.Instance.GetTodayStats();
-            stack.Children.Add(CreateStatCard("🍅 专注统计",
-                CreateStatGrid(
-                    ("今日番茄", pomoCompleted.ToString(), pomoCompleted >= PomodoroService.DailyTarget ? "#10B981" : null),
-                    ("专注分钟", focusMinutes.ToString(), (string?)null),
-                    ("中断", pomoInterrupted.ToString(), pomoInterrupted > 0 ? "#FF5A5A" : null)
-                )));
-
-            // 成长曲线（近 7 天每日经验）
-            stack.Children.Add(CreateStatCard("📈 成长曲线（近 7 天经验）", CreateGrowthChart()));
+            // 专注统计与成长曲线依赖实时数据，提为可重建方法（L18）：
+            // 初始化与「刷新」按钮共用，追加在静态卡片之后
+            _dynamicCardsHost = stack;
+            RefreshDynamicCards();
 
             content.Content = stack;
             Grid.SetRow(content, 1);
@@ -179,7 +177,11 @@ namespace TodoSidebar
                 Padding = new Thickness(15, 8, 15, 8),
                 HorizontalAlignment = HorizontalAlignment.Left
             };
-            refreshBtn.Click += (s, e) => { _viewModel.LoadStatistics(); };
+            refreshBtn.Click += (s, e) =>
+            {
+                _viewModel.LoadStatistics();
+                RefreshDynamicCards(); // 同步重建专注统计卡与成长曲线，避免陈旧数据
+            };
 
             var closeBtn = new Button
             {
@@ -201,6 +203,33 @@ namespace TodoSidebar
             mainGrid.Children.Add(footer);
 
             Content = mainGrid;
+        }
+
+        /// <summary>
+        /// 重建依赖实时数据的两张卡片（专注统计、成长曲线）：
+        /// 先移除旧卡片再重新构建，初始化与「刷新」按钮共用（L18）。
+        /// </summary>
+        private void RefreshDynamicCards()
+        {
+            if (_dynamicCardsHost == null) return;
+
+            // 清理旧卡片（若存在），避免刷新后重复叠加
+            if (_focusStatsCard != null) _dynamicCardsHost.Children.Remove(_focusStatsCard);
+            if (_growthChartCard != null) _dynamicCardsHost.Children.Remove(_growthChartCard);
+
+            // 专注统计（番茄钟）
+            var (pomoCompleted, pomoInterrupted, focusMinutes) = PomodoroService.Instance.GetTodayStats();
+            _focusStatsCard = CreateStatCard("🍅 专注统计",
+                CreateStatGrid(
+                    ("今日番茄", pomoCompleted.ToString(), pomoCompleted >= PomodoroService.DailyTarget ? "#10B981" : null),
+                    ("专注分钟", focusMinutes.ToString(), (string?)null),
+                    ("中断", pomoInterrupted.ToString(), pomoInterrupted > 0 ? "#FF5A5A" : null)
+                ));
+            _dynamicCardsHost.Children.Add(_focusStatsCard);
+
+            // 成长曲线（近 7 天每日经验）
+            _growthChartCard = CreateStatCard("📈 成长曲线（近 7 天经验）", CreateGrowthChart());
+            _dynamicCardsHost.Children.Add(_growthChartCard);
         }
 
         private Border CreateStatCard(string title, UIElement content)

@@ -38,5 +38,9 @@ namespace TodoSidebar.Services
 
         // 多用户隔离
         void EnsureUserScope(string userId);
+
+        // 成长系统原子操作（M14/M19）
+        bool TryRewardXp(string source, int? taskId, string date, bool dedup, Func<UserGrowth, int> mutate);
+        int GetDailyTaskCountAsOf(string date);
     }
 }

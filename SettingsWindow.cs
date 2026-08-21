@@ -352,6 +352,11 @@ namespace TodoSidebar
                     try
                     {
                         var count = _exportService.ImportFromJson(dialog.FileName);
+
+                        // 导入成功后刷新主界面数据，使新任务立即可见
+                        var vm = App.SharedViewModel;
+                        if (vm != null) { vm.LoadData(); }
+
                         MessageBox.Show($"成功导入 {count} 条任务！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     catch (Exception ex)

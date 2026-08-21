@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -30,11 +31,15 @@ namespace TodoSidebar
         
         private readonly DispatcherTimer _dateTimeTimer;
         private readonly DispatcherTimer _mouseCheckTimer;
+        // M31：展开兜底定时器（存字段便于重建前先停旧的，避免多个兜底并存）
+        private DispatcherTimer? _failSafeTimer;
         private DateTime _lastCollapseTime = DateTime.MinValue;
         private const int CollapseCooldownMs = 500;
         
         // 当前展开的任务
         private FrameworkElement? _expandedTaskCard;
+        // M32：记录展开卡片的任务 Id，集合重建后据此恢复展开状态
+        private int? _expandedTaskId;
         
         // 防重入锁
         private bool _isAnimating = false;
@@ -51,6 +56,9 @@ namespace TodoSidebar
             {
                 vm.LevelUpOccurred += OnLevelUpOccurred;
                 vm.AchievementUnlockedOccurred += OnAchievementUnlockedOccurred;
+
+                // M32：集合重建（LoadCurrentTasks 先 Clear 再逐个 Add）后按 Id 恢复卡片展开状态
+                vm.CurrentTasks.CollectionChanged += OnCurrentTasksChanged;
             }
 
             // 订阅番茄钟事件：刷新迷你计时器
@@ -111,11 +119,17 @@ namespace TodoSidebar
             // 窗口失焦 → 立即收起
             Deactivated += (_, _) =>
             {
-                if (!_isCollapsed)
-                {
-                    _lastCollapseTime = DateTime.Now;
-                    CollapsePanel();
-                }
+                if (_isCollapsed || _isAnimating) return;
+
+                // M30：存在由本窗口拥有且处于活动状态的子窗口（设置/统计/详情等模态框）时
+                // 跳过收起，避免打开对话框瞬间把面板收走
+                bool hasActiveOwnedWindow = Application.Current.Windows
+                    .OfType<Window>()
+                    .Any(w => !ReferenceEquals(w, this) && w.Owner == this && w.IsActive);
+                if (hasActiveOwnedWindow) return;
+
+                _lastCollapseTime = DateTime.Now;
+                CollapsePanel();
             };
 
             // 鼠标检测在首次收起后启动，初始展开状态不需要
@@ -134,6 +148,7 @@ namespace TodoSidebar
                 _collapseDelayTimer.Stop();
                 _dateTimeTimer.Stop();
                 _mouseCheckTimer.Stop();
+                StopFailSafeTimer(); // M31：兜底定时器一并清理
             };
         }
 
@@ -145,6 +160,7 @@ namespace TodoSidebar
             {
                 vm.LevelUpOccurred -= OnLevelUpOccurred;
                 vm.AchievementUnlockedOccurred -= OnAchievementUnlockedOccurred;
+                vm.CurrentTasks.CollectionChanged -= OnCurrentTasksChanged;
             }
 
             // 退订番茄钟单例事件
@@ -459,6 +475,8 @@ namespace TodoSidebar
             {
                 var fullWindow = new FullWindow();
                 fullWindow.Show();
+                // M28：切换窗口后把全局热键迁移到新窗口，否则本窗口销毁后热键静默失效
+                HotkeyService.Current?.ReRegisterHotkeys(fullWindow);
                 Close();
             }
             catch (Exception ex)
@@ -552,23 +570,30 @@ namespace TodoSidebar
             _hoverDelayTimer.Stop();
             _collapseDelayTimer.Stop(); // 展开时必须停止收起定时器，防止立即被收回
             // 注意：不停止 _mouseCheckTimer，保持运行以检测鼠标离开窗口
-            
+
+            // M31：先停掉上一次的兜底定时器，避免快速收起/展开时多个兜底并存
+            StopFailSafeTimer();
+
             // 安全检查：如果 MainPanel 宽度已经正确但不可见，强制恢复
             if (MainPanel.Width >= ExpandedWidth - 1 && MainPanel.Opacity < 0.1)
             {
                 MainPanel.Opacity = 1;
             }
-            
+
             AnimatePanel(true);
-            
+
             // 兜底机制：1 秒后如果还没展开，强制恢复可见
-            var failSafeTimer = new DispatcherTimer
+            _failSafeTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(1000)
             };
-            failSafeTimer.Tick += (s, e) =>
+            _failSafeTimer.Tick += (s, e) =>
             {
-                failSafeTimer.Stop();
+                StopFailSafeTimer();
+
+                // M31：若期间面板已被快速收起，直接退出，避免与收起状态竞争产生幽灵面板
+                if (_isCollapsed) return;
+
                 if (MainPanel.Opacity < 0.5 || MainPanel.Width < ExpandedWidth - 10)
                 {
                     MainPanel.BeginAnimation(UIElement.OpacityProperty, null);
@@ -578,7 +603,14 @@ namespace TodoSidebar
                     _isAnimating = false;
                 }
             };
-            failSafeTimer.Start();
+            _failSafeTimer.Start();
+        }
+
+        /// <summary>M31：停止并清空展开兜底定时器</summary>
+        private void StopFailSafeTimer()
+        {
+            _failSafeTimer?.Stop();
+            _failSafeTimer = null;
         }
 
         private void AnimatePanel(bool expand)
@@ -713,6 +745,7 @@ namespace TodoSidebar
                         {
                             expandArea.Visibility = Visibility.Collapsed;
                             _expandedTaskCard = null;
+                            _expandedTaskId = null; // M32：折叠时同步清除记录
                         }
                         else
                         {
@@ -727,6 +760,8 @@ namespace TodoSidebar
                             
                             expandArea.Visibility = Visibility.Visible;
                             _expandedTaskCard = element;
+                            // M32：记录任务 Id，集合重建（LoadCurrentTasks）后可按 Id 恢复展开
+                            _expandedTaskId = (element.DataContext as TaskItem)?.Id;
                         }
                     }
                 }
@@ -795,6 +830,58 @@ namespace TodoSidebar
             }
         }
 
+        /// <summary>
+        /// M32：CurrentTasks 集合变化处理。LoadCurrentTasks 重建集合（Clear 触发 Reset）
+        /// 会销毁旧的可视容器，展开状态需按 Id 在新容器上恢复。
+        /// </summary>
+        private void OnCurrentTasksChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            // 仅关心重建动作；逐个 Add 时容器尚未生成，延迟到布局完成后再恢复
+            if (e.Action != System.Collections.Specialized.NotifyCollectionChangedAction.Reset) return;
+
+            Dispatcher.BeginInvoke(new Action(RestoreExpandedCard), DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// M32：遍历 ItemContainerGenerator 找到 Id 匹配的新容器，重新显示其 ExpandArea。
+        /// 任务已不存在（被删除/完成）时清除记录，避免悬空引用与串卡。
+        /// </summary>
+        private void RestoreExpandedCard()
+        {
+            try
+            {
+                if (_expandedTaskId == null) return;
+
+                foreach (var item in TaskListBox.Items)
+                {
+                    if (item is TaskItem task && task.Id == _expandedTaskId)
+                    {
+                        if (TaskListBox.ItemContainerGenerator.ContainerFromItem(item) is FrameworkElement container)
+                        {
+                            var expandArea = FindChild<System.Windows.Controls.StackPanel>(container, "ExpandArea");
+                            if (expandArea != null)
+                            {
+                                expandArea.Visibility = Visibility.Visible;
+                                // 同步更新可视元素引用，保证再次点击时能正确折叠旧卡
+                                var cardBorder = FindChild<System.Windows.Controls.Border>(container, "TaskCard");
+                                if (cardBorder != null)
+                                    _expandedTaskCard = cardBorder;
+                            }
+                        }
+                        return;
+                    }
+                }
+
+                // 列表中已找不到该任务，清除记录
+                _expandedTaskId = null;
+                _expandedTaskCard = null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"RestoreExpandedCard error: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region 拖拽排序
@@ -812,6 +899,11 @@ namespace TodoSidebar
             if (listBoxItem?.DataContext is TaskItem task)
             {
                 _draggedTask = task;
+            }
+            else
+            {
+                // M25：未命中任务卡片时清空残留引用，避免误拖上一条任务
+                _draggedTask = null;
             }
         }
 
@@ -835,6 +927,13 @@ namespace TodoSidebar
                         DragDrop.DoDragDrop(TaskListBox, data, DragDropEffects.Move);
                     }
                     catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"DragDrop error: {ex.Message}"); }
+                    finally
+                    {
+                        // M25：无论正常结束、ESC 取消还是在列表外释放鼠标，都必须复位拖拽状态，
+                        // 否则 _isDragging 永远为 true，后续拖拽全部失灵
+                        _isDragging = false;
+                        _draggedTask = null;
+                    }
                 }
             }
         }
@@ -923,6 +1022,12 @@ namespace TodoSidebar
                         var dialog = new TaskDetailDialog(task, vm);
                         dialog.Owner = this;
                         dialog.ShowDialog();
+
+                        // M34 修复：任务编辑保存后清除已通知记录，否则修改截止日期后提醒永不恢复
+                        if (dialog.DialogResult == true && !task.IsCompleted)
+                        {
+                            Services.NotificationService.Instance.ClearNotifiedTask(task.Id);
+                        }
                     }
                 }
             }

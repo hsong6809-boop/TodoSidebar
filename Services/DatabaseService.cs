@@ -809,6 +809,21 @@ namespace TodoSidebar.Services
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
 
+        /// <summary>
+        /// 指定日期时点已存在的每日任务数（M19 修复）。
+        /// 用 CreatedAt 前缀比较实现"当时有多少任务"的近似快照，
+        /// 供连击结算按被判定日期取基准，避免今天增删任务追溯改写历史连击。
+        /// </summary>
+        public int GetDailyTaskCountAsOf(string date) => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            // CreatedAt 为 "yyyy-MM-ddTHH:mm..." 格式文本，前 10 位即日期
+            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE Type = @type AND IsDeleted = 0 AND substr(CreatedAt, 1, 10) <= @date";
+            cmd.Parameters.AddWithValue("@type", (int)TaskType.Daily);
+            cmd.Parameters.AddWithValue("@date", date);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
         // ==================== 搜索 ====================
 
         public List<TaskItem> SearchTasks(string keyword, TaskType? type = null, TaskPriority? priority = null) => ExecuteLocked(() =>
@@ -1177,7 +1192,9 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 获取用户成长档案；不存在则创建默认行（Lv.1）。
         /// </summary>
-        public UserGrowth GetUserGrowth() => ExecuteLocked(() =>
+        public UserGrowth GetUserGrowth() => ExecuteLocked(GetUserGrowthCore);
+
+        private UserGrowth GetUserGrowthCore()
         {
             using var selectCmd = _connection!.CreateCommand();
             selectCmd.CommandText = "SELECT Id, Level, Xp, TotalXp, ComboDays, BestComboDays, Title, LastXpDate, LastComboSettledDate FROM UserProfile WHERE Id = 1";
@@ -1203,12 +1220,14 @@ namespace TodoSidebar.Services
             insertCmd.CommandText = "INSERT INTO UserProfile (Id, Level, Xp, TotalXp, ComboDays, BestComboDays, Title, LastXpDate) VALUES (1, 1, 0, 0, 0, 0, '初出茅庐', NULL)";
             insertCmd.ExecuteNonQuery();
             return new UserGrowth();
-        });
+        }
 
         /// <summary>
         /// 保存用户成长档案（升级系统内部使用，调用方已保证加锁语义）。
         /// </summary>
-        public void SaveUserGrowth(UserGrowth growth) => ExecuteLocked(() =>
+        public void SaveUserGrowth(UserGrowth growth) => ExecuteLocked(() => SaveUserGrowthCore(growth));
+
+        private void SaveUserGrowthCore(UserGrowth growth)
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
@@ -1232,12 +1251,14 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@lastXpDate", (object?)growth.LastXpDate ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@lastComboSettledDate", (object?)growth.LastComboSettledDate ?? DBNull.Value);
             cmd.ExecuteNonQuery();
-        });
+        }
 
         /// <summary>
         /// 判断指定来源/任务/日期是否已有经验记录（防重复结算）。
         /// </summary>
-        public bool HasXpLog(string source, int? taskId, string date) => ExecuteLocked(() =>
+        public bool HasXpLog(string source, int? taskId, string date) => ExecuteLocked(() => HasXpLogCore(source, taskId, date));
+
+        private bool HasXpLogCore(string source, int? taskId, string date)
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM XpLog WHERE Source = @source AND Date = @date AND (@taskId IS NULL OR TaskId = @taskId)";
@@ -1245,12 +1266,48 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@date", date);
             cmd.Parameters.AddWithValue("@taskId", (object?)taskId ?? DBNull.Value);
             return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
-        });
+        }
+
+        /// <summary>
+        /// M14 修复：原子发放经验——防重检查、档案更新、流水写入三步在单次加锁 + 单事务内完成，
+        /// 消除并发绕过（两线程同时通过查重）与崩溃窗口（档案已写、流水未写导致重复发奖）。
+        /// mutate 在事务内对档案做业务变更（加 XP/升级/连击等）并返回实发经验值；
+        /// 返回值 ≤ 0 视为未发放（整体回滚）。方法返回 false 表示命中防重未发放。
+        /// </summary>
+        public bool TryRewardXp(string source, int? taskId, string date, bool dedup, Func<UserGrowth, int> mutate)
+            => ExecuteLocked(() =>
+            {
+                if (dedup && HasXpLogCore(source, taskId, date))
+                    return false;
+
+                using var transaction = _connection!.BeginTransaction();
+                try
+                {
+                    var growth = GetUserGrowthCore();
+                    var amount = mutate(growth);
+                    if (amount <= 0)
+                    {
+                        transaction.Rollback();
+                        return false;
+                    }
+                    SaveUserGrowthCore(growth);
+                    AddXpLogCore(source, amount, taskId, date);
+                    transaction.Commit();
+                    return true;
+                }
+                catch
+                {
+                    try { transaction.Rollback(); } catch { /* 已回滚或连接异常 */ }
+                    throw;
+                }
+            });
 
         /// <summary>
         /// 追加一条经验流水。
         /// </summary>
-        public void AddXpLog(string source, int amount, int? taskId, string date) => ExecuteLocked(() =>
+        public void AddXpLog(string source, int amount, int? taskId, string date) => ExecuteLocked(() => AddXpLogCore(source, amount, taskId, date));
+
+        private void AddXpLogCore(string source, int amount, int? taskId, string date)
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
@@ -1263,7 +1320,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@date", date);
             cmd.Parameters.AddWithValue("@createdAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
-        });
+        }
 
         /// <summary>
         /// 获取今日累计获得经验（用于当日结算/展示）。

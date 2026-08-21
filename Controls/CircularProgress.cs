@@ -13,15 +13,15 @@ namespace TodoSidebar.Controls
 
         public static readonly DependencyProperty StrokeThicknessProperty =
             DependencyProperty.Register("StrokeThickness", typeof(double), typeof(CircularProgress),
-                new FrameworkPropertyMetadata(4.0, FrameworkPropertyMetadataOptions.AffectsRender));
+                new FrameworkPropertyMetadata(4.0, FrameworkPropertyMetadataOptions.AffectsRender, OnPenAffectingPropertyChanged));
 
         public static readonly DependencyProperty ProgressBrushProperty =
             DependencyProperty.Register("ProgressBrush", typeof(Brush), typeof(CircularProgress),
-                new FrameworkPropertyMetadata(Brushes.DodgerBlue, FrameworkPropertyMetadataOptions.AffectsRender));
+                new FrameworkPropertyMetadata(Brushes.DodgerBlue, FrameworkPropertyMetadataOptions.AffectsRender, OnPenAffectingPropertyChanged));
 
         public static readonly DependencyProperty BackgroundBrushProperty =
             DependencyProperty.Register("BackgroundBrush", typeof(Brush), typeof(CircularProgress),
-                new FrameworkPropertyMetadata(Brushes.LightGray, FrameworkPropertyMetadataOptions.AffectsRender));
+                new FrameworkPropertyMetadata(Brushes.LightGray, FrameworkPropertyMetadataOptions.AffectsRender, OnPenAffectingPropertyChanged));
 
         public static readonly DependencyProperty SizeProperty =
             DependencyProperty.Register("Size", typeof(double), typeof(CircularProgress),
@@ -79,6 +79,19 @@ namespace TodoSidebar.Controls
             }
         }
 
+        /// <summary>
+        /// 笔刷/线宽变化时重建缓存 Pen（M26）：否则主题切换或样式调整后，
+        /// 旧 Pen 仍持有失效的 Brush 引用，圆环颜色不会更新。
+        /// </summary>
+        private static void OnPenAffectingPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is CircularProgress control)
+            {
+                control.InvalidateCachedPens();
+                control.InvalidateVisual();
+            }
+        }
+
         private Pen? _cachedBackgroundPen;
         private Pen? _cachedProgressPen;
 
@@ -127,35 +140,44 @@ namespace TodoSidebar.Controls
                 }
 
                 var angle = Progress * 360;
-                var startPoint = new Point(
-                    center.X + radius * Math.Cos(-Math.PI / 2),
-                    center.Y + radius * Math.Sin(-Math.PI / 2));
 
-                var endPoint = new Point(
-                    center.X + radius * Math.Cos((-Math.PI / 2) + (angle * Math.PI / 180)),
-                    center.Y + radius * Math.Sin((-Math.PI / 2) + (angle * Math.PI / 180)));
-
-                var isLargeArc = angle > 180;
-
-                var pathFigure = new PathFigure
+                // 进度满格（>=360°）时弧段起终点重合导致圆环消失（M27），直接绘制整圆
+                if (angle >= 360)
                 {
-                    StartPoint = startPoint,
-                    IsClosed = false
-                };
-
-                pathFigure.Segments.Add(new ArcSegment
+                    drawingContext.DrawEllipse(null, _cachedProgressPen, center, radius, radius);
+                }
+                else
                 {
-                    Point = endPoint,
-                    Size = new Size(radius, radius),
-                    IsLargeArc = isLargeArc,
-                    SweepDirection = SweepDirection.Clockwise,
-                    RotationAngle = 0
-                });
+                    var startPoint = new Point(
+                        center.X + radius * Math.Cos(-Math.PI / 2),
+                        center.Y + radius * Math.Sin(-Math.PI / 2));
 
-                var pathGeometry = new PathGeometry();
-                pathGeometry.Figures.Add(pathFigure);
+                    var endPoint = new Point(
+                        center.X + radius * Math.Cos((-Math.PI / 2) + (angle * Math.PI / 180)),
+                        center.Y + radius * Math.Sin((-Math.PI / 2) + (angle * Math.PI / 180)));
 
-                drawingContext.DrawGeometry(null, _cachedProgressPen, pathGeometry);
+                    var isLargeArc = angle > 180;
+
+                    var pathFigure = new PathFigure
+                    {
+                        StartPoint = startPoint,
+                        IsClosed = false
+                    };
+
+                    pathFigure.Segments.Add(new ArcSegment
+                    {
+                        Point = endPoint,
+                        Size = new Size(radius, radius),
+                        IsLargeArc = isLargeArc,
+                        SweepDirection = SweepDirection.Clockwise,
+                        RotationAngle = 0
+                    });
+
+                    var pathGeometry = new PathGeometry();
+                    pathGeometry.Figures.Add(pathFigure);
+
+                    drawingContext.DrawGeometry(null, _cachedProgressPen, pathGeometry);
+                }
             }
         }
     }

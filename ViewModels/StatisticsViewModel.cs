@@ -100,8 +100,8 @@ namespace TodoSidebar.ViewModels
             TodayCompleted = todayCompletedDaily + todayCompletedDeadlines;
             TodayCompletionRate = TodayTotal > 0 ? (double)TodayCompleted / TodayTotal : 0;
 
-            // 连续完成天数
-            StreakDays = CalculateStreakDays(dailyCompletionRecords);
+            // 连续完成天数（M24：独立查询窗口 + 与连击结算口径对齐）
+            StreakDays = CalculateStreakDays();
 
             // 每日统计（最近7天）
             DailyStats = CalculateDailyStats(dailyCompletionRecords, 7, dailyCount);
@@ -126,23 +126,33 @@ namespace TodoSidebar.ViewModels
             };
         }
 
-        private int CalculateStreakDays(Dictionary<string, HashSet<int>> dailyCompletionRecords)
+        private int CalculateStreakDays()
         {
+            // M24 修复：
+            // ① 独立拉取 365 天完成记录——原实现复用最近 7 天数据，streak 恒 ≤ 7；
+            // ② 今天未全清时从昨天起算——与午夜连击结算口径一致，白天未全清不再恒显示 0；
+            // ③ 历史某天是否全清用该日期时点的任务数判定（GetDailyTaskCountAsOf），
+            //    不再用当前任务数回溯历史
+            var records = _dbService.GetDailyCompletionRecords(365);
+            var today = DateTime.Today;
+            var todayCount = _dbService.GetDailyTaskCount();
+            if (todayCount == 0) return 0;
+
+            var start = today;
+            var todayCompleted = records.TryGetValue(today.ToString("yyyy-MM-dd"), out var todaySet)
+                ? todaySet.Count : 0;
+            if (todayCompleted < todayCount)
+                start = today.AddDays(-1);
+
+            var earliest = today.AddDays(-365);
             int streak = 0;
-            var date = DateTime.Today;
-            var dailyTaskCount = _dbService.GetDailyTaskCount();
-
-            // 没有每日任务则无连续天数
-            if (dailyTaskCount == 0) return 0;
-
-            while (true)
+            var date = start;
+            while (date >= earliest)
             {
                 var dateStr = date.ToString("yyyy-MM-dd");
-                if (!dailyCompletionRecords.TryGetValue(dateStr, out var dateSet))
-                    break;
-                
-                // 当天完成数 >= 每日任务总数才算全部完成
-                if (dateSet.Count < dailyTaskCount)
+                var completed = records.TryGetValue(dateStr, out var set) ? set.Count : 0;
+                var expected = _dbService.GetDailyTaskCountAsOf(dateStr);
+                if (expected == 0 || completed < expected)
                     break;
 
                 streak++;

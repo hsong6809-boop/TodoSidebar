@@ -39,6 +39,24 @@ namespace TodoSidebar.Services
         {
             _dbService = DatabaseService.Instance;
             LoadThemePreference();
+
+            // M33：监听系统主题变化，"跟随系统"模式下实时响应明暗切换
+            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        }
+
+        /// <summary>
+        /// M33：系统外观偏好变化回调。仅处理常规类别（含应用主题颜色），
+        /// 且当前为"跟随系统"时才重新应用；事件来自系统广播线程，必须封送回 UI 线程。
+        /// </summary>
+        private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
+        {
+            if (e.Category != UserPreferenceCategory.General) return;
+            if (_currentTheme != ThemeType.System) return;
+
+            var app = Application.Current;
+            if (app == null) return;
+
+            app.Dispatcher.Invoke(() => ApplyTheme(ThemeType.System));
         }
 
         private void LoadThemePreference()
@@ -121,6 +139,16 @@ namespace TodoSidebar.Services
 
             // 边框色 - 更细腻
             resources["BorderBrush"] = new SolidColorBrush(ColorFromHex("#1A000000"));  // 更淡的边框
+
+            // M33：优先级色 - 与状态色保持一致（浅色值取自 App.xaml）
+            resources["PriorityHighBrush"] = new SolidColorBrush(ColorFromHex("#EF4444"));   // Red-500
+            resources["PriorityMediumBrush"] = new SolidColorBrush(ColorFromHex("#F59E0B")); // Amber-500
+            resources["PriorityLowBrush"] = new SolidColorBrush(ColorFromHex("#10B981"));    // Emerald-500
+
+            // M33：主色调 / 任务类型色 - 此前从未纳入主题替换，深色下会残留浅色值
+            resources["PrimaryBrush"] = new SolidColorBrush(ColorFromHex("#6366F1"));        // Indigo-500
+            resources["TypeDailyBrush"] = new SolidColorBrush(ColorFromHex("#6366F1"));      // Indigo-500
+            resources["TypeDeadlineBrush"] = new SolidColorBrush(ColorFromHex("#EF4444"));   // Red-500
         }
 
         private void ApplyDarkTheme(ResourceDictionary resources)
@@ -147,6 +175,16 @@ namespace TodoSidebar.Services
 
             // 边框色 - 深色模式下更细腻
             resources["BorderBrush"] = new SolidColorBrush(ColorFromHex("#1AFFFFFF"));  // 更淡的边框
+
+            // M33：优先级色 - 深色下提亮一档保证可读
+            resources["PriorityHighBrush"] = new SolidColorBrush(ColorFromHex("#F87171"));   // Red-400
+            resources["PriorityMediumBrush"] = new SolidColorBrush(ColorFromHex("#FBBF24")); // Amber-400
+            resources["PriorityLowBrush"] = new SolidColorBrush(ColorFromHex("#34D399"));    // Emerald-400
+
+            // M33：主色调 / 任务类型色 - 保持强调色系，深色背景上清晰可读
+            resources["PrimaryBrush"] = new SolidColorBrush(ColorFromHex("#818CF8"));        // Indigo-400
+            resources["TypeDailyBrush"] = new SolidColorBrush(ColorFromHex("#818CF8"));      // Indigo-400
+            resources["TypeDeadlineBrush"] = new SolidColorBrush(ColorFromHex("#F87171"));   // Red-400
         }
 
         private static Color ColorFromHex(string hex)

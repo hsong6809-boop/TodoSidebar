@@ -2,7 +2,9 @@ using System;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using TodoSidebar.Config;
 using TodoSidebar.ViewModels;
 using TodoSidebar.Services;
@@ -11,6 +13,9 @@ namespace TodoSidebar
 {
     public partial class LoginWindow : Window
     {
+        // 异步操作进行中标记，防止登录/注册/忘记密码并发提交
+        private bool _isBusy;
+
         public LoginWindow()
         {
             InitializeComponent();
@@ -79,49 +84,77 @@ namespace TodoSidebar
             }
         }
         
+        /// <summary>
+        /// 统一禁用/启用全部操作按钮（M36b）。
+        /// 注册与忘记密码按钮在 XAML 中未命名，故遍历可视树按类型收集；
+        /// 本窗口恰好只有登录/注册/忘记密码三个按钮，不会误伤其他控件。
+        /// </summary>
+        private void SetBusy(bool busy)
+        {
+            _isBusy = busy;
+            SetButtonsEnabled(this, !busy);
+        }
+
+        private static void SetButtonsEnabled(DependencyObject parent, bool enabled)
+        {
+            var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is Button button)
+                {
+                    button.IsEnabled = enabled;
+                }
+                SetButtonsEnabled(child, enabled);
+            }
+        }
+
         private async void LoginButton_Click(object sender, RoutedEventArgs e)
         {
             await LoginAsync();
         }
-        
+
         private async Task LoginAsync()
         {
+            // 已有异步操作进行中，忽略重复提交
+            if (_isBusy) return;
+
             var email = EmailTextBox.Text.Trim();
             var password = PasswordBox.Password;
-            
+
             // 验证输入
             if (string.IsNullOrEmpty(email))
             {
                 ShowError("请输入邮箱");
                 return;
             }
-            
+
             if (!IsValidEmail(email))
             {
                 ShowError("请输入有效的邮箱地址");
                 return;
             }
-            
+
             if (string.IsNullOrEmpty(password))
             {
                 ShowError("请输入密码");
                 return;
             }
-            
-            // 禁用按钮，显示加载状态
-            LoginButton.IsEnabled = false;
+
+            // 禁用全部按钮，显示加载状态
+            SetBusy(true);
             LoginButton.Content = "登录中...";
             HideError();
-            
+
             try
             {
                 var result = await AuthService.Instance.LoginWithEmailPasswordAsync(email, password);
-                
+
                 if (result.Success)
                 {
                     // 保存凭据（如果勾选了记住我）
                     SaveCredentials(email, password);
-                    
+
                     // 登录成功：先释放旧 ViewModel（避免定时器/订阅泄漏），再初始化新实例
                     App.SharedViewModel?.Dispose();
                     App.SharedViewModel = new ViewModels.MainViewModel();
@@ -145,7 +178,7 @@ namespace TodoSidebar
             }
             finally
             {
-                LoginButton.IsEnabled = true;
+                SetBusy(false);
                 LoginButton.Content = "登录";
             }
         }
@@ -173,23 +206,26 @@ namespace TodoSidebar
         
         private async void RegisterButton_Click(object sender, RoutedEventArgs e)
         {
+            // 已有异步操作进行中，忽略重复提交
+            if (_isBusy) return;
+
             var email = EmailTextBox.Text.Trim();
             var password = PasswordBox.Password;
-            
+
             if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
             {
                 ShowError("请输入邮箱和密码进行注册");
                 return;
             }
-            
-            LoginButton.IsEnabled = false;
+
+            SetBusy(true);
             LoginButton.Content = "注册中...";
             HideError();
-            
+
             try
             {
                 var result = await AuthService.Instance.SignUpWithEmailPasswordAsync(email, password);
-                
+
                 if (result.Success)
                 {
                     MessageBox.Show(result.Message ?? "注册成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -205,25 +241,30 @@ namespace TodoSidebar
             }
             finally
             {
-                LoginButton.IsEnabled = true;
+                SetBusy(false);
                 LoginButton.Content = "登录";
             }
         }
-        
+
         private async void ForgotPassword_Click(object sender, RoutedEventArgs e)
         {
+            // 已有异步操作进行中，忽略重复提交
+            if (_isBusy) return;
+
             var email = EmailTextBox.Text.Trim();
-            
+
             if (string.IsNullOrEmpty(email))
             {
                 ShowError("请输入邮箱后点击忘记密码");
                 return;
             }
-            
+
+            SetBusy(true);
+
             try
             {
                 var result = await AuthService.Instance.ResetPasswordAsync(email);
-                
+
                 if (result.Success)
                 {
                     MessageBox.Show(result.Message ?? "重置密码邮件已发送", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -236,6 +277,10 @@ namespace TodoSidebar
             catch (Exception ex)
             {
                 ShowError($"发送重置邮件出错: {ex.Message}");
+            }
+            finally
+            {
+                SetBusy(false);
             }
         }
         
