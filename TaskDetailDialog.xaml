@@ -132,8 +132,7 @@
                     <!-- 子任务列表 -->
                     <ScrollViewer Grid.Row="1"
                                   VerticalScrollBarVisibility="Auto">
-                        <ItemsControl x:Name="SubTasksItemsControl"
-                                      AlternationCount="2">
+                        <ItemsControl x:Name="SubTasksItemsControl">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Background="{DynamicResource CardBrush}"
@@ -162,7 +161,7 @@
                                                        TextWrapping="Wrap"/>
                                             <Button Grid.Column="2"
                                                     Content="×"
-                                                    Tag="{Binding Path=(ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ContentPresenter}}"
+                                                    Tag="{Binding}"
                                                     Click="DeleteSubTaskButton_Click"
                                                     Style="{StaticResource IconButton}"
                                                     Width="20"

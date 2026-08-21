@@ -87,11 +87,17 @@ namespace TodoSidebar.ViewModels
             HighPriorityTasks = highPrio;
 
             // 今日统计（结合 DailyTaskCompletion 表）
-            TodayTotal = dailyCount + deadlineCount;
+            // 截止任务只统计今天完成的，避免把全部历史截止任务算进今天
+            var todayCompletedDeadlines = _dbService.GetCompletedTasks(today, today.AddDays(1))
+                .Count(t => t.Type == TaskType.Deadline);
+            // 分母：每日任务总数 + 尚未完成且未过期的截止任务数
+            var pendingValidDeadlines = allTasks.Count(t => t.Type == TaskType.Deadline
+                && t.Deadline.HasValue && t.Deadline.Value.Date >= today && !t.IsCompleted);
+            TodayTotal = dailyCount + pendingValidDeadlines;
             var todayStr = today.ToString("yyyy-MM-dd");
             var todayCompletedDaily = dailyCompletionRecords.TryGetValue(todayStr, out var todaySet)
                 ? todaySet.Count : 0;
-            TodayCompleted = todayCompletedDaily + deadlineCompleted;
+            TodayCompleted = todayCompletedDaily + todayCompletedDeadlines;
             TodayCompletionRate = TodayTotal > 0 ? (double)TodayCompleted / TodayTotal : 0;
 
             // 连续完成天数

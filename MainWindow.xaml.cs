@@ -137,6 +137,24 @@ namespace TodoSidebar
             };
         }
 
+        /// <summary>窗口关闭时退订单例/长生命周期事件，防止窗口无法被回收</summary>
+        protected override void OnClosed(EventArgs e)
+        {
+            // 退订 ViewModel 事件（DataContext 判空）
+            if (DataContext is MainViewModel vm)
+            {
+                vm.LevelUpOccurred -= OnLevelUpOccurred;
+                vm.AchievementUnlockedOccurred -= OnAchievementUnlockedOccurred;
+            }
+
+            // 退订番茄钟单例事件
+            PomodoroService.Instance.Tick -= OnFocusTick;
+            PomodoroService.Instance.StateChanged -= OnFocusStateChanged;
+            PomodoroService.Instance.SessionCompleted -= OnFocusSessionCompleted;
+
+            base.OnClosed(e);
+        }
+
         private void UpdateDateTime()
         {
             var now = DateTime.Now;
@@ -341,17 +359,19 @@ namespace TodoSidebar
             {
                 var helper = new WindowInteropHelper(this);
                 var screen = System.Windows.Forms.Screen.FromHandle(helper.Handle);
-                var screenWidth = screen.Bounds.Width;
                 var screenHeight = screen.Bounds.Height;
                 var screenLeft = screen.Bounds.X;
                 var screenTop = screen.Bounds.Y;
 
-                Left = screenLeft;
-                Height = screenHeight * MainScreenHeightRatio;
-                Top = screenTop + (screenHeight - Height) / 2;
-                Width = ExpandedWidth;
+                // WinForms Screen.Bounds 是物理像素，WPF 属性使用 DIP，需按当前 DPI 换算
+                var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
 
-                SetWindowPos(helper.Handle, HWND_TOPMOST, (int)Left, (int)Top, (int)Width, (int)Height, SWP_SHOWWINDOW);
+                Width = ExpandedWidth; // 宽度保持 DIP 值
+                Height = screenHeight / dpi.DpiScaleY * MainScreenHeightRatio;
+                Left = screenLeft / dpi.DpiScaleX;
+                Top = (screenTop + (screenHeight - Height * dpi.DpiScaleY) / 2) / dpi.DpiScaleY;
+
+                // 置顶由 XAML 的 Topmost="True" 保证，无需再调用 SetWindowPos
             }
             catch (Exception ex)
             {

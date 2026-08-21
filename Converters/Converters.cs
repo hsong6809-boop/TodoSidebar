@@ -22,8 +22,8 @@ namespace TodoSidebar.Converters
         // 完成状态色
         public static readonly Brush CompletedGreen = Freeze("#10B981");
         public static readonly Brush MutedGray = Freeze("#666680");
-        // 子任务正常文字色
-        public static readonly Brush SubTaskText = Freeze("#DCDCE6");
+        // 子任务未完成文字兜底色（浅深主题均可读的中性灰）
+        public static readonly Brush SubTaskTextNeutral = Freeze("#64748B");
 
         private static Brush Freeze(string hex)
         {
@@ -264,12 +264,27 @@ namespace TodoSidebar.Converters
         {
             if (value is bool isCompleted && isCompleted)
                 return Palette.MutedGray;
-            return Palette.SubTaskText;
+            return GetUncompletedBrush();
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
             return Binding.DoNothing;
+        }
+
+        /// <summary>
+        /// 未完成子任务文字色：优先取主题资源 TextBrush（随浅/深主题切换），
+        /// 取不到再回退 SubTaskText 资源，最后回退中性灰，保证浅色主题下可读。
+        /// 注意：主题画刷不做 Freeze，直接返回资源字典中的实例。
+        /// </summary>
+        private static Brush GetUncompletedBrush()
+        {
+            var resources = Application.Current?.Resources;
+            if (resources?["TextBrush"] is Brush textBrush)
+                return textBrush;
+            if (resources?["SubTaskText"] is Brush subTaskBrush)
+                return subTaskBrush;
+            return Palette.SubTaskTextNeutral;
         }
     }
 

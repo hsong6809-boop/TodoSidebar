@@ -45,6 +45,27 @@ namespace TodoSidebar
             LoadChallenges();
         }
 
+        /// <summary>窗口关闭时退订单例/长生命周期事件，防止窗口无法被回收</summary>
+        protected override void OnClosed(EventArgs e)
+        {
+            // 退订 ViewModel 事件（DataContext 判空）
+            if (DataContext is MainViewModel vm)
+            {
+                vm.LevelUpOccurred -= OnLevelUpOccurred;
+                vm.AchievementUnlockedOccurred -= OnAchievementUnlockedOccurred;
+            }
+
+            // 退订番茄钟单例事件
+            PomodoroService.Instance.Tick -= OnFocusTick;
+            PomodoroService.Instance.StateChanged -= OnFocusStateChanged;
+            PomodoroService.Instance.SessionCompleted -= OnFocusSessionCompleted;
+
+            // 退订每日挑战单例事件
+            DailyChallengeService.Instance.ChallengesUpdated -= OnChallengesUpdated;
+
+            base.OnClosed(e);
+        }
+
         #region 每日挑战面板
 
         private void OnChallengesUpdated(object? sender, EventArgs e) => LoadChallenges();

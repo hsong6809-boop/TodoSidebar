@@ -75,13 +75,10 @@ namespace TodoSidebar
 
         private void SubTaskCheckBox_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is CheckBox checkBox && checkBox.DataContext is SubTask subTask)
-            {
-                subTask.IsCompleted = !subTask.IsCompleted;
-                _hasChanges = true;
-                UpdateProgress();
-                SubTasksItemsControl.Items.Refresh();
-            }
+            // IsChecked 为 TwoWay 绑定且 SubTask 实现 INPC，勾选状态已由绑定翻转，
+            // 这里不再手动取反（否则会弹回），也无需 Items.Refresh
+            _hasChanges = true;
+            UpdateProgress();
         }
 
         private void AddSubTaskButton_Click(object sender, RoutedEventArgs e)
@@ -110,14 +107,12 @@ namespace TodoSidebar
 
         private void DeleteSubTaskButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is int index)
+            // Tag 直接绑定子任务对象，避免用 AlternationIndex 当索引（只在 0/1 循环导致删错条目）
+            if (sender is Button button && button.Tag is SubTask subTask)
             {
-                if (index >= 0 && index < _subTasks.Count)
-                {
-                    _subTasks.RemoveAt(index);
-                    _hasChanges = true;
-                    UpdateProgress();
-                }
+                _subTasks.Remove(subTask);
+                _hasChanges = true;
+                UpdateProgress();
             }
         }
 
