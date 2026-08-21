@@ -1151,6 +1151,15 @@ namespace TodoSidebar.Services
                 if (lastUserId == userId)
                     return; // 同一用户，保留本地数据
 
+                if (lastUserId == null)
+                {
+                    // 首次运行新版本（无归属记录）：只登记归属、不清库。
+                    // 运行时验证发现"未知即清库"会在老用户升级首启时误清未同步的离线数据；
+                    // 云端有完整数据时可恢复，但离线数据将丢失。保守处理更安全。
+                    SetSetting("LastUserId", userId);
+                    return;
+                }
+
                 using var transaction = _connection!.BeginTransaction();
                 try
                 {
