@@ -114,52 +114,60 @@
                     </Grid>
                 </Border>
 
-                <!-- ===== Hero：今日进度卡（对齐示意图）===== -->
+                <!-- ===== Hero：左环 ｜ 中昵称+连击 ｜ 右等级信息 ===== -->
                 <Border Grid.Row="1" Background="Transparent" Padding="16,12,16,4">
                     <Border Background="{DynamicResource CardBrush}"
-                            CornerRadius="16" Padding="16,14"
+                            CornerRadius="16" Padding="14,12"
                             BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <!-- 进度环 -->
-                            <Grid Width="56" Height="56" VerticalAlignment="Center">
-                                <controls:CircularProgress Size="56" StrokeThickness="6"
+
+                            <!-- 左：今日进度环 + 百分比 -->
+                            <Grid Grid.Column="0" Width="58" Height="58" VerticalAlignment="Center">
+                                <controls:CircularProgress Size="58" StrokeThickness="6"
                                                            Progress="{Binding TodayProgressRate}"
                                                            ProgressBrush="{DynamicResource AccentGradientBrush}"
                                                            BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
                                 <TextBlock Text="{Binding TodayProgressRate, Converter={StaticResource FractionToPercent}}"
-                                           FontSize="11" FontWeight="Bold"
+                                           FontSize="11.5" FontWeight="Bold"
                                            Foreground="{DynamicResource AccentBrush}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
-                            <!-- 数值与徽章 -->
-                            <StackPanel VerticalAlignment="Center" Margin="13,0,0,0">
-                                <TextBlock Text="今日进度" FontSize="10.5"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <TextBlock Text="{Binding TodayDoneText}"
-                                           FontSize="16" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,2"/>
+
+                            <!-- 中：昵称 + 连击天数 -->
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="13,0,10,0">
+                                <TextBlock x:Name="HeroNickname" Text=""
+                                           FontSize="15" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0"
+                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
+                                                      FontSize="10" Foreground="{DynamicResource ComboBrush}"
+                                                      VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource ComboBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding TodayDoneText, StringFormat='今日完成 {0}'}"
+                                           FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
+                                           Margin="0,5,0,0"/>
                             </StackPanel>
-                            <!-- 徽章行（独占一行） -->
-                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="2,12,0,0">
-                                <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="8,3"
-                                        Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
-                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="9.5" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ComboBrush}"/>
-                                </Border>
-                                <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="999" Padding="8,3"
-                                        Margin="6,0,0,0">
-                                    <TextBlock Text="{Binding Level, StringFormat='Lv.{0}'}" FontSize="9.5" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource AccentBrush}"/>
-                                </Border>
+
+                            <!-- 右：等级信息（完整模式等级卡内容） -->
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding LevelDisplay}"
+                                           FontSize="11.5" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <ProgressBar Height="4" Minimum="0" Maximum="1"
+                                             Value="{Binding LevelProgress}" Margin="0,6,0,3"
+                                             Foreground="{DynamicResource AccentGradientBrush}"/>
+                                <TextBlock Text="{Binding LevelProgressText}"
+                                           FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
                     </Border>
