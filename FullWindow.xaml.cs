@@ -8,6 +8,7 @@ using System.Windows.Media;
 using TodoSidebar.Models;
 using TodoSidebar.Services;
 using TodoSidebar.ViewModels;
+using TodoSidebar.Controls;
 
 namespace TodoSidebar
 {
@@ -30,8 +31,20 @@ namespace TodoSidebar
             InitializeComponent();
             DataContext = App.SharedViewModel;
 
-            // P2：真实亚克力背板（失败静默降级为半透明纯色）
-            Loaded += (_, _) => DwmBackdropHelper.ApplyMainShellAcrylic(this);
+            // P2：真实亚克力背板（失败静默降级为半透明纯色）+ V2.1 顶栏个性化
+            Loaded += (_, _) =>
+            {
+                DwmBackdropHelper.ApplyMainShellAcrylic(this);
+                UpdateThemeToggleGlyph();
+                LoadDashboardHeader();
+                try
+                {
+                    var email = ((IAuthService)AuthService.Instance).CurrentEmail;
+                    if (!string.IsNullOrWhiteSpace(email))
+                        AvatarText.Text = email.Substring(0, 1).ToUpperInvariant();
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Avatar init error: {ex.Message}"); }
+            };
 
             // 订阅升级/成就事件：显示横幅 + 粒子特效
             if (DataContext is MainViewModel vm)
@@ -165,6 +178,7 @@ namespace TodoSidebar
             var commands = new List<Controls.PaletteCommand>
             {
                 new("前往 · 今日", "仪表盘与任务流", "Calendar", () => NavigateTo("Dashboard")),
+                new("前往 · 截止", "按紧急度分组的截止任务", "Clock", () => NavigateTo("Deadline")),
                 new("前往 · 历史", "已完成任务记录", "CheckList", () => NavigateTo("History")),
                 new("前往 · 统计", "趋势图表与数据概览", "Chart", () => NavigateTo("Stats")),
                 new("前往 · 专注", "沉浸式番茄钟", "Timer", () => NavigateTo("Focus")),
@@ -601,6 +615,7 @@ namespace TodoSidebar
         {
             var target = page switch
             {
+                "Deadline" => NavDeadline,
                 "History" => NavHistory,
                 "Stats" => NavStats,
                 "Focus" => NavFocus,
@@ -622,6 +637,7 @@ namespace TodoSidebar
         {
             var showDashboard = page == "Dashboard";
             DashboardPanel.Visibility = showDashboard ? Visibility.Visible : Visibility.Collapsed;
+            DeadlinesPanel.Visibility = page == "Deadline" ? Visibility.Visible : Visibility.Collapsed;
             HistoryPanel.Visibility = page == "History" ? Visibility.Visible : Visibility.Collapsed;
             StatisticsPanel.Visibility = page == "Stats" ? Visibility.Visible : Visibility.Collapsed;
             FocusPanel.Visibility = page == "Focus" ? Visibility.Visible : Visibility.Collapsed;
@@ -629,10 +645,21 @@ namespace TodoSidebar
 
             if (DataContext is MainViewModel vm)
             {
-                vm.SelectedTabIndex = showDashboard ? 0 : page == "History" ? 2 : page == "Stats" ? 3 : 4;
+                vm.SelectedTabIndex = page switch
+                {
+                    "Deadline" => 1,
+                    "History" => 2,
+                    "Stats" => 3,
+                    "Focus" => 4,
+                    _ => 0
+                };
             }
 
-            if (showDashboard) LoadChallenges(); // 回到今日页刷新挑战进度
+            if (showDashboard)
+            {
+                LoadChallenges(); // 回到今日页刷新挑战进度
+                LoadDashboardHeader();
+            }
             if (page == "Focus")
             {
                 UpdateFocusPanel();
@@ -658,6 +685,54 @@ namespace TodoSidebar
                 {
                     AnimationService.AnimateListStagger(AchievementsList, maxItems: 20);
                 }));
+            }
+        }
+
+        /// <summary>V2.1：仪表盘页头日期与问候语（对齐示意图"今天 / 8月22日 周五 · 下午好"）。</summary>
+        private void LoadDashboardHeader()
+        {
+            if (DashboardSubtitleText == null) return;
+            var now = DateTime.Now;
+            string[] weeks = { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
+            var part = now.Hour switch
+            {
+                < 6 => "凌晨好",
+                < 12 => "上午好",
+                < 14 => "中午好",
+                < 18 => "下午好",
+                _ => "晚上好"
+            };
+            DashboardSubtitleText.Text = $"{now:M月d日} {weeks[(int)now.DayOfWeek]} · {part}";
+        }
+
+        /// <summary>V2.1：明暗主题快捷切换。</summary>
+        private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ThemeManager.Instance.CurrentTheme = ThemeManager.IsCurrentlyDark() ? ThemeType.Light : ThemeType.Dark;
+            UpdateThemeToggleGlyph();
+        }
+
+        private void UpdateThemeToggleGlyph()
+        {
+            if (ThemeToggleIcon == null) return;
+            var dark = ThemeManager.IsCurrentlyDark();
+            ThemeToggleIcon.Glyph = dark ? Icons.Sun : Icons.Moon;
+            ThemeToggleButton.ToolTip = dark ? "切换到浅色主题" : "切换到深色主题";
+        }
+
+        /// <summary>V2.1：今日任务区"全部 ›"——跳转侧边栏完整列表。</summary>
+        private void TodayAll_Click(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                var sidebar = new MainWindow();
+                sidebar.Show();
+                Services.HotkeyService.Current?.ReRegisterHotkeys(sidebar);
+                Close();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"TodayAll error: {ex.Message}");
             }
         }
 

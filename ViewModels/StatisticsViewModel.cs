@@ -194,6 +194,10 @@ namespace TodoSidebar.ViewModels
         public int CompletedTasks { get; set; }
         public double CompletionRate { get; set; }
         public string DateLabel => Date.ToString("MM/dd");
+
+        /// <summary>V2.1：点阵状态（none/done/today），供连击卡 7 日点阵配色。</summary>
+        public bool IsToday => Date.Date == DateTime.Today;
+        public string DotState => CompletedTasks > 0 ? (IsToday ? "today" : "done") : "none";
     }
 
     public class TaskTypeStats

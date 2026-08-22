@@ -52,6 +52,8 @@ namespace TodoSidebar.Controls
         public const string PasswordKey = "Lock";
         public const string Lock = "Lock";
         public const string Lightbulb = "Lightbulb";
+        public const string Sun = "Sun";
+        public const string Moon = "Moon";
         public const string More = "More";
         public const string Restore = "Restore";
         public const string Filter = "Filter";
