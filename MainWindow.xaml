@@ -158,8 +158,8 @@
                                            Margin="0,5,0,0"/>
                             </StackPanel>
 
-                            <!-- 右：等级信息（占卡片约一半宽，字号放大） -->
-                            <StackPanel Grid.Column="2" Width="150" VerticalAlignment="Center"
+                            <!-- 右：等级信息（约占卡片 49% 宽） -->
+                            <StackPanel Grid.Column="2" Width="142" VerticalAlignment="Center"
                                         HorizontalAlignment="Right">
                                 <TextBlock Text="{Binding LevelDisplay}"
                                            FontSize="14" FontWeight="Bold"
