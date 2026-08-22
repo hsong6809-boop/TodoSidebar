@@ -17,7 +17,7 @@ namespace TodoSidebar
     public partial class MainWindow : Window
     {
         private bool _isCollapsed = false;
-        private const double ExpandedWidth = 320;
+        private const double ExpandedWidth = 352; // V2.3：与 MainWindow.xaml 的 Width/MainPanel 保持一致（曾为 320 导致首开右缘裁切）
         private const double CollapsedWidth = 3;
         private const int TriggerHitWidth = 30;      // 收起状态下触发条命中宽度(px)
         private const double MainScreenHeightRatio = 0.66;  // 主屏高度比例

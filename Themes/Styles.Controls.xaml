@@ -415,19 +415,19 @@
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Width" Value="60"/>
+        <Setter Property="Width" Value="64"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid>
                         <Border x:Name="ItemBg"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="12"
-                                Padding="0,9"/>
+                                CornerRadius="14"
+                                Padding="0,11"/>
                         <!-- 激活左侧指示条 -->
                         <Rectangle x:Name="Indicator"
-                                   Width="3" Height="24"
-                                   RadiusX="1.5" RadiusY="1.5"
+                                   Width="3.5" Height="28"
+                                   RadiusX="1.75" RadiusY="1.75"
                                    Fill="{DynamicResource AccentBrush}"
                                    HorizontalAlignment="Left" VerticalAlignment="Center"
                                    Visibility="Collapsed"/>

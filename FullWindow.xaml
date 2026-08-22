@@ -139,7 +139,7 @@
                                          Style="{StaticResource RailItemStyle}" ToolTip="今日"
                                          Checked="Nav_Checked" VerticalAlignment="Center">
                                 <StackPanel>
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}" FontSize="18"/>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}" FontSize="20"/>
                                     <TextBlock Text="今日" FontSize="9.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </RadioButton>
@@ -147,40 +147,40 @@
                                          Style="{StaticResource RailItemStyle}" ToolTip="截止"
                                          Checked="Nav_Checked" VerticalAlignment="Center">
                                 <StackPanel>
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Clock}" FontSize="18"/>
-                                    <TextBlock Text="截止" FontSize="9.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Clock}" FontSize="20"/>
+                                    <TextBlock Text="截止" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="NavHistory" Grid.Row="2" GroupName="NavRail" Tag="History"
                                          Style="{StaticResource RailItemStyle}" ToolTip="历史"
                                          Checked="Nav_Checked" VerticalAlignment="Center">
                                 <StackPanel>
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.CheckList}" FontSize="18"/>
-                                    <TextBlock Text="历史" FontSize="9.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.CheckList}" FontSize="20"/>
+                                    <TextBlock Text="历史" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="NavStats" Grid.Row="3" GroupName="NavRail" Tag="Stats"
                                          Style="{StaticResource RailItemStyle}" ToolTip="统计"
                                          Checked="Nav_Checked" VerticalAlignment="Center">
                                 <StackPanel>
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Chart}" FontSize="18"/>
-                                    <TextBlock Text="统计" FontSize="9.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Chart}" FontSize="20"/>
+                                    <TextBlock Text="统计" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="NavFocus" Grid.Row="4" GroupName="NavRail" Tag="Focus"
                                          Style="{StaticResource RailItemStyle}" ToolTip="专注"
                                          Checked="Nav_Checked" VerticalAlignment="Center">
                                 <StackPanel>
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.PlayCircle}" FontSize="18"/>
-                                    <TextBlock Text="专注" FontSize="9.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.PlayCircle}" FontSize="20"/>
+                                    <TextBlock Text="专注" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="NavAchievements" Grid.Row="5" GroupName="NavRail" Tag="Achievements"
                                          Style="{StaticResource RailItemStyle}" ToolTip="成就"
                                          Checked="Nav_Checked" VerticalAlignment="Center">
                                 <StackPanel>
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Star}" FontSize="18"/>
-                                    <TextBlock Text="成就" FontSize="9.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Star}" FontSize="20"/>
+                                    <TextBlock Text="成就" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                 </StackPanel>
                             </RadioButton>
                         </Grid>
