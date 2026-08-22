@@ -187,6 +187,33 @@ namespace TodoSidebar.Models
         /// 文本会停滞（如一直显示"3小时后"）。供外部（定时器/列表刷新）调用以强制重算。
         /// </summary>
         public void RefreshDeadlineUrgency() => OnPropertyChanged(nameof(DeadlineUrgency));
+
+        /// <summary>
+        /// V2-W5：截止任务紧急度分组序号（0 已逾期 / 1 今天 / 2 未来7天 / 3 更远）。
+        /// 仅对截止任务有意义。
+        /// </summary>
+        public int DeadlineGroupOrder
+        {
+            get
+            {
+                if (Deadline == null) return 3;
+                var d = Deadline.Value;
+                var today = DateTime.Today;
+                if (d.Date < today) return 0;
+                if (d.Date == today) return 1;
+                if (d.Date <= today.AddDays(7)) return 2;
+                return 3;
+            }
+        }
+
+        /// <summary>V2-W5：紧急度分组显示名。</summary>
+        public string DeadlineGroupName => DeadlineGroupOrder switch
+        {
+            0 => "已逾期",
+            1 => "今天",
+            2 => "未来 7 天",
+            _ => "更远",
+        };
         
         // 标签列表
         public List<string> TagList

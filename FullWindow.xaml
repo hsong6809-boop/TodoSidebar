@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:TodoSidebar.ViewModels"
         xmlns:controls="clr-namespace:TodoSidebar.Controls"
+        xmlns:scm="clr-namespace:System.ComponentModel;assembly=WindowsBase"
         Title="每日任务"
         Width="580"
         Height="760"
@@ -12,6 +13,19 @@
         Background="Transparent"
         AllowsTransparency="True"
         WindowStyle="None">
+
+    <Window.Resources>
+        <!-- V2-W5：截止任务按紧急度分组（逾期 → 今天 → 未来7天 → 更远） -->
+        <CollectionViewSource x:Key="GroupedDeadlines" Source="{Binding DeadlineTasks}">
+            <CollectionViewSource.SortDescriptions>
+                <scm:SortDescription PropertyName="DeadlineGroupOrder"/>
+                <scm:SortDescription PropertyName="Deadline"/>
+            </CollectionViewSource.SortDescriptions>
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="DeadlineGroupName"/>
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+    </Window.Resources>
 
     <Border Background="{DynamicResource GlassBrush}"
             CornerRadius="14"
@@ -221,17 +235,26 @@
                                     </Border>
                                 </StackPanel>
 
-                                <ListBox Grid.Row="1"
-                                         ItemsSource="{Binding DailyTasks}"
-                                         Style="{StaticResource GlassListBox}"
-                                         ItemTemplate="{StaticResource TaskCardTemplate}"
-                                         x:Name="DailyTasksListBox"
-                                         AllowDrop="True"
-                                         Drop="TaskListBox_Drop"
-                                         DragOver="TaskListBox_DragOver"
-                                         PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
-                                         PreviewMouseMove="TaskListBox_PreviewMouseMove"
-                                         MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
+                                <Grid Grid.Row="1">
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Visibility="{Binding DailyTasksCount, Converter={StaticResource ZeroToVisInv}}">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
+                                                          FontSize="20"
+                                                          Foreground="{DynamicResource AccentBrush}"
+                                                          HorizontalAlignment="Center"/>
+                                        <TextBlock Text="今天没有每日任务" FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                    <ListBox ItemsSource="{Binding DailyTasks}"
+                                             Style="{StaticResource GlassListBox}"
+                                             ItemTemplate="{StaticResource TaskCardTemplate}"
+                                             x:Name="DailyTasksListBox"
+                                             AllowDrop="True"
+                                             Drop="TaskListBox_Drop"
+                                             DragOver="TaskListBox_DragOver"
+                                             PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
+                                             PreviewMouseMove="TaskListBox_PreviewMouseMove"
+                                             MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
+                                </Grid>
 
                                 <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,8">
                                     <TextBlock Text="截止任务" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
@@ -240,17 +263,73 @@
                                     </Border>
                                 </StackPanel>
 
-                                <ListBox Grid.Row="3"
-                                         ItemsSource="{Binding DeadlineTasks}"
-                                         Style="{StaticResource GlassListBox}"
-                                         ItemTemplate="{StaticResource DeadlineTaskCardTemplate}"
-                                         x:Name="DeadlineTasksListBox"
-                                         AllowDrop="True"
-                                         Drop="TaskListBox_Drop"
-                                         DragOver="TaskListBox_DragOver"
-                                         PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
-                                         PreviewMouseMove="TaskListBox_PreviewMouseMove"
-                                         MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
+                                <Grid Grid.Row="3">
+                                    <!-- 空状态 -->
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Visibility="{Binding DeadlineTasksCount, Converter={StaticResource ZeroToVisInv}}">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}"
+                                                          FontSize="20"
+                                                          Foreground="{DynamicResource TextTertiaryBrush}"
+                                                          HorizontalAlignment="Center"/>
+                                        <TextBlock Text="没有截止任务" FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                    </StackPanel>
+
+                                    <!-- 按紧急度分组 -->
+                                    <ListBox ItemsSource="{Binding Source={StaticResource GroupedDeadlines}}"
+                                             Style="{StaticResource GlassListBox}"
+                                             ItemTemplate="{StaticResource DeadlineTaskCardTemplate}"
+                                             x:Name="DeadlineTasksListBox"
+                                             AllowDrop="True"
+                                             Drop="TaskListBox_Drop"
+                                             DragOver="TaskListBox_DragOver"
+                                             PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
+                                             PreviewMouseMove="TaskListBox_PreviewMouseMove"
+                                             MouseDoubleClick="TaskListBox_MouseDoubleClick">
+                                        <ListBox.GroupStyle>
+                                            <GroupStyle>
+                                                <GroupStyle.ContainerStyle>
+                                                    <Style TargetType="GroupItem">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="GroupItem">
+                                                                    <StackPanel>
+                                                                        <Border Background="{DynamicResource SurfaceHoverBrush}"
+                                                                                CornerRadius="8" Padding="8,3" Margin="0,2,0,4"
+                                                                                HorizontalAlignment="Left">
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <Ellipse x:Name="GroupDot" Width="6" Height="6"
+                                                                                         Fill="{DynamicResource TextTertiaryBrush}"
+                                                                                         VerticalAlignment="Center"/>
+                                                                                <TextBlock Text="{Binding Name}" FontSize="10.5" FontWeight="SemiBold"
+                                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                                           VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                                                                <TextBlock Text="{Binding ItemCount, StringFormat=' {0}'}" FontSize="9.5"
+                                                                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                                           VerticalAlignment="Center"/>
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                        <ItemsPresenter/>
+                                                                    </StackPanel>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <DataTrigger Binding="{Binding Name}" Value="已逾期">
+                                                                            <Setter TargetName="GroupDot" Property="Fill" Value="{DynamicResource DangerBrush}"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Name}" Value="今天">
+                                                                            <Setter TargetName="GroupDot" Property="Fill" Value="{DynamicResource WarningBrush}"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Name}" Value="未来 7 天">
+                                                                            <Setter TargetName="GroupDot" Property="Fill" Value="{DynamicResource AccentBrush}"/>
+                                                                        </DataTrigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </GroupStyle.ContainerStyle>
+                                            </GroupStyle>
+                                        </ListBox.GroupStyle>
+                                    </ListBox>
+                                </Grid>
                             </Grid>
 
                             <!-- 右栏 -->
