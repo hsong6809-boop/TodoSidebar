@@ -198,6 +198,11 @@ namespace TodoSidebar.ViewModels
         /// <summary>V2.1：点阵状态（none/done/today），供连击卡 7 日点阵配色。</summary>
         public bool IsToday => Date.Date == DateTime.Today;
         public string DotState => CompletedTasks > 0 ? (IsToday ? "today" : "done") : "none";
+
+        /// <summary>V2 侧边栏本周概览：星期单字。</summary>
+        public string WeekdayChar => "日一二三四五六"[(int)Date.DayOfWeek].ToString();
+        /// <summary>V2 侧边栏本周概览：几号。</summary>
+        public int DayNumber => Date.Day;
     }
 
     public class TaskTypeStats

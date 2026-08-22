@@ -20,6 +20,7 @@
     <converters:ZeroToInvertedVisibilityConverter x:Key="ZeroToVisInv"/>
     <converters:MultiplyConverter x:Key="Multiply"/>
     <converters:FractionToPercentConverter x:Key="FractionToPercent"/>
+    <converters:EmptyToCollapsedConverter x:Key="EmptyToVis"/>
 
     <!-- ========== 通用任务卡片模板 ========== -->
     <DataTemplate x:Key="TaskCardTemplate">

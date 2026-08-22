@@ -4,7 +4,7 @@
         xmlns:vm="clr-namespace:TodoSidebar.ViewModels"
         xmlns:controls="clr-namespace:TodoSidebar.Controls"
         Title="Todo Sidebar"
-        Width="320"
+        Width="352"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -12,29 +12,32 @@
         ShowInTaskbar="False"
         Left="0"
         Top="0"
-        Height="800"
+        Height="820"
         Loaded="Window_Loaded">
 
+    <!-- ===== 侧边栏按钮样式（底部 Dock 用）===== -->
     <Window.Resources>
-        <!-- 侧边栏按钮样式 -->
-        <Style x:Key="SidebarButton" TargetType="Button">
+        <Style x:Key="DockIconButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="9">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SurfacePressedBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -42,6 +45,10 @@
             </Setter>
         </Style>
 
+        <Style x:Key="MiniPomoButton" TargetType="Button" BasedOn="{StaticResource DockIconButton}">
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -50,11 +57,11 @@
                 Background="{DynamicResource GlassBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,1,0"
-                CornerRadius="0,16,16,0"
+                CornerRadius="0,18,18,0"
                 Margin="0"
-                Width="320">
+                Width="352">
             <Border.Effect>
-                <DropShadowEffect BlurRadius="15" ShadowDepth="3" Opacity="0.15"/>
+                <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.13"/>
             </Border.Effect>
             <Grid>
                 <Grid.RowDefinitions>
@@ -64,713 +71,592 @@
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- 顶部栏（可拖动） -->
+                <!-- ===== 头部：头像 + 问候 + 操作圆钮 ===== -->
                 <Border Grid.Row="0"
                         Background="{DynamicResource GlassLightBrush}"
-                        Padding="16,14"
-                        CornerRadius="0,16,0,0"
+                        Padding="16,12"
                         BorderThickness="0,0,0,1"
                         BorderBrush="{DynamicResource BorderBrush}"
                         Cursor="SizeAll"
                         MouseLeftButtonDown="Header_MouseLeftButtonDown">
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
                         <StackPanel Orientation="Horizontal">
-                            <Border Background="{DynamicResource AccentBrush}"
-                                    CornerRadius="8"
-                                    Width="32"
-                                    Height="32"
-                                    Margin="0,0,10,0">
+                            <Border Width="42" Height="42" CornerRadius="999"
+                                    Background="{DynamicResource AccentGradientBrush}">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                                  Foreground="White"
-                                                  FontSize="14"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center"/>
+                                                  Foreground="White" FontSize="17"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock x:Name="DateTimeText"
-                                           FontSize="11"
+                            <StackPanel VerticalAlignment="Center" Margin="11,0,0,0">
+                                <TextBlock x:Name="GreetingText" Text="你好"
+                                           FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock x:Name="DateTimeText" Text=""
+                                           FontSize="10.5"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                           Margin="0,0,0,2"/>
-                                <TextBlock Text="当前任务"
-                                           FontSize="15"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           Margin="0,0,0,2"/>
-                                <TextBlock FontSize="11"
-                                           Foreground="{DynamicResource TextSecondaryBrush}">
-                                    <Run Text="共 "/>
-                                    <Run Text="{Binding CurrentTasksCount, Mode=OneWay}" FontWeight="SemiBold"/>
-                                    <Run Text=" 项待办"/>
-                                </TextBlock>
+                                           Margin="0,2,0,0"/>
                             </StackPanel>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="SearchButton_Click"
-                                    ToolTip="搜索"
-                                    Width="28"
-                                    Height="28">
+                            <Button Style="{StaticResource HeaderIconButton}" Click="SearchButton_Click" ToolTip="搜索">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.Search}" FontSize="13"/>
                             </Button>
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="SettingsButton_Click"
-                                    ToolTip="设置"
-                                    Margin="4,0,0,0">
+                            <Button Style="{StaticResource HeaderIconButton}" Click="BrowseBadges_Click" ToolTip="成就图鉴" Margin="2,0,0,0">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Star}" FontSize="14"/>
+                            </Button>
+                            <Button Style="{StaticResource HeaderIconButton}" Click="SettingsButton_Click" ToolTip="设置" Margin="2,0,0,0">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.Settings}" FontSize="13"/>
                             </Button>
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="LogoutButton_Click"
-                                    ToolTip="退出登录"
-                                    Margin="4,0,0,0">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.SignOut}" FontSize="13"/>
-                            </Button>
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="ExpandFullMode_Click"
-                                    ToolTip="展开主窗口"
-                                    Margin="4,0,0,0">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.OpenInNewWindow}" FontSize="12"/>
-                            </Button>
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="CollapseButton_Click"
-                                    ToolTip="收起"
-                                    Margin="4,0,0,0">
+                            <Button Style="{StaticResource HeaderIconButton}" Click="CollapseButton_Click" ToolTip="收起" Margin="2,0,0,0">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.ChevronLeft}" FontSize="11"/>
                             </Button>
                         </StackPanel>
-
-                        <!-- 升级等级条 -->
-                        <Border Grid.Row="1"
-                                Margin="0,10,0,0"
-                                Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="10,8">
-                            <StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding LevelDisplay}"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="{Binding ComboDisplay}"
-                                                   FontSize="10"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource ComboBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="6,0,0,0"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding LevelProgressText}"
-                                                   FontSize="10"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   VerticalAlignment="Center"/>
-                                        <Button Width="24"
-                                                Height="24"
-                                                Click="BrowseBadges_Click"
-                                                ToolTip="成就图鉴"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                Cursor="Hand"
-                                                Margin="6,0,0,0">
-                                            <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
-                                                              FontSize="12"
-                                                              Foreground="{DynamicResource WarningBrush}"/>
-                                        </Button>
-                                    </StackPanel>
-                                </Grid>
-                                <ProgressBar Margin="0,6,0,0"
-                                             Height="6"
-                                             Minimum="0"
-                                             Maximum="1"
-                                             Value="{Binding LevelProgress}"
-                                             Foreground="{DynamicResource AccentGradientBrush}"
-                                             Background="{DynamicResource SurfacePressedBrush}"
-                                             BorderThickness="0"/>
-                            </StackPanel>
-                        </Border>
                     </Grid>
                 </Border>
 
-                <!-- 快速添加区域 -->
-                <Border Grid.Row="1"
-                        Padding="12,8"
-                        BorderThickness="0,0,0,1"
-                        BorderBrush="{DynamicResource BorderBrush}">
-                    <StackPanel>
+                <!-- ===== Hero：等级进度卡 ===== -->
+                <Border Grid.Row="1" Background="Transparent" Padding="16,12,16,4">
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="16" Padding="16,13"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="66" Height="66" VerticalAlignment="Center">
+                                <controls:CircularProgress Size="66" StrokeThickness="7"
+                                                           Progress="{Binding LevelProgress}"
+                                                           ProgressBrush="{DynamicResource AccentGradientBrush}"
+                                                           BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
+                                <TextBlock Text="{Binding LevelProgress, Converter={StaticResource FractionToPercent}}"
+                                           FontSize="12" FontWeight="Bold"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
+                                <TextBlock Text="等级进度" FontSize="{DynamicResource FontSizeCaption}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding LevelDisplay}"
+                                           FontSize="14.5" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,2"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                    <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="7,2"
+                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
+                                        <TextBlock Text="{Binding ComboDisplay}" FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource ComboBrush}"/>
+                                    </Border>
+                                    <Border Background="{DynamicResource SuccessSoftBrush}" CornerRadius="999" Padding="7,2" Margin="6,0,0,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}" FontSize="8"
+                                                              Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                                            <TextBlock Text="{Binding TodayCompletedTasksCount, StringFormat='{}{0} 今日完成'}"
+                                                       FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource SuccessBrush}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <!-- ===== Composer / 搜索（互斥切换）===== -->
+                <Grid Grid.Row="2" Background="Transparent" Margin="16,10,16,6">
+                    <!-- 快速添加 -->
+                    <StackPanel Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Border Background="{DynamicResource CardBrush}"
-                                    CornerRadius="8"
-                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    CornerRadius="12"
+                                    BorderBrush="{DynamicResource BorderStrongBrush}"
                                     BorderThickness="1">
                                 <TextBox x:Name="QuickAddInput"
+                                         controls:Placeholder.Text="添加任务，回车确认…"
                                          BorderThickness="0"
                                          Background="Transparent"
-                                         Padding="10,8"
-                                         FontSize="13"
+                                         Padding="12,8"
+                                         FontSize="12.5"
                                          Foreground="{DynamicResource TextBrush}"
                                          VerticalContentAlignment="Center"
                                          KeyDown="QuickAddInput_KeyDown"/>
                             </Border>
-                            <Button Grid.Column="1"
-                                    Style="{StaticResource IconButton}"
-                                    Click="QuickAddButton_Click"
-                                    Width="32"
-                                    Height="32"
-                                    Margin="8,0,0,0"
-                                    ToolTip="快速添加任务">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="14"/>
+                            <Button Grid.Column="1" Width="36" Height="36"
+                                    Style="{StaticResource PrimaryButton}" Padding="0"
+                                    Click="QuickAddButton_Click" ToolTip="快速添加任务">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="15" Foreground="White"/>
                             </Button>
                         </Grid>
-                        <!-- 截止日期选择 -->
-                        <Grid Margin="0,6,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <DatePicker x:Name="QuickDeadlinePicker"
-                                        FontSize="11"
-                                        SelectedDateFormat="Short"
-                                        Height="24"
-                                        VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1"
-                                       Text="💡 不选日期=每日任务"
-                                       FontSize="10"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                       VerticalAlignment="Center"
-                                       Margin="8,0,0,0"/>
-                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="2,7,0,0">
+                            <DatePicker x:Name="QuickDeadlinePicker" FontSize="10.5" Height="24"
+                                        SelectedDateFormat="Short" Width="112"
+                                        VerticalContentAlignment="Center"/>
+                            <TextBlock Text="不选日期 = 每日任务" FontSize="9.5"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        </StackPanel>
                     </StackPanel>
-                </Border>
 
-                <!-- 搜索框 -->
-                <Border Grid.Row="2"
-                        Padding="8,4"
-                        Visibility="{Binding IsSearchMode, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                    <!-- 搜索框 -->
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsSearchMode, Converter={StaticResource BoolToVis}}">
                         <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                BorderBrush="{DynamicResource BorderBrush}"
+                                CornerRadius="12"
+                                BorderBrush="{DynamicResource BorderStrongBrush}"
                                 BorderThickness="1">
                             <TextBox x:Name="SearchInput"
                                      Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                                     controls:Placeholder.Text="搜索任务…"
                                      BorderThickness="0"
                                      Background="Transparent"
-                                     Padding="10,8"
-                                     FontSize="13"
+                                     Width="230"
+                                     Padding="12,8"
+                                     FontSize="12.5"
                                      Foreground="{DynamicResource TextBrush}"
                                      VerticalContentAlignment="Center"
                                      KeyDown="SearchInput_KeyDown"/>
                         </Border>
-                        <Button Grid.Column="1"
-                                Style="{StaticResource IconButton}"
-                                Command="{Binding ClearSearchCommand}"
-                                Width="28"
-                                Height="28"
-                                Margin="4,0,0,0"
-                                ToolTip="清除搜索">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.ChromeClose}" FontSize="11"/>
-                        </Button>
-                    </Grid>
-                </Border>
-
-                <!-- 搜索结果列表 -->
-                <ListBox Grid.Row="3"
-                         x:Name="SearchResultsListBox"
-                         ItemsSource="{Binding SearchResults}"
-                         Style="{StaticResource GlassListBox}"
-                         Margin="8,8"
-                         Visibility="{Binding IsSearchMode, Converter={StaticResource BoolToVis}}"
-                         MouseDoubleClick="TaskListBox_MouseDoubleClick">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource CardBrush}"
-                                    CornerRadius="10"
-                                    Padding="12,10"
-                                    Margin="0,2"
-                                    BorderThickness="0,0,3,0"
-                                    BorderBrush="{Binding TypeColor}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0"
-                                            Background="{Binding PriorityColor}"
-                                            CornerRadius="4"
-                                            Width="4"
-                                            Height="24"
-                                            Margin="0,0,10,0"
-                                            VerticalAlignment="Center"/>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Title}"
-                                                   Foreground="{DynamicResource TextBrush}"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"/>
-                                        <TextBlock Text="{Binding TypeText}"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   FontSize="11"
-                                                   Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <!-- 当前任务列表 -->
-                <ListBox Grid.Row="3"
-                         x:Name="TaskListBox"
-                         ItemsSource="{Binding CurrentTasks}"
-                         Style="{StaticResource GlassListBox}"
-                         Margin="8,8"
-                         AllowDrop="True"
-                         Drop="TaskListBox_Drop"
-                         DragOver="TaskListBox_DragOver"
-                         PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
-                         PreviewMouseMove="TaskListBox_PreviewMouseMove"
-                         Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}"
-                         MouseDoubleClick="TaskListBox_MouseDoubleClick">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border x:Name="TaskCard"
-                                    CornerRadius="10"
-                                    Padding="10,9"
-                                    Margin="0,3"
-                                    Cursor="Hand"
-                                    MouseLeftButtonDown="TaskCard_Click">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
-                                        <Setter Property="BorderThickness" Value="0,0,0,0"/>
-                                        <Style.Triggers>
-                                            <!-- 项目制任务：右侧警示轨 + 暖底 -->
-                                            <DataTrigger Binding="{Binding Type}" Value="1">
-                                                <Setter Property="Background" Value="{DynamicResource DeadlineCardBrush}"/>
-                                                <Setter Property="BorderThickness" Value="0,0,3,0"/>
-                                                <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
-                                            </DataTrigger>
-                                            <!-- 悬停微亮（放在最后以覆盖类型底色） -->
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource CardHoverBrush}"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <!-- 完成圆钮：单击即完成（替代常驻 ✓ 按钮） -->
-                                    <Button Grid.Column="0"
-                                            Width="20"
-                                            Height="20"
-                                            VerticalAlignment="Center"
-                                            Margin="0,0,9,0"
-                                            FocusVisualStyle="{x:Null}"
-                                            Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}"
-                                            ToolTip="完成任务">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Grid Background="Transparent">
-                                                    <Ellipse x:Name="CompleteRing"
-                                                             Stroke="{DynamicResource BorderStrongBrush}"
-                                                             StrokeThickness="1.5"/>
-                                                    <controls:AppIcon x:Name="CompleteCheck"
-                                                                      Glyph="{x:Static controls:Icons.CheckMark}"
-                                                                      FontSize="10"
-                                                                      Foreground="{DynamicResource SuccessBrush}"
-                                                                      Visibility="Hidden"
-                                                                      HorizontalAlignment="Center"
-                                                                      VerticalAlignment="Center"/>
-                                                </Grid>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="CompleteRing" Property="Stroke" Value="{DynamicResource SuccessBrush}"/>
-                                                        <Setter TargetName="CompleteRing" Property="Fill" Value="{DynamicResource SuccessSoftBrush}"/>
-                                                        <Setter TargetName="CompleteCheck" Property="Visibility" Value="Visible"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-
-                                    <!-- 任务内容 -->
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Title}"
-                                                   Foreground="{DynamicResource TextBrush}"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <!-- 项目制任务显示截止日期和倒计时（软底胶囊） -->
-                                        <StackPanel x:Name="DeadlineRow"
-                                                    Orientation="Horizontal"
-                                                    Margin="0,4,0,0"
-                                                    Visibility="Collapsed">
-                                            <Border Background="{DynamicResource WarningSoftBrush}"
-                                                    CornerRadius="999"
-                                                    Padding="7,2"
-                                                    HorizontalAlignment="Left">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Recent}"
-                                                                      FontSize="8"
-                                                                      Foreground="{DynamicResource WarningBrush}"
-                                                                      VerticalAlignment="Center"
-                                                                      Margin="0,0,4,0"/>
-                                                    <TextBlock Text="{Binding Deadline, StringFormat='{}{0:MM/dd}'}"
-                                                               Foreground="{DynamicResource WarningBrush}"
-                                                               FontSize="9.5"
-                                                               FontWeight="SemiBold"/>
-                                                    <TextBlock Text="{Binding DeadlineUrgency}"
-                                                               Foreground="{DynamicResource WarningBrush}"
-                                                               FontSize="9.5"
-                                                               Margin="4,0,0,0"/>
-                                                </StackPanel>
-                                            </Border>
-                                        </StackPanel>
-                                        <!-- 每日任务显示标签（软底胶囊） -->
-                                        <StackPanel x:Name="DailyRow"
-                                                    Orientation="Horizontal"
-                                                    Margin="0,4,0,0">
-                                            <Border Background="{DynamicResource AccentSoftBrush}"
-                                                    CornerRadius="999"
-                                                    Padding="7,2"
-                                                    HorizontalAlignment="Left">
-                                                <TextBlock Text="每日"
-                                                           FontSize="9"
-                                                           Foreground="{DynamicResource AccentBrush}"
-                                                           FontWeight="SemiBold"/>
-                                            </Border>
-                                        </StackPanel>
-                                        <!-- 子任务进度（点击可展开） -->
-                                        <StackPanel x:Name="SubTaskRow"
-                                                    Orientation="Horizontal"
-                                                    Margin="0,4,0,0"
-                                                    Visibility="Collapsed">
-                                            <Border Background="{DynamicResource SurfacePressedBrush}"
-                                                    CornerRadius="999"
-                                                    Padding="7,2"
-                                                    HorizontalAlignment="Left">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <controls:AppIcon Glyph="{x:Static controls:Icons.CheckList}"
-                                                                      FontSize="8"
-                                                                      Foreground="{DynamicResource AccentBrush}"
-                                                                      VerticalAlignment="Center"
-                                                                      Margin="0,0,4,0"/>
-                                                    <TextBlock Text="{Binding SubTasksProgressText}"
-                                                               FontSize="9.5"
-                                                               Foreground="{DynamicResource AccentBrush}"
-                                                               FontWeight="SemiBold"/>
-                                                </StackPanel>
-                                            </Border>
-                                            <TextBlock Text="点击展开"
-                                                       FontSize="9"
-                                                       Foreground="{DynamicResource TextTertiaryBrush}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="5,0,0,0"/>
-                                        </StackPanel>
-                                        <!-- 展开区域：子任务详情 -->
-                                        <StackPanel x:Name="ExpandArea"
-                                                    Visibility="Collapsed"
-                                                    Margin="0,8,0,0">
-                                            <!-- 子任务列表 -->
-                                            <ItemsControl x:Name="SubTasksList"
-                                                          ItemsSource="{Binding SubTasksList}"
-                                                          Margin="0,0,0,6">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <StackPanel Orientation="Horizontal" Margin="0,2">
-                                                            <CheckBox IsChecked="{Binding IsCompleted}"
-                                                                      Click="SubTaskCheckBox_Click"
-                                                                      Width="16" Height="16"
-                                                                      Margin="0,0,6,0"/>
-                                                            <TextBlock Text="{Binding Title}"
-                                                                       FontSize="11"
-                                                                       Foreground="{Binding IsCompleted, Converter={StaticResource SubTaskForeground}}"
-                                                                       TextDecorations="{Binding IsCompleted, Converter={StaticResource SubTaskStrike}}"
-                                                                       VerticalAlignment="Center"/>
-                                                        </StackPanel>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <!-- 添加子任务输入框 -->
-                                            <Grid Margin="0,2,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Border Background="{DynamicResource SurfaceHoverBrush}"
-                                                        CornerRadius="6"
-                                                        BorderBrush="{DynamicResource BorderBrush}"
-                                                        BorderThickness="1">
-                                                    <TextBox x:Name="SubTaskInput"
-                                                             Text="{Binding DataContext.NewSubTaskTitle, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}"
-                                                             BorderThickness="0"
-                                                             Background="Transparent"
-                                                             Padding="8,4"
-                                                             FontSize="11"
-                                                             Foreground="{DynamicResource TextBrush}"
-                                                             VerticalContentAlignment="Center"
-                                                             Tag="{Binding}"
-                                                             KeyDown="SubTaskInput_KeyDown"/>
-                                                </Border>
-                                                <Button Grid.Column="1"
-                                                        Style="{StaticResource IconButton}"
-                                                        Command="{Binding DataContext.AddSubTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Width="24"
-                                                        Height="24"
-                                                        Margin="4,0,0,0"
-                                                        ToolTip="添加子任务">
-                                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="10"/>
-                                                </Button>
-                                            </Grid>
-                                            <!-- 展开/收起提示 -->
-                                            <TextBlock Text="点击收起 ▴"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       FontSize="9"
-                                                       HorizontalAlignment="Center"
-                                                       Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </StackPanel>
-
-                                    <!-- 删除按钮：悬停卡片时显现 -->
-                                    <Button x:Name="DeleteTaskButton"
-                                            Grid.Column="2"
-                                            Opacity="0"
-                                            Width="24"
-                                            Height="24"
-                                            VerticalAlignment="Center"
-                                            Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}"
-                                            Style="{StaticResource IconButton}"
-                                            Foreground="{DynamicResource DangerBrush}"
-                                            ToolTip="删除任务">
-                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Delete}" FontSize="11"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-                            <DataTemplate.Triggers>
-                                <!-- 项目制任务显示截止日期行 -->
-                                <DataTrigger Binding="{Binding Type}" Value="1">
-                                    <Setter TargetName="DeadlineRow" Property="Visibility" Value="Visible"/>
-                                    <Setter TargetName="DailyRow" Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                                <!-- 有子任务时显示进度 -->
-                                <DataTrigger Binding="{Binding HasSubTasks}" Value="True">
-                                    <Setter TargetName="SubTaskRow" Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                                <!-- 悬停卡片时显示删除按钮 -->
-                                <Trigger SourceName="TaskCard" Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="DeleteTaskButton" Property="Opacity" Value="1"/>
-                                </Trigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <!-- 空状态（非搜索模式且无待办时显示） -->
-                <Grid Grid.Row="3"
-                      Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}">
-                    <StackPanel HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Visibility="{Binding CurrentTasksCount, Converter={StaticResource ZeroToVisInv}}">
-                        <Border Width="64" Height="64"
-                                CornerRadius="32"
-                                Background="{DynamicResource SurfaceHoverBrush}"
-                                HorizontalAlignment="Center">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                              FontSize="26"
-                                              Foreground="{DynamicResource AccentBrush}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock Text="今天没有待办任务"
-                                   FontSize="13"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,12,0,0"/>
-                        <TextBlock Text="享受此刻，或按 Ctrl+Alt+N 快速添加"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,4,0,0"/>
+                        <Button Content="✕" Style="{StaticResource IconButton}" Command="{Binding ClearSearchCommand}" Width="28" Height="28" Margin="6,0,0,0" ToolTip="清除搜索"/>
                     </StackPanel>
                 </Grid>
 
-                <!-- 今日已完成任务 -->
-                <Border Grid.Row="4"
-                        Padding="12,8"
-                        BorderThickness="0,1,0,0"
-                        BorderBrush="{DynamicResource BorderBrush}"
-                        Visibility="{Binding TodayCompletedTasksCount, Converter={StaticResource ZeroToVis}}">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                              FontSize="11"
-                                              Foreground="{DynamicResource SuccessBrush}"
-                                              VerticalAlignment="Center"
-                                              Margin="0,0,6,0"/>
-                            <TextBlock Text="今日已完成"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            <Border Background="{DynamicResource SuccessBrush}"
-                                    CornerRadius="8"
-                                    Padding="6,2"
-                                    Margin="6,0,0,0">
-                                <TextBlock Text="{Binding TodayCompletedTasksCount}"
-                                           Foreground="White"
-                                           FontSize="10"
-                                           FontWeight="Bold"/>
+                <!-- ===== 列表区（搜索结果 / 任务流 互斥）===== -->
+                <Grid Grid.Row="3" Margin="0,2,0,0">
+                    <ListBox x:Name="SearchResultsListBox"
+                             ItemsSource="{Binding SearchResults}"
+                             Style="{StaticResource GlassListBox}"
+                             Margin="12,4"
+                             Visibility="{Binding IsSearchMode, Converter={StaticResource BoolToVis}}"
+                             MouseDoubleClick="TaskListBox_MouseDoubleClick">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource CardBrush}"
+                                        CornerRadius="10"
+                                        Padding="11,9"
+                                        Margin="0,2"
+                                        BorderThickness="3,0,0,0"
+                                        BorderBrush="{Binding TypeColor}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="Medium"
+                                                   Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding TypeText}" FontSize="10"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <ListBox x:Name="TaskListBox"
+                             ItemsSource="{Binding CurrentTasks}"
+                             Style="{StaticResource GlassListBox}"
+                             Margin="12,4"
+                             Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}"
+                             AllowDrop="True"
+                             Drop="TaskListBox_Drop"
+                             DragOver="TaskListBox_DragOver"
+                             PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
+                             PreviewMouseMove="TaskListBox_PreviewMouseMove"
+                             MouseDoubleClick="TaskListBox_MouseDoubleClick">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border x:Name="TaskCard"
+                                        CornerRadius="12"
+                                        Padding="10,9"
+                                        Margin="0,3"
+                                        Cursor="Hand"
+                                        MouseLeftButtonDown="TaskCard_Click">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+                                            <Setter Property="BorderThickness" Value="0,0,0,0"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Type}" Value="1">
+                                                    <Setter Property="Background" Value="{DynamicResource DeadlineCardBrush}"/>
+                                                    <Setter Property="BorderThickness" Value="0,0,3,0"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource WarningBrush}"/>
+                                                </DataTrigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource CardHoverBrush}"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 完成圆钮：单击即完成 -->
+                                        <Button Grid.Column="0"
+                                                Width="20"
+                                                Height="20"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,9,0"
+                                                FocusVisualStyle="{x:Null}"
+                                                Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip="完成任务">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Grid Background="Transparent">
+                                                        <Ellipse x:Name="CompleteRing"
+                                                                 Stroke="{DynamicResource BorderStrongBrush}"
+                                                                 StrokeThickness="1.5"/>
+                                                        <controls:AppIcon x:Name="CompleteCheck"
+                                                                          Glyph="{x:Static controls:Icons.CheckMark}"
+                                                                          FontSize="10"
+                                                                          Foreground="{DynamicResource SuccessBrush}"
+                                                                          Visibility="Hidden"
+                                                                          HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="CompleteRing" Property="Stroke" Value="{DynamicResource SuccessBrush}"/>
+                                                            <Setter TargetName="CompleteRing" Property="Fill" Value="{DynamicResource SuccessSoftBrush}"/>
+                                                            <Setter TargetName="CompleteCheck" Property="Visibility" Value="Visible"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+
+                                        <!-- 任务内容 -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       FontSize="12.5"
+                                                       FontWeight="Medium"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <!-- 项目制任务显示截止日期和倒计时（软底胶囊） -->
+                                            <StackPanel x:Name="DeadlineRow"
+                                                        Orientation="Horizontal"
+                                                        Margin="0,4,0,0"
+                                                        Visibility="Collapsed">
+                                                <Border Background="{DynamicResource WarningSoftBrush}"
+                                                        CornerRadius="999"
+                                                        Padding="7,2"
+                                                        HorizontalAlignment="Left">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Recent}"
+                                                                          FontSize="8"
+                                                                          Foreground="{DynamicResource WarningBrush}"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="0,0,4,0"/>
+                                                        <TextBlock Text="{Binding Deadline, StringFormat='{}{0:MM/dd}'}"
+                                                                   Foreground="{DynamicResource WarningBrush}"
+                                                                   FontSize="9.5"
+                                                                   FontWeight="SemiBold"/>
+                                                        <TextBlock Text="{Binding DeadlineUrgency}"
+                                                                   Foreground="{DynamicResource WarningBrush}"
+                                                                   FontSize="9.5"
+                                                                   Margin="4,0,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                            <!-- 每日任务标签（软底胶囊） -->
+                                            <StackPanel x:Name="DailyRow"
+                                                        Orientation="Horizontal"
+                                                        Margin="0,4,0,0">
+                                                <Border Background="{DynamicResource AccentSoftBrush}"
+                                                        CornerRadius="999"
+                                                        Padding="7,2"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="每日"
+                                                               FontSize="9"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               FontWeight="SemiBold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <!-- 子任务进度（点击可展开） -->
+                                            <StackPanel x:Name="SubTaskRow"
+                                                        Orientation="Horizontal"
+                                                        Margin="0,4,0,0"
+                                                        Visibility="Collapsed">
+                                                <Border Background="{DynamicResource SurfacePressedBrush}"
+                                                        CornerRadius="999"
+                                                        Padding="7,2"
+                                                        HorizontalAlignment="Left">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <controls:AppIcon Glyph="{x:Static controls:Icons.CheckList}"
+                                                                          FontSize="8"
+                                                                          Foreground="{DynamicResource AccentBrush}"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="0,0,4,0"/>
+                                                        <TextBlock Text="{Binding SubTasksProgressText}"
+                                                                   FontSize="9.5"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   FontWeight="SemiBold"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <TextBlock Text="点击展开"
+                                                           FontSize="9"
+                                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="5,0,0,0"/>
+                                            </StackPanel>
+                                            <!-- 展开区域：子任务详情 -->
+                                            <StackPanel x:Name="ExpandArea"
+                                                        Visibility="Collapsed"
+                                                        Margin="0,8,0,2">
+                                                <ItemsControl x:Name="SubTasksList"
+                                                              ItemsSource="{Binding SubTasksList}"
+                                                              Margin="0,0,0,6">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                                <CheckBox IsChecked="{Binding IsCompleted}"
+                                                                          Click="SubTaskCheckBox_Click"
+                                                                          Width="16" Height="16"
+                                                                          Margin="0,0,6,0"/>
+                                                                <TextBlock Text="{Binding Title}"
+                                                                           FontSize="11"
+                                                                           Foreground="{Binding IsCompleted, Converter={StaticResource SubTaskForeground}}"
+                                                                           TextDecorations="{Binding IsCompleted, Converter={StaticResource SubTaskStrike}}"
+                                                                           VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Background="{DynamicResource SurfaceHoverBrush}"
+                                                            CornerRadius="6"
+                                                            BorderBrush="{DynamicResource BorderBrush}"
+                                                            BorderThickness="1">
+                                                        <TextBox x:Name="SubTaskInput"
+                                                                 Text="{Binding DataContext.NewSubTaskTitle, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged}"
+                                                                 BorderThickness="0"
+                                                                 Background="Transparent"
+                                                                 Padding="8,4"
+                                                                 FontSize="11"
+                                                                 Foreground="{DynamicResource TextBrush}"
+                                                                 VerticalContentAlignment="Center"
+                                                                 Tag="{Binding}"
+                                                                 KeyDown="SubTaskInput_KeyDown"/>
+                                                    </Border>
+                                                    <Button Grid.Column="1"
+                                                            Style="{StaticResource IconButton}"
+                                                            Command="{Binding DataContext.AddSubTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Width="24"
+                                                            Height="24"
+                                                            Margin="4,0,0,0"
+                                                            ToolTip="添加子任务">
+                                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="10"/>
+                                                    </Button>
+                                                </Grid>
+                                                <TextBlock Text="点击收起 ▴"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontSize="9"
+                                                           HorizontalAlignment="Center"
+                                                           Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- 删除按钮：悬停卡片时显现 -->
+                                        <Button x:Name="DeleteTaskButton"
+                                                Grid.Column="2"
+                                                Opacity="0"
+                                                Width="24"
+                                                Height="24"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource IconButton}"
+                                                Foreground="{DynamicResource DangerBrush}"
+                                                ToolTip="删除任务">
+                                            <controls:AppIcon Glyph="{x:Static controls:Icons.Delete}" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Type}" Value="1">
+                                        <Setter TargetName="DeadlineRow" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="DailyRow" Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding HasSubTasks}" Value="True">
+                                        <Setter TargetName="SubTaskRow" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <Trigger SourceName="TaskCard" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="DeleteTaskButton" Property="Opacity" Value="1"/>
+                                    </Trigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+
+                <!-- ===== 本周概览 + 今日已完成（折叠）===== -->
+                <StackPanel Grid.Row="4" Margin="16,8,16,0">
+                    <TextBlock Text="本周概览" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,7"/>
+                    <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="10,9"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                        <ItemsControl ItemsSource="{Binding StatisticsViewModel.DailyStats}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="7"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel HorizontalAlignment="Center" Margin="1,0">
+                                        <TextBlock Text="{Binding WeekdayChar}" FontSize="8.5"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   HorizontalAlignment="Center"/>
+                                        <Border x:Name="DayCell" Width="26" Height="26" CornerRadius="8"
+                                                Margin="0,3" HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding DayNumber}" FontSize="10"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <Ellipse x:Name="DoneDot" Width="4" Height="4"
+                                                 Fill="{DynamicResource SuccessBrush}" Opacity="0"
+                                                 HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                            <Setter TargetName="DayCell" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                        </DataTrigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsToday}" Value="False"/>
+                                                <Condition Binding="{Binding DotState}" Value="none"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter TargetName="DayCell" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+                                        </MultiDataTrigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsToday}" Value="False"/>
+                                                <Condition Binding="{Binding DotState}" Value="done"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter TargetName="DayCell" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+                                        </MultiDataTrigger>
+                                        <DataTrigger Binding="{Binding DotState}" Value="done">
+                                            <Setter TargetName="DoneDot" Property="Opacity" Value="1"/>
+                                        </DataTrigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsToday}" Value="True"/>
+                                                <Condition Binding="{Binding DotState}" Value="today"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter TargetName="DoneDot" Property="Fill" Value="White"/>
+                                            <Setter TargetName="DoneDot" Property="Opacity" Value="1"/>
+                                        </MultiDataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <!-- 今日已完成（可折叠）-->
+                    <Border x:Name="CompletedHeader"
+                            Background="{DynamicResource SurfaceHoverBrush}"
+                            CornerRadius="10" Padding="10,7" Margin="0,10,0,0"
+                            Cursor="Hand"
+                            MouseLeftButtonDown="CompletedHeader_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <controls:AppIcon x:Name="CompletedChevron" Glyph="{x:Static controls:Icons.ChevronDown}"
+                                              FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}"
+                                              VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock Text="今日已完成" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                            <Border Background="{DynamicResource SuccessSoftBrush}" CornerRadius="999" Padding="7,2" Margin="7,0,0,0">
+                                <TextBlock Text="{Binding TodayCompletedTasksCount}" FontSize="9.5" FontWeight="Bold"
+                                           Foreground="{DynamicResource SuccessBrush}"/>
                             </Border>
                         </StackPanel>
-                        <ListBox ItemsSource="{Binding TodayCompletedTasks}"
-                                 Style="{StaticResource GlassListBox}"
-                                 MaxHeight="150"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                                          Foreground="{DynamicResource SuccessBrush}"
-                                                          FontSize="10"
-                                                          VerticalAlignment="Center"
-                                                          Margin="0,0,6,0"/>
-                                        <TextBlock Text="{Binding Title}"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   FontSize="12"
-                                                   TextDecorations="Strikethrough"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                    <ListBox x:Name="CompletedList"
+                             ItemsSource="{Binding TodayCompletedTasks}"
+                             Style="{StaticResource GlassListBox}"
+                             MaxHeight="132"
+                             Margin="2,4,2,0"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             Visibility="Collapsed">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
+                                                      Foreground="{DynamicResource SuccessBrush}"
+                                                      FontSize="10"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,6,0"/>
+                                    <TextBlock Text="{Binding Title}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontSize="11.5"
+                                               TextDecorations="Strikethrough"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
 
-                <!-- 迷你番茄钟 -->
-                <Border Grid.Row="5"
-                        Padding="12,8"
-                        BorderThickness="0,1,0,0"
-                        BorderBrush="{DynamicResource BorderBrush}">
+                <!-- ===== 底部 Dock：迷你番茄 + 功能图标 ===== -->
+                <Border Grid.Row="5" Margin="16,10,16,14"
+                        Background="{DynamicResource CardBrush}"
+                        CornerRadius="16" Padding="12,9"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <controls:CircularProgress x:Name="MiniFocusRing"
-                                                   Size="36"
-                                                   StrokeThickness="4"
-                                                   Progress="0"
-                                                   ProgressBrush="{DynamicResource AccentBrush}"
-                                                   BackgroundBrush="{DynamicResource BorderBrush}"
-                                                   VerticalAlignment="Center"/>
-                        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="MiniFocusTimer"
-                                       Text="25:00"
-                                       FontSize="16"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"/>
-                            <TextBlock x:Name="MiniFocusState"
-                                       Text="🍅 未开始"
-                                       FontSize="10"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="MiniFocusStart_Click"
-                                    ToolTip="开始专注（25 分钟）"
-                                    Width="26"
-                                    Height="26">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="11"/>
-                            </Button>
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="MiniFocusPause_Click"
-                                    ToolTip="暂停/继续"
-                                    Width="26"
-                                    Height="26"
-                                    Margin="2,0,0,0">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Pause}" FontSize="11"/>
-                            </Button>
-                            <Button Style="{StaticResource IconButton}"
-                                    Click="MiniFocusStop_Click"
-                                    ToolTip="停止（中断不计经验）"
-                                    Width="26"
-                                    Height="26"
-                                    Margin="2,0,0,0">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Stop}" FontSize="11"/>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
 
-                <!-- 底部操作栏 -->
-                <Border Grid.Row="6"
-                        Background="{DynamicResource GlassLightBrush}"
-                        Padding="12,10"
-                        CornerRadius="0,0,16,16"
-                        BorderThickness="0,1,0,0"
-                        BorderBrush="{DynamicResource BorderBrush}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Button Style="{StaticResource SidebarButton}"
-                                Click="StatisticsButton_Click"
-                                HorizontalAlignment="Left">
-                            <StackPanel Orientation="Horizontal">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Diagnostic}"
-                                                  FontSize="11"
-                                                  Foreground="{DynamicResource TextSecondaryBrush}"
-                                                  VerticalAlignment="Center"
-                                                  Margin="0,0,5,0"/>
-                                <TextBlock Text="统计"
-                                           VerticalAlignment="Center"/>
+                        <!-- 迷你番茄胶囊 -->
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="38" Height="38" VerticalAlignment="Center">
+                                <controls:CircularProgress x:Name="MiniFocusRing" Size="38" StrokeThickness="4.5"
+                                                           Progress="0"
+                                                           ProgressBrush="{DynamicResource AccentGradientBrush}"
+                                                           BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Timer}" FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="8,0,0,0">
+                                <TextBlock x:Name="MiniFocusTimer" Text="25:00"
+                                           FontSize="13.5" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock x:Name="MiniFocusState" Text="未开始"
+                                           FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </StackPanel>
-                        </Button>
-                        <Button Style="{StaticResource IconButton}"
-                                Command="{Binding SyncViewModel.UploadCommand}"
-                                ToolTip="上传到云端"
-                                Width="28"
-                                Height="28"
-                                Grid.Column="1">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.Upload}" FontSize="12"/>
-                        </Button>
-                        <Button Style="{StaticResource IconButton}"
-                                Command="{Binding SyncViewModel.DownloadCommand}"
-                                ToolTip="从云端下载"
-                                Width="28"
-                                Height="28"
-                                Grid.Column="2">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.Download}" FontSize="12"/>
-                        </Button>
+                            <Button Style="{StaticResource MiniPomoButton}" Click="MiniFocusStart_Click"
+                                    ToolTip="开始专注" Margin="8,0,0,0" VerticalAlignment="Center">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="9"
+                                                  Foreground="{DynamicResource AccentBrush}"/>
+                            </Button>
+                            <Button Style="{StaticResource MiniPomoButton}" Click="MiniFocusPause_Click"
+                                    ToolTip="暂停/继续" Margin="2,0,0,0" VerticalAlignment="Center">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Pause}" FontSize="8"/>
+                            </Button>
+                        </StackPanel>
 
+                        <!-- 右侧功能图标组 -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Style="{StaticResource DockIconButton}" Click="StatisticsButton_Click" ToolTip="统计">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Chart}" FontSize="12"/>
+                            </Button>
+                            <Button Style="{StaticResource DockIconButton}" Click="ExpandFullMode_Click" ToolTip="展开完整窗口" Margin="2,0,0,0">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.OpenInNewWindow}" FontSize="11"/>
+                            </Button>
+                            <Button Style="{StaticResource DockIconButton}"
+                                    Command="{Binding SyncViewModel.UploadCommand}" ToolTip="上传到云端" Margin="2,0,0,0">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Upload}" FontSize="12"/>
+                            </Button>
+                            <Button Style="{StaticResource DockIconButton}" Click="LogoutButton_Click" ToolTip="退出登录" Margin="2,0,0,0">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.SignOut}" FontSize="12"/>
+                            </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>

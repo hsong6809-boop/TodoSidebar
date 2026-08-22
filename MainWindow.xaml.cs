@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using TodoSidebar.Models;
 using TodoSidebar.Services;
 using TodoSidebar.ViewModels;
+using TodoSidebar.Controls;
 
 namespace TodoSidebar
 {
@@ -141,6 +142,7 @@ namespace TodoSidebar
             _dateTimeTimer.Tick += (s, args) =>
             {
                 UpdateDateTime();
+                UpdateGreeting();
                 // L23 配套：顺带刷新可见任务的截止紧急程度文本，避免"3小时后"停滞
                 RefreshVisibleDeadlineUrgency();
             };
@@ -191,7 +193,40 @@ namespace TodoSidebar
                 DayOfWeek.Sunday => "周日",
                 _ => ""
             };
-            DateTimeText.Text = $"{now:MM/dd} {dayOfWeek} {now:HH:mm:ss}";
+            DateTimeText.Text = $"{now:M月d日} {dayOfWeek} · {now:HH:mm}";
+        }
+
+        /// <summary>V2：驾驶舱问候语（时段 + 用户名），时钟每秒刷新时顺带更新。</summary>
+        private void UpdateGreeting()
+        {
+            if (GreetingText == null) return;
+            var now = DateTime.Now;
+            var part = now.Hour switch
+            {
+                < 6 => "凌晨好",
+                < 12 => "早上好",
+                < 14 => "中午好",
+                < 18 => "下午好",
+                _ => "晚上好"
+            };
+            string name = "朋友";
+            try
+            {
+                var email = ((IAuthService)AuthService.Instance).CurrentEmail;
+                if (!string.IsNullOrWhiteSpace(email))
+                    name = email.Split('@')[0];
+            }
+            catch { /* 未登录/服务异常时用默认称呼 */ }
+            GreetingText.Text = $"{part}，{name}";
+        }
+
+        /// <summary>V2：今日已完成分组折叠切换。</summary>
+        private void CompletedHeader_Click(object sender, MouseButtonEventArgs e)
+        {
+            if (CompletedList == null || CompletedChevron == null) return;
+            var opening = CompletedList.Visibility != Visibility.Visible;
+            CompletedList.Visibility = opening ? Visibility.Visible : Visibility.Collapsed;
+            CompletedChevron.Glyph = opening ? Icons.ChevronUp : Icons.ChevronDown;
         }
 
         #region 成就

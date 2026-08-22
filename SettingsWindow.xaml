@@ -142,6 +142,31 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- 动效 -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="14,12"
+                            Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.PlayCircle}"
+                                                  FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,6,0"/>
+                                <TextBlock Text="动效"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <CheckBox x:Name="ReduceMotionCheck"
+                                      Content="减少动态效果（关闭列表入场与页面转场动画）"
+                                      FontSize="12.5"
+                                      Checked="ReduceMotion_Changed"
+                                      Unchecked="ReduceMotion_Changed"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- 数据 -->
                     <Border Background="{DynamicResource CardBrush}"
                             CornerRadius="12"

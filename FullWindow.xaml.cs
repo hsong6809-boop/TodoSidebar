@@ -703,6 +703,36 @@ namespace TodoSidebar
                 _ => "晚上好"
             };
             DashboardSubtitleText.Text = $"{now:M月d日} {weeks[(int)now.DayOfWeek]} · {part}";
+
+            // V2 收尾：每日任务完成数环比（今日 vs 昨日）
+            try
+            {
+                if (TodayDeltaText != null)
+                {
+                    var recs = DatabaseService.Instance.GetDailyCompletionRecords(2);
+                    var todayKey = now.ToString("yyyy-MM-dd");
+                    var yKey = now.AddDays(-1).ToString("yyyy-MM-dd");
+                    var t = recs.TryGetValue(todayKey, out var a) ? a.Count : 0;
+                    var y = recs.TryGetValue(yKey, out var b) ? b.Count : 0;
+                    TodayDeltaText.Text = t == y ? "与昨日持平" : t > y ? $"↑ 比昨天 +{t - y}" : $"↓ 比昨天 {t - y}";
+                    TodayDeltaText.Foreground = t >= y
+                        ? TryFindResource("SuccessBrush") as Brush ?? Brushes.Green
+                        : TryFindResource("DangerBrush") as Brush ?? Brushes.Red;
+                }
+
+                // 同步卡真实时间戳
+                if (SyncStampText != null)
+                {
+                    var last = SyncService.Instance.LastSyncTime;
+                    SyncStampText.Text = last.HasValue
+                        ? $"上次同步 {last.Value.ToString("HH:mm")} · 每 30 秒自动"
+                        : "尚未同步 · 每 30 秒自动";
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadDashboardHeader extras error: {ex.Message}");
+            }
         }
 
         /// <summary>V2.1：明暗主题快捷切换。</summary>
@@ -773,6 +803,7 @@ namespace TodoSidebar
         /// <summary>对当前可见的内容面板播放淡入 + 轻微上移动画（用 RenderTransform，不影响布局）。</summary>
         private void AnimateActiveTabPanel()
         {
+            if (AnimationService.ReduceMotion) return;
             FrameworkElement? panel = DashboardPanel?.Visibility == Visibility.Visible ? DashboardPanel
                 : HistoryPanel?.Visibility == Visibility.Visible ? HistoryPanel
                 : StatisticsPanel?.Visibility == Visibility.Visible ? StatisticsPanel

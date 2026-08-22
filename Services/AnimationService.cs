@@ -9,6 +9,12 @@ namespace TodoSidebar.Services
 {
     public static class AnimationService
     {
+        /// <summary>
+        /// V2 收尾：减少动态效果开关（设置项 ReduceMotion=true 时启用）。
+        /// 启用后跳过列表交错入场与页面转场动画，仅保留必要反馈。
+        /// </summary>
+        public static bool ReduceMotion { get; set; }
+
         /// <summary>确保元素有 TransformGroup，返回已注册的位移和缩放变换</summary>
         private static (TranslateTransform translate, ScaleTransform scale) EnsureTransformGroup(FrameworkElement element)
         {
@@ -241,6 +247,7 @@ namespace TodoSidebar.Services
         /// </summary>
         public static void AnimateListStagger(System.Windows.Controls.ItemsControl? list, int maxItems = 12)
         {
+            if (ReduceMotion) return;
             if (list?.Items == null || list.Items.Count == 0) return;
 
             var count = Math.Min(list.Items.Count, maxItems);

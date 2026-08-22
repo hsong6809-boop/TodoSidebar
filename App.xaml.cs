@@ -48,6 +48,10 @@ namespace TodoSidebar
             var featureFlags = Services.GetRequiredService<IFeatureFlagService>();
             SyncService.Instance.SetFeatureFlags(featureFlags);
 
+            // V2 收尾：读取"减少动态效果"设置
+            try { AnimationService.ReduceMotion = DatabaseService.Instance.GetSetting("ReduceMotion") == "true"; }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"读取 ReduceMotion 设置失败: {ex.Message}"); }
+
             // 注册全局异常处理
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;

@@ -39,6 +39,19 @@ namespace TodoSidebar
 
             // V2-W2：强调色色板
             BuildAccentSwatches();
+
+            // V2 收尾：减少动效开关初始态
+            try { ReduceMotionCheck.IsChecked = DatabaseService.Instance.GetSetting("ReduceMotion") == "true"; }
+            catch { ReduceMotionCheck.IsChecked = false; }
+        }
+
+        /// <summary>动效开关切换：立即生效并持久化。</summary>
+        private void ReduceMotion_Changed(object sender, RoutedEventArgs e)
+        {
+            if (ReduceMotionCheck == null) return;
+            AnimationService.ReduceMotion = ReduceMotionCheck.IsChecked == true;
+            try { DatabaseService.Instance.SetSetting("ReduceMotion", AnimationService.ReduceMotion ? "true" : "false"); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 ReduceMotion 失败: {ex.Message}"); }
         }
 
         /// <summary>构建强调色色板（选中项带主色描边环）。</summary>
