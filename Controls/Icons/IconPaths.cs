@@ -63,6 +63,9 @@ namespace TodoSidebar.Controls
             ["download"] = new("M12 4.5 V15 M8.5 11.5 L12 15 L15.5 11.5 M5 19.5 H19", false),
 
             ["play"] = new("M8 5.2 L19 12 L8 18.8 Z", true),
+            ["play.circle"] = new(
+                "M20.5 12 A8.5 8.5 0 1 0 3.5 12 A8.5 8.5 0 1 0 20.5 12 " +
+                "M10 8.6 L15.4 12 L10 15.4 Z", false),
             ["pause"] = new("M7.5 5 H10.4 V19 H7.5 Z M13.6 5 H16.5 V19 H13.6 Z", true),
             ["stop"] = new("M6.5 6.5 H17.5 V17.5 H6.5 Z", true),
 
@@ -82,7 +85,7 @@ namespace TodoSidebar.Controls
             ["trending"] = new("M3.5 16.5 L9 10.5 L13 14 L20 6.5 M15.5 6.5 H20 V11", false),
 
             ["star"] = new(
-                "M12 3.6 L14.5 8.8 L20.2 9.6 L16.1 13.6 L17.1 19.3 L12 16.6 L6.9 19.3 L7.9 13.6 L3.8 9.6 L9.5 8.8 Z", true),
+                "M12 3.6 L14.5 8.8 L20.2 9.6 L16.1 13.6 L17.1 19.3 L12 16.6 L6.9 19.3 L7.9 13.6 L3.8 9.6 L9.5 8.8 Z", false),
 
             ["eye"] = new(
                 "M2.8 12 C5.6 6.8 8.9 4.8 12 4.8 C15.1 4.8 18.4 6.8 21.2 12 " +

@@ -102,6 +102,8 @@ namespace TodoSidebar
             public string StatusText { get; }
             /// <summary>V2-W4：完成比例（0~1），供进度条宽度绑定。</summary>
             public double ProgressFraction { get; }
+            /// <summary>V2 精修：进度条像素宽度（右栏卡片内轨道约 105px）。</summary>
+            public double BarWidth { get; }
 
             public ChallengeItem(TodoSidebar.Models.DailyChallenge c)
             {
@@ -110,6 +112,7 @@ namespace TodoSidebar
                 ProgressText = $"{c.Progress}/{c.Target}";
                 StatusText = c.Completed ? "✓" : "";
                 ProgressFraction = Math.Clamp(c.Target > 0 ? (double)c.Progress / c.Target : 0, 0, 1);
+                BarWidth = Math.Round(ProgressFraction * 105);
             }
         }
 
@@ -189,6 +192,9 @@ namespace TodoSidebar
                 e.Handled = true;
             }
         }
+
+        /// <summary>顶栏搜索胶囊：打开命令面板。</summary>
+        private void SearchCapsule_Click(object sender, RoutedEventArgs e) => OpenCommandPalette();
 
         /// <summary>徽章解锁：横幅 + 粒子（复用升级横幅）</summary>
         private void OnAchievementUnlockedOccurred(object? sender, TodoSidebar.Models.AchievementUnlockedEventArgs e)
@@ -327,6 +333,8 @@ namespace TodoSidebar
                 };
             if (QuickFocusButton != null && QuickFocusButton.Content is StackPanel sp && sp.Children.Count > 1 && sp.Children[1] is TextBlock label)
                 label.Text = pomo.State == PomodoroState.Paused ? "继续" : "开始专注";
+            if (QuickFocusRoundText != null)
+                QuickFocusRoundText.Text = $"回合 {completed % PomodoroService.RoundsPerCycle} / {PomodoroService.RoundsPerCycle}";
         }
 
         /// <summary>缓存超过 30 秒未更新则重新查询今日统计，否则直接复用</summary>

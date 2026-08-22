@@ -66,7 +66,7 @@ namespace TodoSidebar.Controls
             }
             else
             {
-                var pen = new Pen(fg, Math.Max(1.1, size * 24 / 24 * 0.125))
+                var pen = new Pen(fg, Math.Max(1.25, size * 0.14))
                 {
                     StartLineCap = PenLineCap.Round,
                     EndLineCap = PenLineCap.Round,

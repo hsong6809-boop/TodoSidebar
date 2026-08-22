@@ -66,7 +66,6 @@ namespace TodoSidebar.Controls
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 0, 0, 16),
             };
-            Elevation.SetLevel(root, 3);
 
             var stack = new StackPanel();
 

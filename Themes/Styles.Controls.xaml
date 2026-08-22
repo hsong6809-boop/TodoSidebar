@@ -415,21 +415,29 @@
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Width" Value="52"/>
+        <Setter Property="Width" Value="60"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid>
                         <Border x:Name="ItemBg"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="11"
-                                Padding="0,7"/>
+                                CornerRadius="12"
+                                Padding="0,9"/>
+                        <!-- 激活左侧指示条 -->
+                        <Rectangle x:Name="Indicator"
+                                   Width="3" Height="24"
+                                   RadiusX="1.5" RadiusY="1.5"
+                                   Fill="{DynamicResource AccentBrush}"
+                                   HorizontalAlignment="Left" VerticalAlignment="Center"
+                                   Visibility="Collapsed"/>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           IsHitTestVisible="False"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="ItemBg" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+                            <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
                             <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
                         </Trigger>
                         <MultiTrigger>

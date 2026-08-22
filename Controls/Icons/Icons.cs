@@ -25,6 +25,7 @@ namespace TodoSidebar.Controls
         public const string Upload = "Upload";
         public const string Download = "Download";
         public const string Play = "Play";
+        public const string PlayCircle = "Play.Circle";
         public const string Pause = "Pause";
         public const string Stop = "Stop";
         public const string Calendar = "Calendar";
