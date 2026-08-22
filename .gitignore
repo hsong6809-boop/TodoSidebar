@@ -57,3 +57,5 @@ publish/
 binTestOut*/
 proc_probe.txt
 *.bak
+
+backups/
