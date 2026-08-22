@@ -139,15 +139,19 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
 
-                            <!-- 中：昵称 + 今日完成 -->
+                            <!-- 中：今日完成（上）+ 连击（下） -->
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="13,0,10,0">
-                                <TextBlock x:Name="HeroNickname" Text=""
-                                           FontSize="15" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding TodayDoneText, StringFormat='今日完成 {0}'}"
-                                           FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
-                                           Margin="0,5,0,0"/>
+                                           FontSize="11.5" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
+                                                      FontSize="10" Foreground="{DynamicResource ComboBrush}"
+                                                      VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="10.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource ComboBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- 右：等级信息（约占卡片 49% 宽） -->

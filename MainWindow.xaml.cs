@@ -226,7 +226,6 @@ namespace TodoSidebar
                 catch { /* 未登录/服务异常时用默认称呼 */ }
             }
             GreetingText.Text = $"{part}，{name}";
-            if (HeroNickname != null) HeroNickname.Text = name;
         }
 
         /// <summary>V2：今日已完成分组折叠切换。</summary>
