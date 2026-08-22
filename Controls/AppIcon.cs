@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -5,17 +6,20 @@ using System.Windows.Media;
 namespace TodoSidebar.Controls
 {
     /// <summary>
-    /// 矢量图标控件：基于 Segoe Fluent Icons（Win11）/ Segoe MDL2 Assets（Win10）字体渲染字形，
-    /// 可继承父级 Foreground，双主题一致。用法：
-    /// <code>&lt;controls:AppIcon Glyph="{x:Static controls:Icons.Search}"/&gt;</code>
+    /// 矢量图标控件 V2（W1）：直接渲染 IconPaths 目录中的自绘 Path 几何，
+    /// 不依赖任何系统字体——彻底解决 Segoe 字体缺字/跨机器不一致问题。
+    ///
+    /// 尺寸沿用 FontSize 属性（语义=图标边长，默认继承环境值）；颜色沿用 Foreground。
+    /// 用法：&lt;controls:AppIcon Glyph="{x:Static controls:Icons.Search}"/&gt;
+    /// （Icons 常量值即目录名称，与旧用法完全兼容。）
     /// </summary>
-    public class AppIcon : TextBlock
+    public class AppIcon : Control
     {
         public static readonly DependencyProperty GlyphProperty =
             DependencyProperty.Register(nameof(Glyph), typeof(string), typeof(AppIcon),
-                new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.AffectsRender, OnGlyphChanged));
+                new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.AffectsRender));
 
-        /// <summary>图标字形码位（单字符字符串）。</summary>
+        /// <summary>图标名称（IconPaths 目录键）。</summary>
         public string Glyph
         {
             get => (string)GetValue(GlyphProperty);
@@ -24,65 +28,56 @@ namespace TodoSidebar.Controls
 
         static AppIcon()
         {
-            FontFamilyProperty.OverrideMetadata(typeof(AppIcon), new FrameworkPropertyMetadata(
-                new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets")));
-            TextAlignmentProperty.OverrideMetadata(typeof(AppIcon), new FrameworkPropertyMetadata(TextAlignment.Center));
-            TextOptions.TextFormattingModeProperty.OverrideMetadata(typeof(AppIcon),
-                new FrameworkPropertyMetadata(TextFormattingMode.Display));
+            FocusableProperty.OverrideMetadata(typeof(AppIcon),
+                new FrameworkPropertyMetadata(false));
+            ForegroundProperty.OverrideMetadata(typeof(AppIcon),
+                new FrameworkPropertyMetadata(System.Windows.Media.Brushes.Gray));
         }
 
-        private static void OnGlyphChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        // 图标占位尺寸 = FontSize（显式 Width/Height 时以实际尺寸为准）
+        protected override Size MeasureOverride(Size availableSize)
         {
-            if (d is AppIcon icon)
-            {
-                icon.Text = e.NewValue as string ?? string.Empty;
-            }
+            var s = double.IsNaN(FontSize) || FontSize <= 0 ? 16d : Math.Max(8, FontSize);
+            return new Size(s, s);
         }
-    }
 
-    /// <summary>
-    /// Segoe MDL2 Assets 图标码位常量（与官方清单一致；Fluent Icons 同码位兼容）。
-    /// </summary>
-    public static class Icons
-    {
-        public const string Search = "\uE721";          // 搜索
-        public const string Settings = "\uE713";        // 设置
-        public const string SignOut = "\uF3B1";         // 退出登录
-        public const string ChevronLeft = "\uE76B";     // 收起
-        public const string ChevronRight = "\uE76C";
-        public const string ChevronUp = "\uE70E";
-        public const string ChevronDown = "\uE70D";
-        public const string OpenInNewWindow = "\uE8A7"; // 展开完整窗口
-        public const string CheckMark = "\uE73E";       // 完成
-        public const string Delete = "\uE74D";          // 删除
-        public const string Add = "\uE710";             // 添加
-        public const string ChromeClose = "\uE8BB";     // 关闭
-        public const string Refresh = "\uE72C";         // 刷新/同步
-        public const string Upload = "\uE898";          // 上传
-        public const string Download = "\uE896";        // 下载
-        public const string Play = "\uE768";            // 播放
-        public const string Pause = "\uE769";           // 暂停
-        public const string Stop = "\uE71A";            // 停止
-        public const string Calendar = "\uE787";        // 日历
-        public const string Pin = "\uE718";             // 项目/置顶
-        public const string Timer = "\uE916";           // 计时器
-        public const string Recent = "\uE823";          // 最近/时钟
-        public const string Diagnostic = "\uE9D2";      // 统计图表
-        public const string Market = "\uE719";          // 趋势
-        public const string FavoriteStar = "\uE734";    // 收藏星（成就）
-        public const string FavoriteStarFill = "\uE735";
-        public const string CheckList = "\uE9D5";       // 子任务清单
-        public const string RedEye = "\uE7B3";          // 显示密码
-        public const string Hide = "\uED1A";            // 隐藏密码
-        public const string Info = "\uE946";            // 关于
-        public const string Save = "\uE74E";            // 保存
-        public const string ColorBg = "\uE790";         // 主题颜色
-        public const string Mail = "\uE715";            // 邮箱
-        public const string PasswordKey = "\uE192";     // 密码
-        public const string Lock = "\uE72E";            // 安全
-        public const string Lightbulb = "\uEA80";       // 提示
-        public const string More = "\uE712";            // 更多
-        public const string Restore = "\uE8A8";         // 恢复
-        public const string Filter = "\uE71C";          // 筛选
+        protected override void OnRender(DrawingContext dc)
+        {
+            var def = IconPaths.Resolve(Glyph);
+            if (def == null) return;
+
+            double w = double.IsNaN(ActualWidth) || ActualWidth <= 0 ? FontSize : ActualWidth;
+            double h = double.IsNaN(ActualHeight) || ActualHeight <= 0 ? FontSize : ActualHeight;
+            double size = Math.Min(w, h);
+            if (size <= 0 || double.IsNaN(size)) size = 16;
+            if (double.IsNaN(FontSize) || FontSize <= 0) FontSize = size;
+
+            var fg = Foreground ?? System.Windows.Media.Brushes.Gray;
+            double scale = size / 24.0;
+            double offsetX = (RenderSize.Width - size) / 2;
+            double offsetY = (RenderSize.Height - size) / 2;
+
+            dc.PushTransform(new TranslateTransform(offsetX, offsetY));
+            dc.PushTransform(new ScaleTransform(scale, scale));
+
+            if (def.Filled)
+            {
+                dc.DrawGeometry(fg, null, def.Geometry);
+            }
+            else
+            {
+                var pen = new Pen(fg, Math.Max(1.1, size * 24 / 24 * 0.125))
+                {
+                    StartLineCap = PenLineCap.Round,
+                    EndLineCap = PenLineCap.Round,
+                    LineJoin = PenLineJoin.Round
+                };
+                pen.Freeze();
+                dc.DrawGeometry(null, pen, def.Geometry);
+            }
+
+            dc.Pop();
+            dc.Pop();
+        }
     }
 }

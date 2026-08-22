@@ -4,765 +4,491 @@
         xmlns:vm="clr-namespace:TodoSidebar.ViewModels"
         xmlns:controls="clr-namespace:TodoSidebar.Controls"
         Title="每日任务"
-        Width="450"
-        Height="700"
+        Width="580"
+        Height="760"
+        MinWidth="520"
+        MinHeight="640"
         WindowStartupLocation="CenterScreen"
         Background="Transparent"
         AllowsTransparency="True"
         WindowStyle="None">
 
     <Border Background="{DynamicResource GlassBrush}"
-            CornerRadius="12"
+            CornerRadius="14"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- 顶部栏（可拖动） -->
+            <!-- ===== 顶栏（可拖动）===== -->
             <Border Grid.Row="0"
                     Background="{DynamicResource GlassLightBrush}"
-                    Padding="0"
-                    CornerRadius="12,12,0,0"
+                    Padding="16,10"
                     BorderThickness="0,0,0,1"
                     BorderBrush="{DynamicResource BorderBrush}"
                     Cursor="SizeAll"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <DockPanel>
-                    <!-- 工具栏（底部，先渲染放在DockPanel底部） -->
-                    <Border DockPanel.Dock="Bottom"
-                            Background="Transparent"
-                            Padding="16,6"
-                            BorderThickness="0,1,0,0"
-                            BorderBrush="{DynamicResource BorderBrush}">
-                        <StackPanel Orientation="Horizontal">
-                            <Button Style="{StaticResource ToolbarTextButton}"
-                                    Command="{Binding SyncViewModel.UploadCommand}"
-                                    ToolTip="上传到云端">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Upload}" FontSize="11" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock Text="同步上传" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource ToolbarTextButton}"
-                                    Command="{Binding SyncViewModel.DownloadCommand}"
-                                    ToolTip="从云端下载"
-                                    Margin="4,0,0,0">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Download}" FontSize="11" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock Text="同步下载" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource ToolbarTextButton}"
-                                    Click="SettingsButton_Click"
-                                    ToolTip="设置">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Settings}" FontSize="11" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock Text="设置" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 标题行 -->
-                    <Border DockPanel.Dock="Top" Background="Transparent" Padding="20,14">
-                        <Grid>
-                            <StackPanel Orientation="Horizontal">
-                                <Border Background="{DynamicResource AccentBrush}"
-                                        CornerRadius="10"
-                                        Width="36"
-                                        Height="36"
-                                        Margin="0,0,12,0">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                                      Foreground="White"
-                                                      FontSize="16"
-                                                      HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"/>
-                                </Border>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="每日任务"
-                                               FontSize="17"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <TextBlock FontSize="11"
-                                               Foreground="{DynamicResource TextSecondaryBrush}">
-                                        <Run Text="共 "/>
-                                        <Run Text="{Binding CurrentTasksCount, Mode=OneWay}" FontWeight="SemiBold"/>
-                                        <Run Text=" 项待办"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Button Style="{StaticResource HeaderIconButton}"
-                                        Click="LogoutButton_Click"
-                                        ToolTip="退出登录">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.SignOut}" FontSize="13"/>
-                                </Button>
-                                <Button Style="{StaticResource HeaderIconButton}"
-                                        Click="CollapseToSidebar_Click"
-                                        ToolTip="收起为侧边栏"
-                                        Margin="2,0,0,0">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.ChevronLeft}" FontSize="11"/>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <!-- 升级等级条 -->
-                    <Border DockPanel.Dock="Top"
-                            Background="{DynamicResource GlassLightBrush}"
-                            CornerRadius="8"
-                            Padding="12,7"
-                            Margin="16,0,16,12">
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding LevelDisplay}"
-                                               FontSize="12"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="{Binding ComboDisplay}"
-                                               FontSize="10"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ComboBrush}"
-                                               VerticalAlignment="Center"
-                                               Margin="6,0,0,0"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding LevelProgressText}"
-                                               FontSize="10"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                               VerticalAlignment="Center"/>
-                                    <Button Width="26"
-                                            Height="26"
-                                            Click="BrowseBadges_Click"
-                                            ToolTip="成就图鉴"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
-                                            Margin="8,0,0,0">
-                                        <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
-                                                          FontSize="12"
-                                                          Foreground="{DynamicResource WarningBrush}"/>
-                                    </Button>
-                                </StackPanel>
-                            </Grid>
-                            <ProgressBar Margin="0,6,0,0"
-                                         Height="6"
-                                         Minimum="0"
-                                         Maximum="1"
-                                         Value="{Binding LevelProgress}"
-                                         Foreground="{DynamicResource AccentGradientBrush}"
-                                         Background="{DynamicResource SurfacePressedBrush}"
-                                         BorderThickness="0"/>
-                        </StackPanel>
-                    </Border>
-                </DockPanel>
-            </Border>
-
-            <!-- Tab 切换 -->
-            <Border Grid.Row="1"
-                    Background="{DynamicResource GlassBrush}"
-                    Padding="12,8"
-                    BorderThickness="0,0,0,1"
-                    BorderBrush="{DynamicResource BorderBrush}">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <RadioButton x:Name="TabDaily" Content="每日"
-                                 Style="{StaticResource TabRadioButton}"
-                                 IsChecked="True"
-                                 Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabDeadline" Content="截止"
-                                 Style="{StaticResource TabRadioButton}"
-                                 Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabHistory" Content="历史"
-                                 Style="{StaticResource TabRadioButton}"
-                                 Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabStatistics" Content="统计"
-                                 Style="{StaticResource TabRadioButton}"
-                                 Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabFocus" Content="🍅 专注"
-                                 Style="{StaticResource TabRadioButton}"
-                                 Checked="Tab_Checked"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 内容区域 -->
-            <Grid Grid.Row="2" Background="Transparent">
-                <!-- 每日任务 -->
-                <DockPanel x:Name="DailyPanel"
-                           Visibility="{Binding IsChecked, ElementName=TabDaily, Converter={StaticResource BoolToVis}}"
-                           Margin="16,12">
-                    <!-- 计数器 -->
-                    <Border DockPanel.Dock="Top"
-                            Background="{DynamicResource CardBrush}"
-                            CornerRadius="8"
-                            Padding="12,8"
-                            Margin="0,0,0,12">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="今日任务"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       FontSize="14"
-                                       VerticalAlignment="Center"/>
-                            <Border Background="{DynamicResource AccentBrush}"
-                                    CornerRadius="10"
-                                    Padding="8,4"
-                                    Margin="8,0,0,0">
-                                <TextBlock Text="{Binding DailyTasksCount}"
-                                           Foreground="White"
-                                           FontSize="12"
-                                           FontWeight="Bold"/>
-                            </Border>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 今日挑战 -->
-                    <Border DockPanel.Dock="Top"
-                            Background="{DynamicResource CardBrush}"
-                            CornerRadius="8"
-                            Padding="12,8"
-                            Margin="0,0,0,12">
-                        <StackPanel>
-                            <TextBlock Text="🎯 今日挑战"
-                                       FontSize="12"
+                <Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Background="{DynamicResource AccentBrush}"
+                                CornerRadius="9" Width="30" Height="30" Margin="0,0,10,0">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
+                                              Foreground="White" FontSize="13"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="每日任务"
+                                       FontSize="{DynamicResource FontSizeTitle}"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
-                            <ItemsControl x:Name="ChallengeList" Margin="0,6,0,0">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Margin="0,3,0,3"
-                                                CornerRadius="6"
-                                                Background="{DynamicResource GlassLightBrush}"
-                                                Padding="8,6">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Icon}"
-                                                           FontSize="14"
-                                                           VerticalAlignment="Center"
-                                                           Margin="0,0,8,0"/>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="11"
-                                                               Foreground="{DynamicResource TextBrush}"/>
-                                                    <TextBlock Text="{Binding ProgressText}"
-                                                               FontSize="10"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="2"
-                                                           Text="{Binding StatusText}"
-                                                           FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 空状态：今日无待办 -->
-                    <StackPanel DockPanel.Dock="Top"
-                                HorizontalAlignment="Center"
-                                Margin="0,28,0,12"
-                                Visibility="{Binding DailyTasksCount, Converter={StaticResource ZeroToVisInv}}">
-                        <Border Width="56" Height="56"
-                                CornerRadius="28"
-                                Background="{DynamicResource SurfaceHoverBrush}"
-                                HorizontalAlignment="Center">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                              FontSize="22"
-                                              Foreground="{DynamicResource AccentBrush}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock Text="今天没有每日任务"
-                                   FontSize="13"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,10,0,0"/>
-                        <TextBlock Text="在底部输入框添加一个新任务吧"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-
-                    <ListBox ItemsSource="{Binding DailyTasks}"
-                             Style="{StaticResource GlassListBox}"
-                             ItemTemplate="{StaticResource TaskCardTemplate}"
-                             x:Name="DailyTasksListBox"
-                             AllowDrop="True"
-                             Drop="TaskListBox_Drop"
-                             DragOver="TaskListBox_DragOver"
-                             PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
-                             PreviewMouseMove="TaskListBox_PreviewMouseMove"
-                             MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
-                </DockPanel>
-
-                <!-- 截止任务 -->
-                <DockPanel x:Name="DeadlinePanel"
-                           Visibility="{Binding IsChecked, ElementName=TabDeadline, Converter={StaticResource BoolToVis}}"
-                           Margin="16,12">
-                    <!-- 计数器 -->
-                    <Border DockPanel.Dock="Top"
-                            Background="{DynamicResource CardBrush}"
-                            CornerRadius="8"
-                            Padding="12,8"
-                            Margin="0,0,0,12">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="截止任务"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       FontSize="14"
-                                       VerticalAlignment="Center"/>
-                            <Border Background="{DynamicResource DangerBrush}"
-                                    CornerRadius="10"
-                                    Padding="8,4"
-                                    Margin="8,0,0,0">
-                                <TextBlock Text="{Binding DeadlineTasksCount}"
-                                           Foreground="White"
-                                           FontSize="12"
-                                           FontWeight="Bold"/>
-                            </Border>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 空状态：无截止任务 -->
-                    <StackPanel DockPanel.Dock="Top"
-                                HorizontalAlignment="Center"
-                                Margin="0,28,0,12"
-                                Visibility="{Binding DeadlineTasksCount, Converter={StaticResource ZeroToVisInv}}">
-                        <Border Width="56" Height="56"
-                                CornerRadius="28"
-                                Background="{DynamicResource SurfaceHoverBrush}"
-                                HorizontalAlignment="Center">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}"
-                                              FontSize="22"
-                                              Foreground="{DynamicResource WarningBrush}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock Text="没有截止任务"
-                                   FontSize="13"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,10,0,0"/>
-                        <TextBlock Text="切换到截止页后可添加带期限的任务"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-
-                    <ListBox ItemsSource="{Binding DeadlineTasks}"
-                             Style="{StaticResource GlassListBox}"
-                             ItemTemplate="{StaticResource DeadlineTaskCardTemplate}"
-                             x:Name="DeadlineTasksListBox"
-                             AllowDrop="True"
-                             Drop="TaskListBox_Drop"
-                             DragOver="TaskListBox_DragOver"
-                             PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
-                             PreviewMouseMove="TaskListBox_PreviewMouseMove"
-                             MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
-                </DockPanel>
-
-                <!-- 历史记录 -->
-                <DockPanel x:Name="HistoryPanel"
-                           Visibility="{Binding IsChecked, ElementName=TabHistory, Converter={StaticResource BoolToVis}}"
-                           Margin="16,12">
-                    <!-- 计数器 -->
-                    <Border DockPanel.Dock="Top"
-                            Background="{DynamicResource CardBrush}"
-                            CornerRadius="8"
-                            Padding="12,8"
-                            Margin="0,0,0,12">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="历史记录"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       FontSize="14"
-                                       VerticalAlignment="Center"/>
-                            <Border Background="{DynamicResource TextSecondaryBrush}"
-                                    CornerRadius="10"
-                                    Padding="8,4"
-                                    Margin="8,0,0,0">
-                                <TextBlock Text="{Binding HistoryTasksCount}"
-                                           Foreground="White"
-                                           FontSize="12"
-                                           FontWeight="Bold"/>
-                            </Border>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 空状态：无历史记录 -->
-                    <StackPanel DockPanel.Dock="Top"
-                                HorizontalAlignment="Center"
-                                Margin="0,28,0,12"
-                                Visibility="{Binding HistoryTasksCount, Converter={StaticResource ZeroToVisInv}}">
-                        <Border Width="56" Height="56"
-                                CornerRadius="28"
-                                Background="{DynamicResource SurfaceHoverBrush}"
-                                HorizontalAlignment="Center">
-                            <controls:AppIcon Glyph="{x:Static controls:Icons.Recent}"
-                                              FontSize="22"
-                                              Foreground="{DynamicResource TextTertiaryBrush}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock Text="还没有完成记录"
-                                   FontSize="13"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,10,0,0"/>
-                        <TextBlock Text="完成任务后会出现在这里"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-
-                    <ListBox ItemsSource="{Binding HistoryTasks}"
-                             Style="{StaticResource GlassListBox}"
-                             ItemTemplate="{StaticResource HistoryTaskCardTemplate}"/>
-                </DockPanel>
-
-                <!-- 统计 -->
-                <ScrollViewer x:Name="StatisticsPanel"
-                              Visibility="{Binding IsChecked, ElementName=TabStatistics, Converter={StaticResource BoolToVis}}"
-                              Margin="16,12">
-                    <StackPanel>
-                        <!-- 总体概览 -->
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="12,8"
-                                Margin="0,0,0,12">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Diagnostic}"
-                                                      FontSize="12"
-                                                      Foreground="{DynamicResource AccentBrush}"
-                                                      VerticalAlignment="Center"
-                                                      Margin="0,0,6,0"/>
-                                    <TextBlock Text="总体概览"
-                                               Foreground="{DynamicResource TextBrush}"
-                                               FontSize="14"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center"/>
-                                </StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel HorizontalAlignment="Center">
-                                        <TextBlock Text="{Binding StatisticsViewModel.TotalTasks}"
-                                                   FontSize="20"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource AccentBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                        <TextBlock Text="总任务"
-                                                   FontSize="11"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-                                        <TextBlock Text="{Binding StatisticsViewModel.CompletedTasks}"
-                                                   FontSize="20"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource SuccessBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                        <TextBlock Text="已完成"
-                                                   FontSize="11"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-                                        <TextBlock Text="{Binding StatisticsViewModel.OverdueTasks}"
-                                                   FontSize="20"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource DangerBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                        <TextBlock Text="已过期"
-                                                   FontSize="11"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock FontSize="{DynamicResource FontSizeCaption}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}">
+                                    <Run Text="共 "/>
+                                    <Run Text="{Binding CurrentTasksCount, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text=" 项待办"/>
+                                </TextBlock>
+                                <TextBlock Text="{Binding ComboDisplay}"
+                                           FontSize="10" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource ComboBrush}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
                             </StackPanel>
-                        </Border>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Style="{StaticResource HeaderIconButton}" Click="BrowseBadges_Click" ToolTip="成就图鉴">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}" FontSize="13"/>
+                        </Button>
+                        <Button Style="{StaticResource HeaderIconButton}" Click="SettingsButton_Click" ToolTip="设置" Margin="2,0,0,0">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.Settings}" FontSize="13"/>
+                        </Button>
+                        <Button Style="{StaticResource HeaderIconButton}" Click="LogoutButton_Click" ToolTip="退出登录" Margin="2,0,0,0">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.SignOut}" FontSize="12"/>
+                        </Button>
+                        <Button Style="{StaticResource HeaderIconButton}" Click="CollapseToSidebar_Click" ToolTip="收起为侧边栏" Margin="2,0,0,0">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.ChevronLeft}" FontSize="11"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
 
-                        <!-- 今日统计：完成率环 + 关键数字 -->
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="12,10"
-                                Margin="0,0,0,12">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}"
-                                                      FontSize="12"
-                                                      Foreground="{DynamicResource AccentBrush}"
-                                                      VerticalAlignment="Center"
-                                                      Margin="0,0,6,0"/>
-                                    <TextBlock Text="今日统计"
-                                               Foreground="{DynamicResource TextBrush}"
-                                               FontSize="14"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center"/>
+            <!-- ===== 内容区：左导航栏 + 页面 ===== -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="64"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Navigation Rail -->
+                <Border Grid.Column="0"
+                        Background="{DynamicResource GlassLightBrush}"
+                        BorderThickness="0,0,1,0"
+                        BorderBrush="{DynamicResource BorderBrush}">
+                    <DockPanel>
+                        <!-- 底部：设置 -->
+                        <RadioButton DockPanel.Dock="Bottom" GroupName="NavRail" Margin="0,0,0,10"
+                                     Style="{StaticResource RailItemStyle}" Tag="Settings"
+                                     Checked="NavExtra_Checked" ToolTip="设置">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.Settings}" FontSize="15"/>
+                        </RadioButton>
+                        <!-- 导航项 -->
+                        <StackPanel Margin="0,12">
+                            <RadioButton GroupName="NavRail" IsChecked="True" Tag="Dashboard"
+                                         Style="{StaticResource RailItemStyle}" ToolTip="今日"
+                                         Checked="Nav_Checked">
+                                <StackPanel>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}" FontSize="15"/>
+                                    <TextBlock Text="今日" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
-                                <Grid Margin="6,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <!-- 完成率环 -->
-                                    <Grid Width="84" Height="84" VerticalAlignment="Center">
-                                        <controls:CircularProgress Size="84"
-                                                                   StrokeThickness="9"
+                            </RadioButton>
+                            <RadioButton GroupName="NavRail" Tag="History"
+                                         Style="{StaticResource RailItemStyle}" ToolTip="历史"
+                                         Margin="0,6,0,0" Checked="Nav_Checked">
+                                <StackPanel>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.CheckList}" FontSize="15"/>
+                                    <TextBlock Text="历史" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton GroupName="NavRail" Tag="Stats"
+                                         Style="{StaticResource RailItemStyle}" ToolTip="统计"
+                                         Margin="0,6,0,0" Checked="Nav_Checked">
+                                <StackPanel>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Chart}" FontSize="15"/>
+                                    <TextBlock Text="统计" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton GroupName="NavRail" Tag="Focus"
+                                         Style="{StaticResource RailItemStyle}" ToolTip="专注"
+                                         Margin="0,6,0,0" Checked="Nav_Checked">
+                                <StackPanel>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Timer}" FontSize="15"/>
+                                    <TextBlock Text="专注" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </RadioButton>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- 页面容器 -->
+                <Grid Grid.Column="1" Margin="16,12">
+                    <!-- ===== 今日仪表盘 ===== -->
+                    <Grid x:Name="DashboardPanel">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- KPI 行 -->
+                        <UniformGrid Grid.Row="0" Columns="3" Margin="0,0,0,12">
+                            <!-- 进度环卡 -->
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12"
+                                    Margin="0,0,10,0" controls:Elevation.Level="1">
+                                <StackPanel Orientation="Horizontal">
+                                    <Grid Width="62" Height="62" VerticalAlignment="Center">
+                                        <controls:CircularProgress Size="62" StrokeThickness="7"
                                                                    Progress="{Binding StatisticsViewModel.TodayCompletionRate}"
                                                                    ProgressBrush="{DynamicResource AccentGradientBrush}"
                                                                    BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
                                         <TextBlock Text="{Binding StatisticsViewModel.TodayCompletionRate, Converter={StaticResource FractionToPercent}}"
-                                                   FontSize="15"
-                                                   FontWeight="Bold"
+                                                   FontSize="11.5" FontWeight="Bold"
                                                    Foreground="{DynamicResource AccentBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"/>
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
-                                    <!-- 数字 -->
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="18,0,0,0">
-                                        <StackPanel Orientation="Horizontal" Margin="0,3">
-                                            <TextBlock Text="{Binding StatisticsViewModel.TodayCompleted}"
-                                                       FontSize="17"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource SuccessBrush}"/>
-                                            <TextBlock Text=" 已完成" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
+                                        <TextBlock Text="今日完成" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding StatisticsViewModel.TodayCompleted}" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="{Binding StatisticsViewModel.TodayTotal, StringFormat=' / {0}'}" FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" VerticalAlignment="Bottom" Margin="2,0,0,3"/>
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,3">
-                                            <TextBlock Text="{Binding StatisticsViewModel.TodayTotal}"
-                                                       FontSize="17"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text=" 今日任务" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="完成率" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <!-- 连击卡 -->
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12"
+                                    Margin="0,0,10,0" controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="🔥" FontSize="17" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding StatisticsViewModel.StreakDays, StringFormat=' {0} 天'}"
+                                                   FontSize="18" FontWeight="Bold" Foreground="{DynamicResource ComboBrush}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="连续全清" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                                    <ProgressBar Margin="0,10,0,4" Height="5" Minimum="0" Maximum="1"
+                                                 Value="{Binding StatisticsViewModel.StreakDays, Converter={StaticResource Multiply}, ConverterParameter=0.14}"
+                                                 Foreground="{DynamicResource WarningBrush}"/>
+                                    <TextBlock Text="{Binding LevelProgressText}" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}"/>
+                                </StackPanel>
+                            </Border>
+                            <!-- 等级卡 -->
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12"
+                                    controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding LevelDisplay}" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
+                                    <ProgressBar Margin="0,8,0,4" Height="6" Minimum="0" Maximum="1"
+                                                 Value="{Binding LevelProgress}"
+                                                 Foreground="{DynamicResource AccentGradientBrush}"/>
+                                    <TextBlock Text="{Binding LevelProgressText}" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                            </Border>
+                        </UniformGrid>
+
+                        <!-- 双列：任务流 + 右栏 -->
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="176"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 左：任务流 -->
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="1.25*"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="今日任务" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                    <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="999" Padding="8,2" Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding DailyTasksCount}" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                    </Border>
+                                </StackPanel>
+
+                                <ListBox Grid.Row="1"
+                                         ItemsSource="{Binding DailyTasks}"
+                                         Style="{StaticResource GlassListBox}"
+                                         ItemTemplate="{StaticResource TaskCardTemplate}"
+                                         x:Name="DailyTasksListBox"
+                                         AllowDrop="True"
+                                         Drop="TaskListBox_Drop"
+                                         DragOver="TaskListBox_DragOver"
+                                         PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
+                                         PreviewMouseMove="TaskListBox_PreviewMouseMove"
+                                         MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
+
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,8">
+                                    <TextBlock Text="截止任务" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                    <Border Background="{DynamicResource DangerSoftBrush}" CornerRadius="999" Padding="8,2" Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding DeadlineTasksCount}" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource DangerBrush}"/>
+                                    </Border>
+                                </StackPanel>
+
+                                <ListBox Grid.Row="3"
+                                         ItemsSource="{Binding DeadlineTasks}"
+                                         Style="{StaticResource GlassListBox}"
+                                         ItemTemplate="{StaticResource DeadlineTaskCardTemplate}"
+                                         x:Name="DeadlineTasksListBox"
+                                         AllowDrop="True"
+                                         Drop="TaskListBox_Drop"
+                                         DragOver="TaskListBox_DragOver"
+                                         PreviewMouseLeftButtonDown="TaskListBox_PreviewMouseLeftButtonDown"
+                                         PreviewMouseMove="TaskListBox_PreviewMouseMove"
+                                         MouseDoubleClick="TaskListBox_MouseDoubleClick"/>
+                            </Grid>
+
+                            <!-- 右栏 -->
+                            <StackPanel Grid.Column="1" Margin="14,0,0,0">
+                                <!-- 今日挑战 -->
+                                <TextBlock Text="今日挑战" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                                <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="12,10" controls:Elevation.Level="1">
+                                    <ItemsControl x:Name="ChallengeList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,3">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Icon}" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="{Binding Title}" FontSize="11" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding StatusText}" FontSize="9" Foreground="{DynamicResource TextTertiaryBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                    </StackPanel>
+                                                    <Grid Margin="20,3,0,0">
+                                                        <Border Height="4" CornerRadius="2" Background="{DynamicResource SurfacePressedBrush}"/>
+                                                        <Border HorizontalAlignment="Left" Height="4" CornerRadius="2"
+                                                                Width="{Binding ProgressFraction, Converter={StaticResource Multiply}, ConverterParameter=110}"
+                                                                Background="{DynamicResource AccentGradientBrush}"/>
+                                                        <TextBlock Text="{Binding ProgressText}" FontSize="8.5" Foreground="{DynamicResource TextTertiaryBrush}"
+                                                                   HorizontalAlignment="Right" Margin="0,-2,0,0"/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+
+                                <!-- 快速专注 -->
+                                <TextBlock Text="快速专注" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,14,0,8"/>
+                                <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="12,10" controls:Elevation.Level="1">
+                                    <StackPanel>
+                                        <Grid>
+                                            <controls:CircularProgress x:Name="QuickFocusRing" Size="56" StrokeThickness="6"
+                                                                       Progress="0"
+                                                                       ProgressBrush="{DynamicResource AccentGradientBrush}"
+                                                                       BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
+                                            <TextBlock x:Name="QuickFocusTimeText" Text="25:00"
+                                                       FontSize="10.5" FontWeight="Bold"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <TextBlock x:Name="QuickFocusStateText" Text="准备开始" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                                        <Button x:Name="QuickFocusButton" Style="{StaticResource PrimaryButton}" Padding="0,5"
+                                                Margin="0,8,0,0" Click="FocusStart_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="9" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                                <TextBlock Text="开始专注" FontSize="11" Foreground="White" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 同步状态 -->
+                                <TextBlock Text="同步" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,14,0,8"/>
+                                <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="12,10" controls:Elevation.Level="1">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="7" Height="7" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" 自动同步已开启" FontSize="11" Foreground="{DynamicResource TextBrush}"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <Button Style="{StaticResource SecondaryButton}" Padding="8,4" Margin="0,0,6,0"
+                                                    Command="{Binding SyncViewModel.UploadCommand}" ToolTip="上传到云端">
+                                                <controls:AppIcon Glyph="{x:Static controls:Icons.Upload}" FontSize="11"/>
+                                            </Button>
+                                            <Button Style="{StaticResource SecondaryButton}" Padding="8,4"
+                                                    Command="{Binding SyncViewModel.DownloadCommand}" ToolTip="从云端下载">
+                                                <controls:AppIcon Glyph="{x:Static controls:Icons.Download}" FontSize="11"/>
+                                            </Button>
                                         </StackPanel>
                                     </StackPanel>
-                                </Grid>
+                                </Border>
                             </StackPanel>
-                        </Border>
+                        </Grid>
+                    </Grid>
 
-                        <!-- 近 7 天完成趋势（迷你柱状图） -->
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="12,10"
-                                Margin="0,0,0,12">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Market}"
-                                                      FontSize="12"
-                                                      Foreground="{DynamicResource AccentBrush}"
-                                                      VerticalAlignment="Center"
-                                                      Margin="0,0,6,0"/>
-                                    <TextBlock Text="近 7 天完成"
-                                               Foreground="{DynamicResource TextBrush}"
-                                               FontSize="14"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding StatisticsViewModel.StreakDays, StringFormat='🔥 连续 {0} 天'}"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ComboBrush}"
-                                               VerticalAlignment="Center"
-                                               Margin="10,0,0,0"/>
-                                </StackPanel>
-                                <ItemsControl ItemsSource="{Binding StatisticsViewModel.DailyStats}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <UniformGrid Columns="7"/>
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel HorizontalAlignment="Center" Margin="2,0">
-                                                <!-- 柱体区（底部对齐） -->
-                                                <Grid Height="64" VerticalAlignment="Bottom">
-                                                    <Border Height="64"
-                                                            VerticalAlignment="Bottom"
-                                                            Width="18"
-                                                            CornerRadius="4"
-                                                            Background="{DynamicResource SurfacePressedBrush}"/>
-                                                    <Border Height="{Binding CompletionRate, Converter={StaticResource Multiply}, ConverterParameter=60}"
-                                                            MinHeight="4"
-                                                            VerticalAlignment="Bottom"
-                                                            Width="18"
-                                                            CornerRadius="4"
-                                                            Background="{DynamicResource AccentGradientBrush}"/>
-                                                </Grid>
-                                                <TextBlock Text="{Binding CompletedTasks}"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           HorizontalAlignment="Center"
-                                                           Margin="0,5,0,1"/>
-                                                <TextBlock Text="{Binding DateLabel}"
-                                                           FontSize="9.5"
-                                                           Foreground="{DynamicResource TextTertiaryBrush}"
-                                                           HorizontalAlignment="Center"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 连续完成天数 -->
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="12,8"
-                                Margin="0,0,0,12">
-                            <StackPanel HorizontalAlignment="Center">
-                                <TextBlock Text="{Binding StatisticsViewModel.StreakDays}"
-                                           FontSize="28"
-                                           FontWeight="Bold"
-                                           Foreground="{DynamicResource WarningBrush}"
-                                           HorizontalAlignment="Center"/>
-                                <TextBlock Text="🔥 连续完成天数"
-                                           FontSize="12"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           HorizontalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-
-                <!-- 专注页（番茄钟） -->
-                <ScrollViewer x:Name="FocusPanel"
-                              Visibility="{Binding IsChecked, ElementName=TabFocus, Converter={StaticResource BoolToVis}}"
-                              Margin="16,12"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel>
-                        <!-- 子页面标题 -->
-                        <TextBlock Text="🍅 专注"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextBrush}"/>
-                        <TextBlock Text="专注 25 分钟，收获经验与专注时长"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Margin="0,2,0,0"/>
-
-                        <!-- 番茄环 + 计时 -->
-                        <controls:CircularProgress x:Name="FocusRing"
-                                                   Size="150"
-                                                   StrokeThickness="12"
-                                                   Progress="0"
-                                                   ProgressBrush="{DynamicResource AccentGradientBrush}"
-                                                   BackgroundBrush="{DynamicResource SurfacePressedBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   Margin="0,16,0,0"/>
-                        <TextBlock x:Name="FocusTimerText"
-                                   Text="25:00"
-                                   FontSize="34"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,10,0,0"/>
-                        <TextBlock x:Name="FocusStateText"
-                                   Text="🍅 准备开始专注"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,4,0,0"/>
-
-                        <!-- 任务绑定 -->
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="10,8"
-                                Margin="0,14,0,0">
-                            <StackPanel>
-                                <TextBlock Text="绑定任务（可选）"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <ComboBox x:Name="FocusTaskCombo"
-                                          FontSize="12"
-                                          Margin="0,6,0,0"
-                                          DisplayMemberPath="Title"
-                                          ToolTip="专注完成时自动累计该任务实际用时"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 控制按钮 -->
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
-                            <Button x:Name="FocusStartButton"
-                                    Style="{StaticResource PrimaryButton}"
-                                    Padding="18,9"
-                                    Click="FocusStart_Click">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                    <TextBlock Text="开始专注" Foreground="White" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource SecondaryButton}"
-                                    Click="FocusPause_Click"
-                                    Margin="6,0,0,0">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Pause}" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock Text="暂停" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource SecondaryButton}"
-                                    Click="FocusStop_Click"
-                                    Margin="6,0,0,0">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Stop}" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock Text="停止" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
+                    <!-- ===== 历史页 ===== -->
+                    <DockPanel x:Name="HistoryPanel" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,10">
+                            <TextBlock Text="历史记录" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border Background="{DynamicResource SurfaceHoverBrush}" CornerRadius="999" Padding="8,2" Margin="8,0,0,0">
+                                <TextBlock Text="{Binding HistoryTasksCount}" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </Border>
                         </StackPanel>
+                        <ListBox ItemsSource="{Binding HistoryTasks}"
+                                 Style="{StaticResource GlassListBox}"
+                                 ItemTemplate="{StaticResource HistoryTaskCardTemplate}"/>
+                    </DockPanel>
 
-                        <!-- 今日专注统计 -->
-                        <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="8"
-                                Padding="12,10"
-                                Margin="0,14,0,0">
-                            <StackPanel>
-                                <TextBlock x:Name="FocusTodayText"
-                                           Text="今日番茄：0 · 专注 0 分钟"
-                                           FontSize="12"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <TextBlock x:Name="FocusRoundText"
-                                           Text="本轮：0/4"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           Margin="0,4,0,0"/>
+                    <!-- ===== 统计页（W6 升级为图表仪表盘）===== -->
+                    <ScrollViewer x:Name="StatisticsPanel" Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <TextBlock Text="统计" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12" Margin="0,0,0,12" controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <TextBlock Text="总体概览" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                                    <UniformGrid Columns="3">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding StatisticsViewModel.TotalTasks}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="总任务" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding StatisticsViewModel.CompletedTasks}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="已完成" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding StatisticsViewModel.OverdueTasks}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource DangerBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="已过期" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12" Margin="0,0,0,12" controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <TextBlock Text="近 7 天完成" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                    <ItemsControl ItemsSource="{Binding StatisticsViewModel.DailyStats}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><UniformGrid Columns="7"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel HorizontalAlignment="Center" Margin="3,0">
+                                                    <Grid Height="72" VerticalAlignment="Bottom">
+                                                        <Border Height="64" VerticalAlignment="Bottom" Width="20" CornerRadius="5" Background="{DynamicResource SurfacePressedBrush}"/>
+                                                        <Border Height="{Binding CompletionRate, Converter={StaticResource Multiply}, ConverterParameter=60}"
+                                                                MinHeight="4" VerticalAlignment="Bottom" Width="20" CornerRadius="5"
+                                                                Background="{DynamicResource AccentGradientBrush}"/>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding CompletedTasks}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,5,0,1"/>
+                                                    <TextBlock Text="{Binding DateLabel}" FontSize="9" Foreground="{DynamicResource TextTertiaryBrush}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12" controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <TextBlock Text="今日" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Width="84" Height="84">
+                                            <controls:CircularProgress Size="84" StrokeThickness="9"
+                                                                       Progress="{Binding StatisticsViewModel.TodayCompletionRate}"
+                                                                       ProgressBrush="{DynamicResource AccentGradientBrush}"
+                                                                       BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
+                                            <TextBlock Text="{Binding StatisticsViewModel.TodayCompletionRate, Converter={StaticResource FractionToPercent}}"
+                                                       FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="18,0,0,0">
+                                            <StackPanel Orientation="Horizontal" Margin="0,3">
+                                                <TextBlock Text="{Binding StatisticsViewModel.TodayCompleted}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}"/>
+                                                <TextBlock Text=" 已完成" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,3">
+                                                <TextBlock Text="{Binding StatisticsViewModel.TodayTotal}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
+                                                <TextBlock Text=" 今日任务" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- ===== 专注页 ===== -->
+                    <ScrollViewer x:Name="FocusPanel" Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <TextBlock Text="🍅 专注" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock Text="专注 25 分钟，收获经验与专注时长" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+
+                            <controls:CircularProgress x:Name="FocusRing" Size="150" StrokeThickness="12" Progress="0"
+                                                       ProgressBrush="{DynamicResource AccentGradientBrush}"
+                                                       BackgroundBrush="{DynamicResource SurfacePressedBrush}"
+                                                       HorizontalAlignment="Center" Margin="0,16,0,0"/>
+                            <TextBlock x:Name="FocusTimerText" Text="25:00" FontSize="34" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                            <TextBlock x:Name="FocusStateText" Text="🍅 准备开始专注" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="10,8" Margin="0,14,0,0" controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <TextBlock Text="绑定任务（可选）" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <ComboBox x:Name="FocusTaskCombo" FontSize="12" Margin="0,6,0,0"
+                                              DisplayMemberPath="Title"
+                                              ToolTip="专注完成时自动累计该任务实际用时"/>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
+                                <Button x:Name="FocusStartButton" Style="{StaticResource PrimaryButton}" Padding="18,9" Click="FocusStart_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="10" Foreground="White" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="开始专注" Foreground="White" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource SecondaryButton}" Click="FocusPause_Click" Margin="6,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Pause}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                        <TextBlock Text="暂停" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource SecondaryButton}" Click="FocusStop_Click" Margin="6,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Stop}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                        <TextBlock Text="停止" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
+
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="12,10" Margin="0,14,0,0" controls:Elevation.Level="1">
+                                <StackPanel>
+                                    <TextBlock x:Name="FocusTodayText" Text="今日番茄：0 · 专注 0 分钟" FontSize="12" Foreground="{DynamicResource TextBrush}"/>
+                                    <TextBlock x:Name="FocusRoundText" Text="本轮：0/4" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
 
-            <!-- 底部添加栏 -->
-            <Border Grid.Row="3"
+            <!-- ===== 底部 Composer ===== -->
+            <Border Grid.Row="2"
                     Background="{DynamicResource GlassLightBrush}"
                     Padding="16,12"
-                    CornerRadius="0,0,12,12"
                     BorderThickness="0,1,0,0"
                     BorderBrush="{DynamicResource BorderBrush}">
                 <StackPanel>
-                    <!-- 输入框和添加按钮 -->
                     <Grid Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -770,12 +496,9 @@
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="TaskInput"
                                  Text="{Binding NewTaskTitle, UpdateSourceTrigger=PropertyChanged}"
-                                 controls:Placeholder.Text="添加新任务…"
+                                 controls:Placeholder.Text="添加新任务，回车确认…"
                                  Style="{StaticResource GlassTextBox}"/>
-                        <Button Grid.Column="1"
-                                Click="AddTaskButton_Click"
-                                Style="{StaticResource PrimaryButton}"
-                                Margin="10,0,0,0">
+                        <Button Grid.Column="1" Click="AddTaskButton_Click" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0">
                             <StackPanel Orientation="Horizontal">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
                                 <TextBlock Text="添加" Foreground="White" VerticalAlignment="Center"/>
@@ -783,75 +506,42 @@
                         </Button>
                     </Grid>
 
-                    <!-- 优先级选择 -->
-                    <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="优先级:"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,10,0"/>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <RadioButton Content="高"
-                                         Tag="High"
-                                         Foreground="{DynamicResource PriorityHighBrush}"
-                                         Margin="0,0,15,0"
-                                         Checked="Priority_Checked"/>
-                            <RadioButton Content="中"
-                                         Tag="Medium"
-                                         Foreground="{DynamicResource PriorityMediumBrush}"
-                                         IsChecked="True"
-                                         Margin="0,0,15,0"
-                                         Checked="Priority_Checked"/>
-                            <RadioButton Content="低"
-                                         Tag="Low"
-                                         Foreground="{DynamicResource PriorityLowBrush}"
-                                         Checked="Priority_Checked"/>
-                        </StackPanel>
-                    </Grid>
+                    <!-- 类型分段 + 优先级 + 截止日期 -->
+                    <StackPanel Orientation="Horizontal">
+                        <Border Background="{DynamicResource SurfaceHoverBrush}" CornerRadius="999" Padding="3">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="TabDaily" Content="每日" GroupName="ComposerType" IsChecked="True"
+                                             Style="{StaticResource SegmentToggleStyle}" Checked="SegmentType_Checked"/>
+                                <RadioButton x:Name="TabDeadline" Content="截止" GroupName="ComposerType"
+                                             Style="{StaticResource SegmentToggleStyle}" Checked="SegmentType_Checked"/>
+                            </StackPanel>
+                        </Border>
 
-                    <!-- 截止日期选择（仅截止任务Tab显示） -->
-                    <DatePicker x:Name="DeadlinePicker"
-                                SelectedDate="{Binding NewTaskDeadline}"
-                                Visibility="{Binding IsChecked, ElementName=TabDeadline, Converter={StaticResource BoolToVis}}"
-                                Margin="0,0,0,10"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                            <RadioButton Content="高" Tag="High" Foreground="{DynamicResource PriorityHighBrush}" Margin="0,0,10,0" Checked="Priority_Checked"/>
+                            <RadioButton Content="中" Tag="Medium" Foreground="{DynamicResource PriorityMediumBrush}" IsChecked="True" Margin="0,0,10,0" Checked="Priority_Checked"/>
+                            <RadioButton Content="低" Tag="Low" Foreground="{DynamicResource PriorityLowBrush}" Checked="Priority_Checked"/>
+                        </StackPanel>
+
+                        <DatePicker x:Name="DeadlinePicker"
+                                    SelectedDate="{Binding NewTaskDeadline}"
+                                    Margin="14,0,0,0" Width="140"
+                                    Visibility="{Binding IsChecked, ElementName=TabDeadline, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
-            <!-- 升级粒子层 -->
-            <Canvas x:Name="ParticleLayer"
-                    IsHitTestVisible="False"
-                    Panel.ZIndex="100"/>
-
-            <!-- 升级横幅 -->
-            <Border x:Name="LevelUpBanner"
-                    Panel.ZIndex="101"
-                    Visibility="Collapsed"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="0,100,0,0"
+            <!-- 覆盖层：粒子 + 升级横幅 -->
+            <Canvas Grid.Row="0" Grid.RowSpan="3" x:Name="ParticleLayer" IsHitTestVisible="False" Panel.ZIndex="100"/>
+            <Border Grid.Row="0" Grid.RowSpan="3" x:Name="LevelUpBanner" Panel.ZIndex="101" Visibility="Collapsed"
+                    HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,90,0,0"
                     Background="{DynamicResource CardBrush}"
-                    BorderBrush="{DynamicResource AccentBrush}"
-                    BorderThickness="1.5"
-                    CornerRadius="14"
-                    Padding="20,13"
-                    IsHitTestVisible="False">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="24" ShadowDepth="0" Opacity="0.45"/>
-                </Border.Effect>
+                    BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1.5"
+                    CornerRadius="14" Padding="20,13" IsHitTestVisible="False"
+                    controls:Elevation.Level="3">
                 <StackPanel>
-                    <TextBlock x:Name="LevelUpTitleText"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}"
-                               HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="LevelUpSubText"
-                               FontSize="11"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               HorizontalAlignment="Center"
-                               Margin="0,4,0,0"/>
+                    <TextBlock x:Name="LevelUpTitleText" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="LevelUpSubText" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
         </Grid>

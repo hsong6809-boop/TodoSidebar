@@ -15,6 +15,10 @@
     <Duration x:Key="DurationFast">0:0:0.12</Duration>
     <Duration x:Key="DurationBase">0:0:0.2</Duration>
     <Duration x:Key="DurationSlow">0:0:0.32</Duration>
+    <!-- V2-W2 缓动令牌：入场 Out / 位移 InOut / 确认弹性 -->
+    <CubicEase x:Key="EaseOut" EasingMode="EaseOut"/>
+    <CubicEase x:Key="EaseInOut" EasingMode="EaseInOut"/>
+    <BackEase x:Key="EaseSpring" EasingMode="EaseOut" Amplitude="0.6"/>
 
     <!-- ========== 圆角令牌 ========== -->
     <CornerRadius x:Key="RadiusSmall">8</CornerRadius>
@@ -398,6 +402,78 @@
                                 <Condition Property="IsChecked" Value="False"/>
                             </MultiTrigger.Conditions>
                             <Setter TargetName="TabBg" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+                        </MultiTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ========== V2-W3：导航栏项目 ========== -->
+    <Style x:Key="RailItemStyle" TargetType="RadioButton">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Width" Value="52"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid>
+                        <Border x:Name="ItemBg"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="11"
+                                Padding="0,7"/>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          IsHitTestVisible="False"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="ItemBg" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsChecked" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="ItemBg" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                        </MultiTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ========== V2-W3：分段切换器（Composer 类型）========== -->
+    <Style x:Key="SegmentToggleStyle" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Padding" Value="12,4"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="SegBg"
+                            Background="Transparent"
+                            CornerRadius="999"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="SegBg" Property="Background" Value="{DynamicResource CardBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsChecked" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                         </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

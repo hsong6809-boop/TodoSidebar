@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using TodoSidebar.Services;
 
@@ -34,6 +35,52 @@ namespace TodoSidebar
                 case ThemeType.Light: ThemeLightRadio.IsChecked = true; break;
                 case ThemeType.Dark: ThemeDarkRadio.IsChecked = true; break;
                 case ThemeType.System: ThemeSystemRadio.IsChecked = true; break;
+            }
+
+            // V2-W2：强调色色板
+            BuildAccentSwatches();
+        }
+
+        /// <summary>构建强调色色板（选中项带主色描边环）。</summary>
+        private void BuildAccentSwatches()
+        {
+            if (AccentSwatchPanel == null) return;
+            AccentSwatchPanel.Children.Clear();
+
+            foreach (var palette in Services.ThemeManager.AccentPalettes)
+            {
+                var color = Services.ThemeManager.GetAccentBase(palette.Name);
+                bool selected = string.Equals(_themeManager.CurrentAccent, palette.Name, StringComparison.OrdinalIgnoreCase);
+
+                var dot = new System.Windows.Shapes.Ellipse
+                {
+                    Width = 20,
+                    Height = 20,
+                    Fill = new System.Windows.Media.SolidColorBrush(color)
+                };
+
+                var swatch = new Border
+                {
+                    Width = 30,
+                    Height = 30,
+                    CornerRadius = new CornerRadius(999),
+                    Padding = new Thickness(3),
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    BorderThickness = new Thickness(2),
+                    BorderBrush = selected ? new System.Windows.Media.SolidColorBrush(color) : System.Windows.Media.Brushes.Transparent,
+                    Child = dot,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Margin = new Thickness(0, 0, 8, 4),
+                    ToolTip = $"{palette.Name} 强调色"
+                };
+                var name = palette.Name;
+                swatch.MouseLeftButtonDown += (s, e) =>
+                {
+                    _themeManager.CurrentAccent = name;
+                    BuildAccentSwatches();
+                };
+
+                AccentSwatchPanel.Children.Add(swatch);
             }
         }
 

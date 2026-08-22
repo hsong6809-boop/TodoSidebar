@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Windows;
+using System.Windows.Media;
 using Microsoft.Win32;
 using TodoSidebar.Services;
 
@@ -25,7 +27,46 @@ namespace TodoSidebar.Services
         private const string DarkTokenMarker = "tokens.dark.xaml";
 
         private ThemeType _currentTheme = ThemeType.Light;
+        private string _currentAccent = "Indigo";
         private readonly DatabaseService _dbService;
+
+        /// <summary>
+        /// V2-W2：可用强调色板（名称 / 浅色主题基准色 / 深色主题基准色）。
+        /// 其余变体（Hover/Pressed/Soft/Light/渐变）按明暗主题自动推导。
+        /// </summary>
+        public static readonly (string Name, string LightHex, string DarkHex)[] AccentPalettes =
+        {
+            ("Indigo", "#6366F1", "#818CF8"),
+            ("Ocean",  "#0284C7", "#38BDF8"),
+            ("Sunset", "#EA580C", "#FB923C"),
+            ("Forest", "#059669", "#34D399"),
+            ("Mono",   "#334155", "#94A3B8"),
+        };
+
+        /// <summary>当前强调色名称（持久化于设置表 Accent 键）。</summary>
+        public string CurrentAccent
+        {
+            get => _currentAccent;
+            set
+            {
+                var name = NormalizeAccent(value);
+                if (_currentAccent == name) return;
+                _currentAccent = name;
+                ApplyAccent(IsCurrentlyDark());
+                try { _dbService.SetSetting("Accent", name); } catch (Exception ex) { Debug.WriteLine($"ThemeManager: 保存强调色失败: {ex.Message}"); }
+            }
+        }
+
+        /// <summary>取色板的当前主题基准色。</summary>
+        public static System.Windows.Media.Color GetAccentBase(string accentName)
+        {
+            foreach (var p in AccentPalettes)
+            {
+                if (string.Equals(p.Name, accentName, StringComparison.OrdinalIgnoreCase))
+                    return FromHex(IsCurrentlyDark() ? p.DarkHex : p.LightHex);
+            }
+            return FromHex(AccentPalettes[0].LightHex);
+        }
 
         public ThemeType CurrentTheme
         {
@@ -56,8 +97,26 @@ namespace TodoSidebar.Services
             _dbService = DatabaseService.Instance;
             LoadThemePreference();
 
+            // V2-W2：加载持久化的强调色
+            try
+            {
+                var savedAccent = _dbService.GetSetting("Accent");
+                if (!string.IsNullOrWhiteSpace(savedAccent)) _currentAccent = NormalizeAccent(savedAccent);
+            }
+            catch (Exception ex) { Debug.WriteLine($"ThemeManager: 读取强调色失败: {ex.Message}"); }
+
             // M33：监听系统主题变化，"跟随系统"模式下实时响应明暗切换
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        }
+
+        private static string NormalizeAccent(string value)
+        {
+            foreach (var p in AccentPalettes)
+            {
+                if (string.Equals(p.Name, value, StringComparison.OrdinalIgnoreCase))
+                    return p.Name;
+            }
+            return AccentPalettes[0].Name;
         }
 
         /// <summary>
@@ -132,7 +191,83 @@ namespace TodoSidebar.Services
                 System.Diagnostics.Debug.WriteLine($"ThemeManager: 主题字典替换失败: {ex.Message}");
             }
 
+            // V2-W2：令牌就绪后叠加强调色（根字典值优先于合并字典）
+            ApplyAccent(theme == ThemeType.Dark);
+
             ThemeChanged?.Invoke(this, theme);
+        }
+
+        /// <summary>
+        /// V2-W2：将强调色系刷子写入应用根资源（覆盖令牌字典中的默认 Indigo 值）。
+        /// 按明暗主题自动推导 Hover/Pressed/Light/Soft/Glow/渐变变体。
+        /// </summary>
+        public void ApplyAccent(bool dark)
+        {
+            var app = Application.Current;
+            if (app == null) return;
+
+            try
+            {
+                var baseHex = Array.Find(AccentPalettes, p => p.Name == _currentAccent);
+                var c = FromHex(dark ? baseHex.DarkHex : baseHex.LightHex);
+
+                Color hover = dark ? Lighten(c, 0.14) : Darken(c, 0.10);
+                Color pressed = dark ? Lighten(c, 0.28) : Darken(c, 0.20);
+                Color lighter = Lighten(c, dark ? 0.26 : 0.18);
+                byte softAlpha = dark ? (byte)0x29 : (byte)0x1F;
+
+                SetBrush(app, "AccentBrush", c);
+                SetBrush(app, "PrimaryBrush", c);
+                SetBrush(app, "TypeDailyBrush", c);
+                SetBrush(app, "AccentLightBrush", lighter);
+                SetBrush(app, "AccentHoverBrush", hover);
+                SetBrush(app, "AccentPressedBrush", pressed);
+                SetBrush(app, "AccentSoftBrush", System.Windows.Media.Color.FromArgb(softAlpha, c.R, c.G, c.B));
+                app.Resources["AccentGlowColor"] = c;
+                app.Resources["AccentGradientBrush"] = new System.Windows.Media.LinearGradientBrush
+                {
+                    StartPoint = new Point(0, 0),
+                    EndPoint = new Point(1, 1),
+                    GradientStops =
+                    {
+                        new System.Windows.Media.GradientStop(c, 0),
+                        new System.Windows.Media.GradientStop(Lighten(c, dark ? 0.30 : 0.28), 1)
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ThemeManager: 应用强调色失败: {ex.Message}");
+            }
+        }
+
+        private static void SetBrush(Application app, string key, System.Windows.Media.Color color)
+        {
+            var brush = new System.Windows.Media.SolidColorBrush(color);
+            brush.Freeze();
+            app.Resources[key] = brush;
+        }
+
+        private static System.Windows.Media.Color FromHex(string hex) =>
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+
+        private static System.Windows.Media.Color Lighten(System.Windows.Media.Color c, double amount) => Shift(c, amount);
+
+        private static System.Windows.Media.Color Darken(System.Windows.Media.Color c, double amount) => Shift(c, -amount);
+
+        private static System.Windows.Media.Color Shift(System.Windows.Media.Color c, double amount)
+        {
+            if (amount >= 0)
+            {
+                byte L(byte v) => (byte)(v + (255 - v) * amount);
+                return System.Windows.Media.Color.FromRgb(L(c.R), L(c.G), L(c.B));
+            }
+            else
+            {
+                var k = 1 + amount;
+                byte D(byte v) => (byte)(v * k);
+                return System.Windows.Media.Color.FromRgb(D(c.R), D(c.G), D(c.B));
+            }
         }
 
         /// <summary>

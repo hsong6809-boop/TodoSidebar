@@ -100,13 +100,16 @@ namespace TodoSidebar
             public string Title { get; }
             public string ProgressText { get; }
             public string StatusText { get; }
+            /// <summary>V2-W4：完成比例（0~1），供进度条宽度绑定。</summary>
+            public double ProgressFraction { get; }
 
             public ChallengeItem(TodoSidebar.Models.DailyChallenge c)
             {
                 Icon = c.Icon;
                 Title = c.Title;
-                ProgressText = $"{c.Progress}/{c.Target} · 奖励 +{c.Xp} XP";
-                StatusText = c.Completed ? "✅ 已完成" : "⏳ 进行中";
+                ProgressText = $"{c.Progress}/{c.Target}";
+                StatusText = c.Completed ? "✓" : "";
+                ProgressFraction = Math.Clamp(c.Target > 0 ? (double)c.Progress / c.Target : 0, 0, 1);
             }
         }
 
@@ -243,6 +246,22 @@ namespace TodoSidebar
             var (completed, interrupted, minutes) = _cachedTodayStats;
             FocusTodayText.Text = $"今日番茄：{completed} 个 · 专注 {minutes} 分钟{(interrupted > 0 ? $" · 中断 {interrupted}" : "")}";
             FocusRoundText.Text = $"本轮：{completed % PomodoroService.RoundsPerCycle}/{PomodoroService.RoundsPerCycle} · 每日目标 {completed}/{PomodoroService.DailyTarget}";
+
+            // V2-W4：仪表盘快速专注卡同步刷新
+            if (QuickFocusRing != null)
+                QuickFocusRing.Progress = Math.Clamp(progress, 0, 1);
+            if (QuickFocusTimeText != null)
+                QuickFocusTimeText.Text = PomodoroService.FormatTime(pomo.RemainingSeconds);
+            if (QuickFocusStateText != null)
+                QuickFocusStateText.Text = pomo.State switch
+                {
+                    PomodoroState.Focus => "专注中…",
+                    PomodoroState.Paused => "已暂停",
+                    PomodoroState.Break => "休息中…",
+                    _ => "准备开始"
+                };
+            if (QuickFocusButton != null && QuickFocusButton.Content is StackPanel sp && sp.Children.Count > 1 && sp.Children[1] is TextBlock label)
+                label.Text = pomo.State == PomodoroState.Paused ? "继续" : "开始专注";
         }
 
         /// <summary>缓存超过 30 秒未更新则重新查询今日统计，否则直接复用</summary>
@@ -463,41 +482,47 @@ namespace TodoSidebar
             }));
         }
 
-        private void Tab_Checked(object sender, RoutedEventArgs e)
+        private void Nav_Checked(object sender, RoutedEventArgs e)
         {
+            if (sender is not System.Windows.Controls.RadioButton rb || rb.Tag is not string page) return;
+
+            var showDashboard = page == "Dashboard";
+            DashboardPanel.Visibility = showDashboard ? Visibility.Visible : Visibility.Collapsed;
+            HistoryPanel.Visibility = page == "History" ? Visibility.Visible : Visibility.Collapsed;
+            StatisticsPanel.Visibility = page == "Stats" ? Visibility.Visible : Visibility.Collapsed;
+            FocusPanel.Visibility = page == "Focus" ? Visibility.Visible : Visibility.Collapsed;
+
             if (DataContext is MainViewModel vm)
             {
-                if (sender == TabDaily)
-                {
-                    vm.SelectedTabIndex = 0;
-                    LoadChallenges(); // 切回每日 Tab 刷新挑战进度
-                }
-                else if (sender == TabDeadline) vm.SelectedTabIndex = 1;
-                else if (sender == TabHistory) vm.SelectedTabIndex = 2;
-                else if (sender == TabStatistics)
-                {
-                    vm.SelectedTabIndex = 3;
-                }
-                else if (sender == TabFocus)
-                {
-                    vm.SelectedTabIndex = 4;
-                    UpdateFocusPanel();
-                    LoadFocusTasks();
-                }
+                vm.SelectedTabIndex = showDashboard ? 0 : page == "History" ? 2 : page == "Stats" ? 3 : 4;
             }
 
-            // P4：Tab 内容轻量交叉淡入（8px 上移），统一动效语言
+            if (showDashboard) LoadChallenges(); // 回到今日页刷新挑战进度
+            if (page == "Focus")
+            {
+                UpdateFocusPanel();
+                LoadFocusTasks();
+            }
+
             AnimateActiveTabPanel();
+        }
+
+        /// <summary>导航栏底部"设置"入口（不参与页面分组）。</summary>
+        private void NavExtra_Checked(object sender, RoutedEventArgs e)
+        {
+            // 立即弹回页面选中态，设置按钮不驻留选中
+            if (sender is System.Windows.Controls.RadioButton rb)
+                rb.IsChecked = false;
+            SettingsButton_Click(sender, new RoutedEventArgs());
         }
 
         /// <summary>对当前可见的内容面板播放淡入 + 轻微上移动画（用 RenderTransform，不影响布局）。</summary>
         private void AnimateActiveTabPanel()
         {
-            FrameworkElement? panel = TabDaily?.IsChecked == true ? DailyPanel
-                : TabDeadline?.IsChecked == true ? DeadlinePanel
-                : TabHistory?.IsChecked == true ? HistoryPanel
-                : TabStatistics?.IsChecked == true ? StatisticsPanel
-                : TabFocus?.IsChecked == true ? FocusPanel
+            FrameworkElement? panel = DashboardPanel?.Visibility == Visibility.Visible ? DashboardPanel
+                : HistoryPanel?.Visibility == Visibility.Visible ? HistoryPanel
+                : StatisticsPanel?.Visibility == Visibility.Visible ? StatisticsPanel
+                : FocusPanel?.Visibility == Visibility.Visible ? FocusPanel
                 : null;
 
             if (panel == null) return;
@@ -520,6 +545,11 @@ namespace TodoSidebar
 
             panel.BeginAnimation(UIElement.OpacityProperty, fadeIn);
             translate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideUp);
+        }
+
+        /// <summary>Composer 类型分段切换（每日/截止）：仅控制截止日期选择器可见性，无需额外逻辑。</summary>
+        private void SegmentType_Checked(object sender, RoutedEventArgs e)
+        {
         }
 
         private void Priority_Checked(object sender, RoutedEventArgs e)
