@@ -238,14 +238,20 @@ namespace TodoSidebar
                 _ => "🍅 准备开始专注"
             };
 
-            FocusStartButton.Content = pomo.State == PomodoroState.Paused ? "▶ 继续" : "▶ 开始专注";
+            if (FocusStartLabel != null)
+                FocusStartLabel.Text = pomo.State == PomodoroState.Paused ? "继续" : "开始专注";
 
             // 今日统计读缓存（M35）：Tick 每秒触发本方法，统计文本仅每 30 秒
             // （或状态变化/会话完成事件强制失效后）重新查库一次
             RefreshTodayStatsCache();
             var (completed, interrupted, minutes) = _cachedTodayStats;
-            FocusTodayText.Text = $"今日番茄：{completed} 个 · 专注 {minutes} 分钟{(interrupted > 0 ? $" · 中断 {interrupted}" : "")}";
-            FocusRoundText.Text = $"本轮：{completed % PomodoroService.RoundsPerCycle}/{PomodoroService.RoundsPerCycle} · 每日目标 {completed}/{PomodoroService.DailyTarget}";
+
+            // V2-W6：沉浸式底部统计条
+            if (StatPomodoros != null) StatPomodoros.Text = completed.ToString();
+            if (StatMinutes != null) StatMinutes.Text = $"{minutes} 分";
+            if (StatInterrupted != null) StatInterrupted.Text = interrupted.ToString();
+            if (StatRounds != null) StatRounds.Text = $"{completed % PomodoroService.RoundsPerCycle}/{PomodoroService.RoundsPerCycle}";
+            RefreshSessionDots(completed);
 
             // V2-W4：仪表盘快速专注卡同步刷新
             if (QuickFocusRing != null)
@@ -274,6 +280,41 @@ namespace TodoSidebar
 
         /// <summary>强制下次 UpdateFocusPanel 重新查询今日统计</summary>
         private void InvalidateTodayStatsCache() => _statsLastRefreshed = DateTime.MinValue;
+
+        /// <summary>V2-W6：刷新专注回合圆点（已完成的填充主色渐变，未完成空心）。</summary>
+        private void RefreshSessionDots(int completedToday)
+        {
+            if (SessionDots == null) return;
+            var rounds = PomodoroService.RoundsPerCycle;
+            var current = completedToday % rounds;
+
+            if (SessionDots.Children.Count != rounds)
+            {
+                SessionDots.Children.Clear();
+                for (int i = 0; i < rounds; i++)
+                    SessionDots.Children.Add(new System.Windows.Shapes.Ellipse { Width = 9, Height = 9 });
+            }
+
+            var gradient = TryFindResource("AccentGradientBrush") as Brush;
+            var outline = new SolidColorBrush(Color.FromArgb(0xFF, 0x33, 0x41, 0x5E)); outline.Freeze();
+
+            for (int i = 0; i < SessionDots.Children.Count; i++)
+            {
+                if (SessionDots.Children[i] is not System.Windows.Shapes.Ellipse dot) continue;
+                dot.Margin = new Thickness(i == 0 ? 0 : 6, 0, 0, 0);
+                if (i < current && gradient != null)
+                {
+                    dot.Fill = gradient;
+                    dot.StrokeThickness = 0;
+                }
+                else
+                {
+                    dot.Fill = Brushes.Transparent;
+                    dot.Stroke = outline;
+                    dot.StrokeThickness = 1.6;
+                }
+            }
+        }
 
         private void FocusStart_Click(object sender, RoutedEventArgs e)
         {
@@ -503,6 +544,7 @@ namespace TodoSidebar
                 UpdateFocusPanel();
                 LoadFocusTasks();
             }
+            if (page == "Stats") LoadTrendChart();
 
             AnimateActiveTabPanel();
         }
@@ -514,6 +556,31 @@ namespace TodoSidebar
             if (sender is System.Windows.Controls.RadioButton rb)
                 rb.IsChecked = false;
             SettingsButton_Click(sender, new RoutedEventArgs());
+        }
+
+        /// <summary>V2-W6：加载近 30 天完成趋势折线图。</summary>
+        private void LoadTrendChart()
+        {
+            try
+            {
+                var records = DatabaseService.Instance.GetDailyCompletionRecords(30);
+                var values = new List<double>();
+                var today = DateTime.Today;
+                for (int i = 29; i >= 0; i--)
+                {
+                    var key = today.AddDays(-i).ToString("yyyy-MM-dd");
+                    values.Add(records.TryGetValue(key, out var set) ? set.Count : 0);
+                }
+                ThirtyDayChart.Values = values;
+                if (TrendRangeText != null)
+                    TrendRangeText.Text = $"{today.AddDays(-29):MM/dd} — {today:MM/dd}";
+                if (TrendTotalText != null)
+                    TrendTotalText.Text = $"30 天累计完成 {values.Sum():0} 次";
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadTrendChart error: {ex.Message}");
+            }
         }
 
         /// <summary>对当前可见的内容面板播放淡入 + 轻微上移动画（用 RenderTransform，不影响布局）。</summary>
