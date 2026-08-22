@@ -20,6 +20,11 @@ namespace TodoSidebar
         /// 共享的 ViewModel 实例，确保窗口切换时数据同步
         /// </summary>
         public static MainViewModel SharedViewModel { get; set; } = null!;
+
+        /// <summary>
+        /// V2：用户昵称（设置页可改；侧边栏问候语与头像优先显示）。
+        /// </summary>
+        public static string Nickname { get; set; } = string.Empty;
         
         private static EventHandler<bool>? _loginStateHandler;
 
@@ -51,6 +56,10 @@ namespace TodoSidebar
             // V2 收尾：读取"减少动态效果"设置
             try { AnimationService.ReduceMotion = DatabaseService.Instance.GetSetting("ReduceMotion") == "true"; }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"读取 ReduceMotion 设置失败: {ex.Message}"); }
+
+            // V2：加载昵称
+            try { Nickname = DatabaseService.Instance.GetSetting("Nickname") ?? string.Empty; }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"读取昵称失败: {ex.Message}"); }
 
             // 注册全局异常处理
             DispatcherUnhandledException += App_DispatcherUnhandledException;

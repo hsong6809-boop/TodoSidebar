@@ -39,9 +39,11 @@ namespace TodoSidebar
                 LoadDashboardHeader();
                 try
                 {
-                    var email = ((IAuthService)AuthService.Instance).CurrentEmail;
-                    if (!string.IsNullOrWhiteSpace(email))
-                        AvatarText.Text = email.Substring(0, 1).ToUpperInvariant();
+                    var initial = !string.IsNullOrWhiteSpace(App.Nickname)
+                        ? App.Nickname
+                        : ((IAuthService)AuthService.Instance).CurrentEmail ?? "";
+                    if (!string.IsNullOrWhiteSpace(initial))
+                        AvatarText.Text = initial.Substring(0, 1).ToUpperInvariant();
                 }
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Avatar init error: {ex.Message}"); }
             };

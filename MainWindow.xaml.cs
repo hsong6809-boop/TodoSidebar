@@ -209,14 +209,22 @@ namespace TodoSidebar
                 < 18 => "下午好",
                 _ => "晚上好"
             };
-            string name = "朋友";
-            try
+            string name;
+            if (!string.IsNullOrWhiteSpace(App.Nickname))
             {
-                var email = ((IAuthService)AuthService.Instance).CurrentEmail;
-                if (!string.IsNullOrWhiteSpace(email))
-                    name = email.Split('@')[0];
+                name = App.Nickname;
             }
-            catch { /* 未登录/服务异常时用默认称呼 */ }
+            else
+            {
+                name = "朋友";
+                try
+                {
+                    var email = ((IAuthService)AuthService.Instance).CurrentEmail;
+                    if (!string.IsNullOrWhiteSpace(email))
+                        name = email.Split('@')[0];
+                }
+                catch { /* 未登录/服务异常时用默认称呼 */ }
+            }
             GreetingText.Text = $"{part}，{name}";
         }
 

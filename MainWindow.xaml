@@ -127,7 +127,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="100"/>
                             </Grid.ColumnDefinitions>
                             <!-- 进度环 -->
                             <Grid Width="66" Height="66" VerticalAlignment="Center">
@@ -141,28 +141,32 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
                             <!-- 主数值 -->
-                            <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
+                            <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
                                 <TextBlock Text="今日进度" FontSize="{DynamicResource FontSizeCaption}"
                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
                                 <TextBlock Text="{Binding TodayDoneText}"
                                            FontSize="17" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,3"/>
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,3"
+                                           TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
-                            <!-- 右侧徽章列 -->
-                            <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                            <!-- 右侧徽章列（定宽防挤压） -->
+                            <StackPanel Grid.Column="2" VerticalAlignment="Top" HorizontalAlignment="Right">
                                 <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="7,2"
                                         HorizontalAlignment="Right"
                                         Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
                                     <TextBlock Text="{Binding ComboDisplay}" FontSize="10" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ComboBrush}"/>
+                                               Foreground="{DynamicResource ComboBrush}" MaxWidth="86"
+                                               TextTrimming="CharacterEllipsis"/>
                                 </Border>
                                 <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="10" Padding="8,4"
-                                        HorizontalAlignment="Right" Margin="0,6,0,0">
+                                        Margin="0,6,0,0">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding LevelDisplay}" FontSize="9.5" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding LevelDisplay}" FontSize="9" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   HorizontalAlignment="Left" MaxWidth="84"
+                                                   TextTrimming="CharacterEllipsis"/>
                                         <ProgressBar Height="3" Minimum="0" Maximum="1"
-                                                     Value="{Binding LevelProgress}" Margin="0,3,0,0" Width="44"
+                                                     Value="{Binding LevelProgress}" Margin="0,3,0,0"
                                                      Foreground="{DynamicResource AccentGradientBrush}"/>
                                     </StackPanel>
                                 </Border>
@@ -176,7 +180,7 @@
                     <!-- 快速添加 -->
                     <StackPanel Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}">
                         <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="999"
+                                CornerRadius="10"
                                 BorderBrush="{DynamicResource BorderStrongBrush}"
                                 BorderThickness="1">
                             <Grid>

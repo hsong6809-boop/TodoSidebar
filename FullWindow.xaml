@@ -75,39 +75,8 @@
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <!-- 搜索胶囊（打开 Ctrl+K 命令面板） -->
-                        <Button Click="SearchCapsule_Click" ToolTip="搜索与快捷命令 (Ctrl+K)"
-                                Cursor="Hand" FocusVisualStyle="{x:Null}" Margin="0,0,10,0">
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border x:Name="Capsule"
-                                            Background="{DynamicResource CardBrush}"
-                                            BorderBrush="{DynamicResource BorderStrongBrush}"
-                                            BorderThickness="1" CornerRadius="999" Padding="12,5">
-                                        <StackPanel Orientation="Horizontal">
-                                            <controls:AppIcon Glyph="{x:Static controls:Icons.Search}"
-                                                              FontSize="11" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                                            <TextBlock Text="搜索" FontSize="11"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       VerticalAlignment="Center"/>
-                                            <Border Background="{DynamicResource AccentSoftBrush}"
-                                                    CornerRadius="6" Padding="6,2" Margin="8,0,0,0">
-                                                <TextBlock Text="Ctrl K" FontSize="8.5" FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource AccentBrush}"/>
-                                            </Border>
-                                        </StackPanel>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Capsule" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                            <Setter TargetName="Capsule" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Button.Template>
-                        </Button>
                         <Button x:Name="ThemeToggleButton" Style="{StaticResource HeaderIconButton}"
-                                Click="ThemeToggle_Click" ToolTip="切换明暗主题" Margin="8,0,0,0">
+                                Click="ThemeToggle_Click" ToolTip="切换明暗主题">
                             <controls:AppIcon x:Name="ThemeToggleIcon" Glyph="{x:Static controls:Icons.Moon}" FontSize="12"/>
                         </Button>
                         <Border Width="28" Height="28" CornerRadius="999"
