@@ -139,12 +139,14 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
 
-                            <!-- 中：今日完成（上）+ 连击（下） -->
+                            <!-- 中：今日完成(标签+数值) 与 连击 -->
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="13,0,10,0">
-                                <TextBlock Text="{Binding TodayDoneText, StringFormat='今日完成 {0}'}"
-                                           FontSize="11.5" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                <TextBlock Text="今日完成" FontSize="10"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding TodayDoneText}"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,1"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
                                             Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
                                     <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
                                                       FontSize="10" Foreground="{DynamicResource ComboBrush}"
@@ -166,15 +168,6 @@
                                              Foreground="{DynamicResource AccentGradientBrush}"/>
                                 <TextBlock Text="{Binding LevelProgressText}"
                                            FontSize="10.5" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <!-- 连击天数（移至等级块下方） -->
-                                <StackPanel Orientation="Horizontal" Margin="0,9,0,0"
-                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
-                                                      FontSize="10" Foreground="{DynamicResource ComboBrush}"
-                                                      VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="10.5" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ComboBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -205,9 +198,10 @@
                             </Grid>
                         </Border>
                         <StackPanel Orientation="Horizontal" Margin="4,7,0,0">
-                            <DatePicker x:Name="QuickDeadlinePicker" FontSize="10.5" Height="24"
-                                        SelectedDateFormat="Short" Width="112"
-                                        VerticalContentAlignment="Center"/>
+                            <DatePicker x:Name="QuickDeadlinePicker" FontSize="10.5"
+                                        SelectedDateFormat="Short" Width="150"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip="选择日期 → 添加为截止任务；不选则为每日任务"/>
                             <TextBlock Text="不选日期 = 每日任务" FontSize="9.5"
                                        Foreground="{DynamicResource TextTertiaryBrush}"
                                        VerticalAlignment="Center" Margin="8,0,0,0"/>
