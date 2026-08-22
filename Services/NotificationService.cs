@@ -90,7 +90,8 @@ namespace TodoSidebar.Services
                             continue;
                     }
 
-                    var timeLeft = task.Deadline.Value - DateTime.Now;
+                    // V2：到期时刻 = 截止日 24 点（而非当日 0 点）
+                    var timeLeft = task.DeadlineEndOfDay - DateTime.Now;
 
                     // 已过期
                     if (timeLeft.TotalMinutes <= 0)

@@ -164,21 +164,27 @@ namespace TodoSidebar.Models
         };
         
         // 截止日期紧急程度
+        /// <summary>
+        /// V2：截止时刻 = 截止日当天 24 点（次日 0 点）。
+        /// 设置 8 月 29 日到期 → 29 日全天可做，30 日 0 点才算逾期。
+        /// </summary>
+        public DateTime DeadlineEndOfDay => Deadline.Value.Date.AddDays(1);
+
         public string DeadlineUrgency
         {
             get
             {
                 if (Deadline == null) return "";
-                var timeLeft = Deadline.Value - DateTime.Now;
-                
-                if (timeLeft.TotalDays < 0)
-                    return "已过期";
-                else if (timeLeft.TotalHours < 1)
-                    return $"{(int)timeLeft.TotalMinutes}分钟后";
-                else if (timeLeft.TotalHours < 24)
+                var timeLeft = DeadlineEndOfDay - DateTime.Now;
+
+                if (timeLeft.TotalMinutes <= 0)
+                    return "已逾期";
+                else if (timeLeft.TotalDays >= 1)
+                    return $"{(int)timeLeft.TotalDays}天后";
+                else if (timeLeft.TotalHours >= 1)
                     return $"{(int)timeLeft.TotalHours}小时后";
                 else
-                    return $"{(int)timeLeft.TotalDays}天后";
+                    return $"{Math.Max(0, (int)timeLeft.TotalMinutes)}分钟后";
             }
         }
 
