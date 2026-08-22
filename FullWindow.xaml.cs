@@ -117,17 +117,76 @@ namespace TodoSidebar
 
         #region 成就
 
-        /// <summary>打开成就图鉴</summary>
+        /// <summary>打开成就图鉴（V2-W7：改为导航到应用内成就页）。</summary>
         private void BrowseBadges_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var window = new AchievementWindow { Owner = this };
-                window.ShowDialog();
+                NavigateTo("Achievements");
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"BrowseBadges error: {ex.Message}");
+            }
+        }
+
+        /// <summary>V2-W7：加载成就徽章墙。</summary>
+        private void LoadAchievements()
+        {
+            try
+            {
+                var defs = AchievementService.Instance.GetDefinitions();
+                var unlocked = DatabaseService.Instance.GetUnlockedAchievements();
+
+                var items = defs.Select(d => new
+                {
+                    d.Icon,
+                    d.Name,
+                    d.Description,
+                    Unlocked = unlocked.Contains(d.Id)
+                }).ToList();
+
+                AchievementsList.ItemsSource = items;
+                AchievementsCountText.Text = $"{items.Count(i => i.Unlocked)} / {items.Count} 已解锁";
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadAchievements error: {ex.Message}");
+            }
+        }
+
+        /// <summary>V2-W7：打开 Ctrl+K 命令面板。</summary>
+        private void OpenCommandPalette()
+        {
+            bool dark = ThemeManager.IsCurrentlyDark();
+            var commands = new List<Controls.PaletteCommand>
+            {
+                new("前往 · 今日", "仪表盘与任务流", "Calendar", () => NavigateTo("Dashboard")),
+                new("前往 · 历史", "已完成任务记录", "CheckList", () => NavigateTo("History")),
+                new("前往 · 统计", "趋势图表与数据概览", "Chart", () => NavigateTo("Stats")),
+                new("前往 · 专注", "沉浸式番茄钟", "Timer", () => NavigateTo("Focus")),
+                new("前往 · 成就", "徽章图鉴", "Star", () => NavigateTo("Achievements")),
+                new("新建任务", "聚焦到底部输入框", "Add",
+                    () => { NavigateTo("Dashboard"); TaskInput.Focus(); }),
+                new(dark ? "切换到浅色主题" : "切换到深色主题", "即时全局生效", dark ? "Eye" : "Lock",
+                    () => ThemeManager.Instance.CurrentTheme = dark ? ThemeType.Light : ThemeType.Dark),
+                new("上传到云端", "同步本机变更", "Upload",
+                    () => (DataContext as MainViewModel)?.SyncViewModel?.UploadCommand?.Execute(null)),
+                new("从云端下载", "拉取远端变更", "Download",
+                    () => (DataContext as MainViewModel)?.SyncViewModel?.DownloadCommand?.Execute(null)),
+                new("打开设置", "主题 / 强调色 / 数据管理", "Settings",
+                    () => SettingsButton_Click(null!, new RoutedEventArgs())),
+            };
+
+            Controls.CommandPalette.Show(this, commands);
+        }
+
+        private void FullWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                OpenCommandPalette();
+                e.Handled = true;
             }
         }
 
@@ -526,12 +585,39 @@ namespace TodoSidebar
         private void Nav_Checked(object sender, RoutedEventArgs e)
         {
             if (sender is not System.Windows.Controls.RadioButton rb || rb.Tag is not string page) return;
+            Nav_ApplyPage(page);
+        }
 
+        /// <summary>V2-W7：统一页面路由（导航栏与命令面板共用）。</summary>
+        private void NavigateTo(string page)
+        {
+            var target = page switch
+            {
+                "History" => NavHistory,
+                "Stats" => NavStats,
+                "Focus" => NavFocus,
+                "Achievements" => NavAchievements,
+                _ => NavDashboard
+            };
+
+            if (target.IsChecked == true)
+            {
+                Nav_ApplyPage(page); // 已在目标页：强制刷新内容
+            }
+            else
+            {
+                target.IsChecked = true; // 触发 Nav_Checked
+            }
+        }
+
+        private void Nav_ApplyPage(string page)
+        {
             var showDashboard = page == "Dashboard";
             DashboardPanel.Visibility = showDashboard ? Visibility.Visible : Visibility.Collapsed;
             HistoryPanel.Visibility = page == "History" ? Visibility.Visible : Visibility.Collapsed;
             StatisticsPanel.Visibility = page == "Stats" ? Visibility.Visible : Visibility.Collapsed;
             FocusPanel.Visibility = page == "Focus" ? Visibility.Visible : Visibility.Collapsed;
+            AchievementsPanel.Visibility = page == "Achievements" ? Visibility.Visible : Visibility.Collapsed;
 
             if (DataContext is MainViewModel vm)
             {
@@ -545,6 +631,7 @@ namespace TodoSidebar
                 LoadFocusTasks();
             }
             if (page == "Stats") LoadTrendChart();
+            if (page == "Achievements") LoadAchievements();
 
             AnimateActiveTabPanel();
         }

@@ -12,7 +12,8 @@
         WindowStartupLocation="CenterScreen"
         Background="Transparent"
         AllowsTransparency="True"
-        WindowStyle="None">
+        WindowStyle="None"
+        PreviewKeyDown="FullWindow_PreviewKeyDown">
 
     <Window.Resources>
         <!-- V2-W5：截止任务按紧急度分组（逾期 → 今天 → 未来7天 → 更远） -->
@@ -111,7 +112,7 @@
                         </RadioButton>
                         <!-- 导航项 -->
                         <StackPanel Margin="0,12">
-                            <RadioButton GroupName="NavRail" IsChecked="True" Tag="Dashboard"
+                            <RadioButton x:Name="NavDashboard" GroupName="NavRail" IsChecked="True" Tag="Dashboard"
                                          Style="{StaticResource RailItemStyle}" ToolTip="今日"
                                          Checked="Nav_Checked">
                                 <StackPanel>
@@ -119,7 +120,7 @@
                                     <TextBlock Text="今日" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </RadioButton>
-                            <RadioButton GroupName="NavRail" Tag="History"
+                            <RadioButton x:Name="NavHistory" GroupName="NavRail" Tag="History"
                                          Style="{StaticResource RailItemStyle}" ToolTip="历史"
                                          Margin="0,6,0,0" Checked="Nav_Checked">
                                 <StackPanel>
@@ -127,7 +128,7 @@
                                     <TextBlock Text="历史" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </RadioButton>
-                            <RadioButton GroupName="NavRail" Tag="Stats"
+                            <RadioButton x:Name="NavStats" GroupName="NavRail" Tag="Stats"
                                          Style="{StaticResource RailItemStyle}" ToolTip="统计"
                                          Margin="0,6,0,0" Checked="Nav_Checked">
                                 <StackPanel>
@@ -135,12 +136,20 @@
                                     <TextBlock Text="统计" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </RadioButton>
-                            <RadioButton GroupName="NavRail" Tag="Focus"
+                            <RadioButton x:Name="NavFocus" GroupName="NavRail" Tag="Focus"
                                          Style="{StaticResource RailItemStyle}" ToolTip="专注"
                                          Margin="0,6,0,0" Checked="Nav_Checked">
                                 <StackPanel>
                                     <controls:AppIcon Glyph="{x:Static controls:Icons.Timer}" FontSize="15"/>
                                     <TextBlock Text="专注" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavAchievements" GroupName="NavRail" Tag="Achievements"
+                                         Style="{StaticResource RailItemStyle}" ToolTip="成就"
+                                         Margin="0,6,0,0" Checked="Nav_Checked">
+                                <StackPanel>
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Star}" FontSize="15"/>
+                                    <TextBlock Text="成就" FontSize="8.5" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </RadioButton>
                         </StackPanel>
@@ -515,6 +524,61 @@
                             </Border>
                         </StackPanel>
                     </ScrollViewer>
+
+                    <!-- ===== 成就页（V2-W7）===== -->
+                    <Grid x:Name="AchievementsPanel" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="成就徽章" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="8,2" Margin="8,0,0,0">
+                                <TextBlock x:Name="AchievementsCountText" Text="0 / 0 已解锁" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource ComboBrush}"/>
+                            </Border>
+                        </StackPanel>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="AchievementsList">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="152" Margin="0,0,10,10" CornerRadius="14"
+                                                Background="{DynamicResource CardBrush}" Padding="12,12"
+                                                controls:Elevation.Level="1">
+                                            <StackPanel>
+                                                <Grid Width="54" Height="54" HorizontalAlignment="Left">
+                                                    <Ellipse x:Name="BadgeCircle" Fill="{DynamicResource SurfaceHoverBrush}"/>
+                                                    <TextBlock Text="{Binding Icon}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}" Margin="0,9,0,0"/>
+                                                <TextBlock Text="{Binding Description}" FontSize="10"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           TextWrapping="Wrap" Margin="0,2,0,0" MinHeight="26"/>
+                                                <TextBlock x:Name="BadgeStatus" Text="未解锁" FontSize="9.5"
+                                                           Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding Unlocked}" Value="True">
+                                                <Setter TargetName="BadgeCircle" Property="Fill" Value="{DynamicResource AccentSoftBrush}"/>
+                                                <Setter TargetName="BadgeStatus" Property="Text" Value="已解锁 ✓"/>
+                                                <Setter TargetName="BadgeStatus" Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                                <Setter TargetName="BadgeStatus" Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Unlocked}" Value="False">
+                                                <Setter TargetName="BadgeCircle" Property="Opacity" Value="0.45"/>
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
 
                     <!-- ===== 专注页（V2-W6 沉浸式场景，刻意与明暗主题无关的深色氛围）===== -->
                     <Grid x:Name="FocusPanel" Visibility="Collapsed">
