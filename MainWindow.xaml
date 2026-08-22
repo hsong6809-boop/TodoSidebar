@@ -139,20 +139,12 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
 
-                            <!-- 中：昵称 + 连击天数 -->
+                            <!-- 中：昵称 + 今日完成 -->
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="13,0,10,0">
                                 <TextBlock x:Name="HeroNickname" Text=""
                                            FontSize="15" FontWeight="Bold"
                                            Foreground="{DynamicResource TextBrush}"
                                            TextTrimming="CharacterEllipsis"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0"
-                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
-                                                      FontSize="10" Foreground="{DynamicResource ComboBrush}"
-                                                      VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="11" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource ComboBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
                                 <TextBlock Text="{Binding TodayDoneText, StringFormat='今日完成 {0}'}"
                                            FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
                                            Margin="0,5,0,0"/>
@@ -170,6 +162,15 @@
                                              Foreground="{DynamicResource AccentGradientBrush}"/>
                                 <TextBlock Text="{Binding LevelProgressText}"
                                            FontSize="10.5" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <!-- 连击天数（移至等级块下方） -->
+                                <StackPanel Orientation="Horizontal" Margin="0,9,0,0"
+                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
+                                                      FontSize="10" Foreground="{DynamicResource ComboBrush}"
+                                                      VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="10.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource ComboBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>
