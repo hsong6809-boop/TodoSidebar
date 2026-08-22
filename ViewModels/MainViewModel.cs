@@ -84,6 +84,14 @@ namespace TodoSidebar.ViewModels
             TodayDoneText = $"{done} / {total}";
         }
 
+        // ===== V2 侧边栏「接下来」行动卡 =====
+        [ObservableProperty]
+        private string _nextTaskTitle = "暂无待办";
+
+        /// <summary>取当前待办第一项标题。</summary>
+        public void RefreshNextTask()
+            => NextTaskTitle = CurrentTasks.FirstOrDefault()?.Title ?? "暂无待办";
+
         /// <summary>升级事件（窗口订阅显示横幅与粒子）</summary>
         public event EventHandler<LevelUpEventArgs>? LevelUpOccurred;
 
@@ -256,7 +264,10 @@ namespace TodoSidebar.ViewModels
 
             // V2 侧边栏驾驶舱：今日进度环与计数联动
             if (sender == TodayCompletedTasks || sender == CurrentTasks)
+            {
                 RefreshTodayProgress();
+                RefreshNextTask();
+            }
         }
 
         /// <summary>

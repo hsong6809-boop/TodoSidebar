@@ -175,37 +175,51 @@
 
                 <!-- ===== Composer / 搜索（互斥切换）===== -->
                 <Grid Grid.Row="2" Background="Transparent" Margin="16,10,16,6">
-                    <!-- 快速添加 -->
+                    <!-- 「接下来」行动卡（替代原输入框+日期选择器） -->
                     <StackPanel Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}">
                         <Border Background="{DynamicResource CardBrush}"
-                                CornerRadius="10"
-                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                CornerRadius="14" Padding="12,11"
+                                BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1">
+                            <StackPanel>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="QuickAddInput"
-                                         controls:Placeholder.Text="添加任务，回车确认…"
-                                         BorderThickness="0"
-                                         Background="Transparent"
-                                         Padding="14,9,44,9"
-                                         FontSize="12.5"
-                                         Foreground="{DynamicResource TextBrush}"
-                                         VerticalContentAlignment="Center"
-                                         KeyDown="QuickAddInput_KeyDown"/>
+                                <Border Width="34" Height="34" CornerRadius="10"
+                                        Background="{DynamicResource AccentSoftBrush}" VerticalAlignment="Center">
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.PlayCircle}"
+                                                      FontSize="15" Foreground="{DynamicResource AccentBrush}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="11,0,0,0">
+                                    <TextBlock Text="接下来" FontSize="9.5"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"/>
+                                    <TextBlock Text="{Binding NextTaskTitle}" FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"
+                                               TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                </StackPanel>
                             </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                                <Button Click="MiniFocusStart_Click" ToolTip="为第一项待办开始专注"
+                                        Style="{StaticResource PrimaryButton}" Padding="10,5">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="8"
+                                                          Foreground="White" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <TextBlock Text="开始专注" FontSize="10.5" Foreground="White" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="ExpandFullMode_Click" ToolTip="展开完整窗口添加任务"
+                                        Style="{StaticResource SecondaryButton}" Padding="10,5" Margin="6,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="8"
+                                                          VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <TextBlock Text="新建任务" FontSize="10.5" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            </StackPanel>
                         </Border>
-                        <StackPanel Orientation="Horizontal" Margin="4,7,0,0">
-                            <DatePicker x:Name="QuickDeadlinePicker" FontSize="10.5"
-                                        SelectedDateFormat="Short" Width="150"
-                                        VerticalContentAlignment="Center"
-                                        ToolTip="选择日期 → 添加为截止任务；不选则为每日任务"/>
-                            <TextBlock Text="不选日期 = 每日任务" FontSize="9.5"
-                                       Foreground="{DynamicResource TextTertiaryBrush}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0"/>
-                        </StackPanel>
                     </StackPanel>
 
                     <!-- 搜索框 -->

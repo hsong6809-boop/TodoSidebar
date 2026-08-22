@@ -721,66 +721,7 @@ namespace TodoSidebar
 
         #region 任务操作
 
-        private void QuickAddButton_Click(object sender, RoutedEventArgs e)
-        {
-            AddQuickTask();
-        }
-
-        private void QuickAddInput_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                AddQuickTask();
-            }
-        }
-
-        private void AddQuickTask()
-        {
-            if (!CheckClickCooldown()) return;
-            
-            try
-            {
-                if (DataContext is MainViewModel vm && !string.IsNullOrWhiteSpace(QuickAddInput.Text))
-                {
-                    vm.NewTaskTitle = QuickAddInput.Text.Trim();
-                    
-                    if (QuickDeadlinePicker.SelectedDate.HasValue)
-                    {
-                        vm.NewTaskDeadline = QuickDeadlinePicker.SelectedDate;
-                        vm.AddDeadlineTaskCommand.Execute(null);
-                        QuickDeadlinePicker.SelectedDate = null;
-                    }
-                    else
-                    {
-                        vm.AddDailyTaskCommand.Execute(null);
-                    }
-                    
-                    QuickAddInput.Text = "";
-                    
-                    // 动画延迟执行，确保UI已更新
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        try
-                        {
-                            if (TaskListBox.Items.Count > 0)
-                            {
-                                var lastItem = TaskListBox.Items[TaskListBox.Items.Count - 1];
-                                var container = TaskListBox.ItemContainerGenerator.ContainerFromItem(lastItem) as FrameworkElement;
-                                if (container != null)
-                                {
-                                    AnimationService.AnimateAdd(container);
-                                }
-                            }
-                        }
-                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"AnimateAdd error: {ex.Message}"); }
-                    }), DispatcherPriority.Background);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"AddQuickTask error: {ex.Message}");
-            }
-        }
+        // V2.5+：侧边栏快速添加已由「接下来」行动卡取代（新建走完整模式 Composer）
 
         private void TaskCard_Click(object sender, MouseButtonEventArgs e)
         {
