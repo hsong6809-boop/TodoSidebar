@@ -158,16 +158,18 @@
                                            Margin="0,5,0,0"/>
                             </StackPanel>
 
-                            <!-- 右：等级信息（完整模式等级卡内容） -->
-                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                            <!-- 右：等级信息（占卡片约一半宽，字号放大） -->
+                            <StackPanel Grid.Column="2" Width="150" VerticalAlignment="Center"
+                                        HorizontalAlignment="Right">
                                 <TextBlock Text="{Binding LevelDisplay}"
-                                           FontSize="11.5" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <ProgressBar Height="4" Minimum="0" Maximum="1"
-                                             Value="{Binding LevelProgress}" Margin="0,6,0,3"
+                                           FontSize="14" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <ProgressBar Height="6" Minimum="0" Maximum="1"
+                                             Value="{Binding LevelProgress}" Margin="0,7,0,4"
                                              Foreground="{DynamicResource AccentGradientBrush}"/>
                                 <TextBlock Text="{Binding LevelProgressText}"
-                                           FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                           FontSize="10.5" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
                     </Border>
