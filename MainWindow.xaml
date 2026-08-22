@@ -121,6 +121,10 @@
                             BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1">
                         <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
@@ -143,24 +147,19 @@
                                 <TextBlock Text="{Binding TodayDoneText}"
                                            FontSize="16" FontWeight="Bold"
                                            Foreground="{DynamicResource TextBrush}" Margin="0,2"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
-                                    <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="7,2"
-                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
-                                        <TextBlock Text="{Binding ComboDisplay}" FontSize="9.5" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource ComboBrush}"/>
-                                    </Border>
-                                    <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="999" Padding="8,3"
-                                            Margin="6,0,0,0">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Level, StringFormat='Lv.{0}'}" FontSize="9"
-                                                       FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
-                                                       HorizontalAlignment="Center"/>
-                                            <ProgressBar Height="2.5" Minimum="0" Maximum="1"
-                                                         Value="{Binding LevelProgress}" Margin="0,2,0,0" Width="36"
-                                                         Foreground="{DynamicResource AccentGradientBrush}"/>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
+                            </StackPanel>
+                            <!-- 徽章行（独占一行） -->
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="2,12,0,0">
+                                <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="8,3"
+                                        Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
+                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="9.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource ComboBrush}"/>
+                                </Border>
+                                <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="999" Padding="8,3"
+                                        Margin="6,0,0,0">
+                                    <TextBlock Text="{Binding Level, StringFormat='Lv.{0}'}" FontSize="9.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}"/>
+                                </Border>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -188,12 +187,6 @@
                                          Foreground="{DynamicResource TextBrush}"
                                          VerticalContentAlignment="Center"
                                          KeyDown="QuickAddInput_KeyDown"/>
-                                <Button Grid.Column="1" Width="28" Height="28"
-                                        Style="{StaticResource PrimaryButton}" Padding="0"
-                                        Margin="0,0,6,0" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                        Click="QuickAddButton_Click" ToolTip="快速添加任务">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="13" Foreground="White"/>
-                                </Button>
                             </Grid>
                         </Border>
                         <StackPanel Orientation="Horizontal" Margin="4,7,0,0">
