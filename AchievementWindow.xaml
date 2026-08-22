@@ -1,6 +1,7 @@
 <Window x:Class="TodoSidebar.AchievementWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:TodoSidebar.Controls"
         Title="成就图鉴"
         Width="520"
         Height="640"
@@ -39,16 +40,16 @@
                                    VerticalAlignment="Center"
                                    Margin="12,0,0,0"/>
                     </StackPanel>
-                    <Button Content="✕"
-                            Width="28"
+                    <Button Width="28"
                             Height="28"
-                            FontSize="14"
                             Background="Transparent"
                             Foreground="{DynamicResource TextSecondaryBrush}"
                             BorderThickness="0"
                             Cursor="Hand"
                             HorizontalAlignment="Right"
-                            Click="CloseButton_Click"/>
+                            Click="CloseButton_Click">
+                        <controls:AppIcon Glyph="{x:Static controls:Icons.ChromeClose}" FontSize="11"/>
+                    </Button>
                 </Grid>
             </Border>
 

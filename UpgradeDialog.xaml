@@ -1,6 +1,7 @@
 <Window x:Class="TodoSidebar.UpgradeDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:TodoSidebar.Controls"
         Title="升级到 Pro"
         Width="420"
         Height="540"
@@ -38,12 +39,10 @@
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
-                    <Button Content="✕"
-                            HorizontalAlignment="Right"
+                    <Button HorizontalAlignment="Right"
                             VerticalAlignment="Center"
                             Click="CloseButton_Click"
-                            Style="{DynamicResource CloseButtonStyle}"
-                            FontSize="14"/>
+                            Style="{DynamicResource CloseButtonStyle}"/>
                 </Grid>
             </Border>
 
@@ -80,12 +79,14 @@
                                        Foreground="{DynamicResource TextBrush}" FontSize="13"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,6">
-                            <TextBlock Text="📊" Width="24"/>
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.Diagnostic}" Width="24" FontSize="12"
+                                              Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Left"/>
                             <TextBlock Text="数据统计 — 完成率、连续天数、趋势图表"
                                        Foreground="{DynamicResource TextBrush}" FontSize="13"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,6">
-                            <TextBlock Text="🔍" Width="24"/>
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.Search}" Width="24" FontSize="12"
+                                              Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Left"/>
                             <TextBlock Text="高级搜索 — 全文搜索、筛选器、保存搜索条件"
                                        Foreground="{DynamicResource TextBrush}" FontSize="13"/>
                         </StackPanel>

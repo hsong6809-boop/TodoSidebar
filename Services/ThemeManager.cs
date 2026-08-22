@@ -1,6 +1,5 @@
 using System;
 using System.Windows;
-using System.Windows.Media;
 using Microsoft.Win32;
 using TodoSidebar.Services;
 
@@ -13,10 +12,17 @@ namespace TodoSidebar.Services
         System
     }
 
+    /// <summary>
+    /// 主题管理器：通过整体替换 Tokens.Light / Tokens.Dark 资源字典实现换肤，
+    /// 所有 DynamicResource 引用自动刷新。对外 API（CurrentTheme/ApplyTheme/ThemeChanged）保持不变。
+    /// </summary>
     public class ThemeManager : IThemeManager
     {
         private static ThemeManager? _instance;
         public static ThemeManager Instance => _instance ??= new ThemeManager();
+
+        private const string LightTokenMarker = "tokens.light.xaml";
+        private const string DarkTokenMarker = "tokens.dark.xaml";
 
         private ThemeType _currentTheme = ThemeType.Light;
         private readonly DatabaseService _dbService;
@@ -34,6 +40,16 @@ namespace TodoSidebar.Services
         }
 
         public event EventHandler<ThemeType>? ThemeChanged;
+
+        /// <summary>
+        /// 当前实际生效的是否为深色（解析"跟随系统"）。供外壳亚克力等视觉集成使用。
+        /// </summary>
+        public static bool IsCurrentlyDark()
+        {
+            var t = Instance._currentTheme;
+            if (t == ThemeType.System) t = IsSystemDarkTheme() ? ThemeType.Dark : ThemeType.Light;
+            return t == ThemeType.Dark;
+        }
 
         private ThemeManager()
         {
@@ -95,109 +111,53 @@ namespace TodoSidebar.Services
             var app = Application.Current;
             if (app == null) return;
 
-            var resources = app.Resources;
-
             if (theme == ThemeType.System)
             {
                 theme = IsSystemDarkTheme() ? ThemeType.Dark : ThemeType.Light;
             }
 
-            switch (theme)
+            try
             {
-                case ThemeType.Light:
-                    ApplyLightTheme(resources);
-                    break;
-                case ThemeType.Dark:
-                    ApplyDarkTheme(resources);
-                    break;
+                SwapTokenDictionary(app.Resources.MergedDictionaries, theme == ThemeType.Dark);
+
+                // 自检：令牌必须可解析，否则界面会因 DynamicResource 全部落空而透明不可见
+                if (app.TryFindResource("GlassBrush") is not System.Windows.Media.SolidColorBrush)
+                {
+                    System.Diagnostics.Debug.WriteLine("ThemeManager: 令牌字典替换后 GlassBrush 缺失！");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 替换失败时保留现有字典（至少启动时的 Light 字典仍然完整）
+                System.Diagnostics.Debug.WriteLine($"ThemeManager: 主题字典替换失败: {ex.Message}");
             }
 
             ThemeChanged?.Invoke(this, theme);
         }
 
-        private void ApplyLightTheme(ResourceDictionary resources)
+        /// <summary>
+        /// 将合并字典中的颜色令牌字典整本替换为对应主题版本（原位替换，保持字典顺序）。
+        /// 使用绝对 pack URI，避免代码内相对 URI 在无 BAML 基址上下文时解析失败。
+        /// </summary>
+        private static void SwapTokenDictionary(System.Collections.ObjectModel.Collection<ResourceDictionary> mergedDictionaries, bool dark)
         {
-            // 背景色 - 更柔和的半透明效果
-            resources["GlassBrush"] = new SolidColorBrush(ColorFromHex("#CCF8F9FE"));  // 更柔和的蓝灰色调
-            resources["GlassLightBrush"] = new SolidColorBrush(ColorFromHex("#E6F0F2F8"));  // 浅蓝灰
-            resources["CardBrush"] = new SolidColorBrush(ColorFromHex("#F5FFFFFF"));  // 更透明的白色
-            resources["CardHoverBrush"] = new SolidColorBrush(ColorFromHex("#FFFAFBFF"));  // 悬停时微蓝
-            resources["DeadlineCardBrush"] = new SolidColorBrush(ColorFromHex("#FFFBF5F0"));  // 暖色调
+            var fileName = dark ? "Tokens.Dark.xaml" : "Tokens.Light.xaml";
+            var newSource = new Uri($"pack://application:,,,/Themes/{fileName}");
 
-            // 强调色 - 更现代的紫色
-            resources["AccentBrush"] = new SolidColorBrush(ColorFromHex("#6366F1"));  // Indigo-500
-            resources["AccentLightBrush"] = new SolidColorBrush(ColorFromHex("#818CF8"));  // Indigo-400
-
-            // 状态色 - 更柔和
-            resources["SuccessBrush"] = new SolidColorBrush(ColorFromHex("#10B981"));  // Emerald-500
-            resources["DangerBrush"] = new SolidColorBrush(ColorFromHex("#EF4444"));  // Red-500
-            resources["WarningBrush"] = new SolidColorBrush(ColorFromHex("#F59E0B"));  // Amber-500
-
-            // 文字色 - 更好的对比度
-            resources["TextBrush"] = new SolidColorBrush(ColorFromHex("#1E293B"));  // Slate-800
-            resources["TextSecondaryBrush"] = new SolidColorBrush(ColorFromHex("#64748B"));  // Slate-500
-
-            // 边框色 - 更细腻
-            resources["BorderBrush"] = new SolidColorBrush(ColorFromHex("#1A000000"));  // 更淡的边框
-
-            // M33：优先级色 - 与状态色保持一致（浅色值取自 App.xaml）
-            resources["PriorityHighBrush"] = new SolidColorBrush(ColorFromHex("#EF4444"));   // Red-500
-            resources["PriorityMediumBrush"] = new SolidColorBrush(ColorFromHex("#F59E0B")); // Amber-500
-            resources["PriorityLowBrush"] = new SolidColorBrush(ColorFromHex("#10B981"));    // Emerald-500
-
-            // M33：主色调 / 任务类型色 - 此前从未纳入主题替换，深色下会残留浅色值
-            resources["PrimaryBrush"] = new SolidColorBrush(ColorFromHex("#6366F1"));        // Indigo-500
-            resources["TypeDailyBrush"] = new SolidColorBrush(ColorFromHex("#6366F1"));      // Indigo-500
-            resources["TypeDeadlineBrush"] = new SolidColorBrush(ColorFromHex("#EF4444"));   // Red-500
-        }
-
-        private void ApplyDarkTheme(ResourceDictionary resources)
-        {
-            // 背景色 - 深色半透明效果
-            resources["GlassBrush"] = new SolidColorBrush(ColorFromHex("#E60F172A"));  // 深蓝黑
-            resources["GlassLightBrush"] = new SolidColorBrush(ColorFromHex("#F01E293B"));  // Slate-800
-            resources["CardBrush"] = new SolidColorBrush(ColorFromHex("#FF1E293B"));  // Slate-800
-            resources["CardHoverBrush"] = new SolidColorBrush(ColorFromHex("#FF334155"));  // Slate-700
-            resources["DeadlineCardBrush"] = new SolidColorBrush(ColorFromHex("#FF1A1510"));  // 暖色调深色
-
-            // 强调色 - 深色模式下更亮
-            resources["AccentBrush"] = new SolidColorBrush(ColorFromHex("#818CF8"));  // Indigo-400
-            resources["AccentLightBrush"] = new SolidColorBrush(ColorFromHex("#A5B4FC"));  // Indigo-300
-
-            // 状态色 - 深色模式下更柔和
-            resources["SuccessBrush"] = new SolidColorBrush(ColorFromHex("#34D399"));  // Emerald-400
-            resources["DangerBrush"] = new SolidColorBrush(ColorFromHex("#F87171"));  // Red-400
-            resources["WarningBrush"] = new SolidColorBrush(ColorFromHex("#FBBF24"));  // Amber-400
-
-            // 文字色 - 深色模式下更清晰
-            resources["TextBrush"] = new SolidColorBrush(ColorFromHex("#F1F5F9"));  // Slate-100
-            resources["TextSecondaryBrush"] = new SolidColorBrush(ColorFromHex("#94A3B8"));  // Slate-400
-
-            // 边框色 - 深色模式下更细腻
-            resources["BorderBrush"] = new SolidColorBrush(ColorFromHex("#1AFFFFFF"));  // 更淡的边框
-
-            // M33：优先级色 - 深色下提亮一档保证可读
-            resources["PriorityHighBrush"] = new SolidColorBrush(ColorFromHex("#F87171"));   // Red-400
-            resources["PriorityMediumBrush"] = new SolidColorBrush(ColorFromHex("#FBBF24")); // Amber-400
-            resources["PriorityLowBrush"] = new SolidColorBrush(ColorFromHex("#34D399"));    // Emerald-400
-
-            // M33：主色调 / 任务类型色 - 保持强调色系，深色背景上清晰可读
-            resources["PrimaryBrush"] = new SolidColorBrush(ColorFromHex("#818CF8"));        // Indigo-400
-            resources["TypeDailyBrush"] = new SolidColorBrush(ColorFromHex("#818CF8"));      // Indigo-400
-            resources["TypeDeadlineBrush"] = new SolidColorBrush(ColorFromHex("#F87171"));   // Red-400
-        }
-
-        private static Color ColorFromHex(string hex)
-        {
-            try
+            for (int i = 0; i < mergedDictionaries.Count; i++)
             {
-                return (Color)ColorConverter.ConvertFromString(hex);
+                var src = mergedDictionaries[i].Source?.OriginalString;
+                if (src != null &&
+                    (src.EndsWith(LightTokenMarker, StringComparison.OrdinalIgnoreCase) ||
+                     src.EndsWith(DarkTokenMarker, StringComparison.OrdinalIgnoreCase)))
+                {
+                    mergedDictionaries[i] = new ResourceDictionary { Source = newSource };
+                    return;
+                }
             }
-            catch
-            {
-                System.Diagnostics.Debug.WriteLine($"ThemeManager: 无效颜色值 {hex}");
-                return Colors.Gray;
-            }
+
+            // 未找到令牌字典（异常配置）：插入到最前，保证样式可覆盖
+            mergedDictionaries.Insert(0, new ResourceDictionary { Source = newSource });
         }
     }
 }

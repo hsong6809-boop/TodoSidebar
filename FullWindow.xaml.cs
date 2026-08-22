@@ -30,6 +30,9 @@ namespace TodoSidebar
             InitializeComponent();
             DataContext = App.SharedViewModel;
 
+            // P2：真实亚克力背板（失败静默降级为半透明纯色）
+            Loaded += (_, _) => DwmBackdropHelper.ApplyMainShellAcrylic(this);
+
             // 订阅升级/成就事件：显示横幅 + 粒子特效
             if (DataContext is MainViewModel vm)
             {
@@ -482,6 +485,41 @@ namespace TodoSidebar
                     LoadFocusTasks();
                 }
             }
+
+            // P4：Tab 内容轻量交叉淡入（8px 上移），统一动效语言
+            AnimateActiveTabPanel();
+        }
+
+        /// <summary>对当前可见的内容面板播放淡入 + 轻微上移动画（用 RenderTransform，不影响布局）。</summary>
+        private void AnimateActiveTabPanel()
+        {
+            FrameworkElement? panel = TabDaily?.IsChecked == true ? DailyPanel
+                : TabDeadline?.IsChecked == true ? DeadlinePanel
+                : TabHistory?.IsChecked == true ? HistoryPanel
+                : TabStatistics?.IsChecked == true ? StatisticsPanel
+                : TabFocus?.IsChecked == true ? FocusPanel
+                : null;
+
+            if (panel == null) return;
+
+            var easing = new System.Windows.Media.Animation.CubicEase
+            {
+                EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+            };
+            var fadeIn = new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200))
+            {
+                EasingFunction = easing
+            };
+
+            var translate = new System.Windows.Media.TranslateTransform(0, 8);
+            panel.RenderTransform = translate;
+            var slideUp = new System.Windows.Media.Animation.DoubleAnimation(8, 0, TimeSpan.FromMilliseconds(200))
+            {
+                EasingFunction = easing
+            };
+
+            panel.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+            translate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideUp);
         }
 
         private void Priority_Checked(object sender, RoutedEventArgs e)

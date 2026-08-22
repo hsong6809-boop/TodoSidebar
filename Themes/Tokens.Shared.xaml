@@ -1,0 +1,19 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        ============================================================
+        共享设计令牌（Tokens.Shared · 主题不变量）
+        字体 / 图标字体 / 圆角 / 间距等，不随明暗主题变化。
+        ============================================================
+    -->
+
+    <!-- ========== 全局字体 ========== -->
+    <FontFamily x:Key="PrimaryFont">Microsoft YaHei UI, PingFang SC, Segoe UI, sans-serif</FontFamily>
+    <FontFamily x:Key="MonoFont">Cascadia Code, Consolas, monospace</FontFamily>
+    <!-- 图标字体：Win11 用 Segoe Fluent Icons，Win10 回退 Segoe MDL2 Assets -->
+    <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <!-- ========== 间距令牌 ========== -->
+    <Thickness x:Key="SpacingCard">12,10,12,10</Thickness>
+    <Thickness x:Key="SpacingPage">16,12,16,12</Thickness>
+</ResourceDictionary>

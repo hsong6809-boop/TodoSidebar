@@ -23,6 +23,28 @@ namespace TodoSidebar
         {
             InitializeComponent();
             LoadSavedCredentials();
+
+            // P2：真实亚克力背板（默认关闭；设置 AcrylicEnabled=true 可开启，失败静默降级）
+            Loaded += (_, _) => DwmBackdropHelper.ApplyMainShellAcrylic(this);
+        }
+
+        /// <summary>密码可见性切换：同步明文框与密码框内容。</summary>
+        private void RevealToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            if (PasswordBox == null || PasswordRevealBox == null) return;
+
+            if (RevealToggle != null && RevealToggle.IsChecked == true)
+            {
+                PasswordRevealBox.Text = PasswordBox.Password;
+                PasswordBox.Visibility = Visibility.Collapsed;
+                PasswordRevealBox.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                PasswordBox.Password = PasswordRevealBox.Text;
+                PasswordRevealBox.Visibility = Visibility.Collapsed;
+                PasswordBox.Visibility = Visibility.Visible;
+            }
         }
 
         private void LoadSavedCredentials()

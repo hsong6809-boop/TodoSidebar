@@ -330,4 +330,56 @@ namespace TodoSidebar.Converters
             return Binding.DoNothing;
         }
     }
+
+    /// <summary>P3：零值反向——为 0 显示（用于空状态占位）。</summary>
+    public class ZeroToInvertedVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is int count)
+                return count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            // 双精度兜底（如完成率）
+            if (value is double d)
+                return d <= 0.0001 ? Visibility.Visible : Visibility.Collapsed;
+            return Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    /// <summary>P3：数值乘法（value × parameter），用于比例转像素高度等。</summary>
+    public class MultiplyConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            try
+            {
+                var factor = System.Convert.ToDouble(parameter, CultureInfo.InvariantCulture);
+                var v = System.Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                return v * factor;
+            }
+            catch { return 0d; }
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => Binding.DoNothing;
+    }
+
+    /// <summary>P3：0~1 比例转百分比文本（0.25 → "25%"）。</summary>
+    public class FractionToPercentConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            try
+            {
+                var v = System.Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                return $"{Math.Round(v * 100)}%";
+            }
+            catch { return "0%"; }
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => Binding.DoNothing;
+    }
 }

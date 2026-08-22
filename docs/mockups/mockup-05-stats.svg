@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="940" viewBox="0 0 600 940" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+  <rect width="600" height="940" fill="#E8ECF5"/>
+  <rect x="18" y="16" width="564" height="916" rx="24" fill="#0F172A" opacity="0.10"/>
+  <rect x="10" y="8" width="560" height="904" rx="20" fill="#F8F9FE" stroke="#E4E9F2"/>
+
+  <defs>
+    <linearGradient id="bar5" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="area5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366F1" stop-opacity="0.25"/><stop offset="1" stop-color="#6366F1" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="brand5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 头部 -->
+  <text x="34" y="48" font-size="20" font-weight="700" fill="#0F172A">数据统计</text>
+  <rect x="130" y="30" width="76" height="24" rx="12" fill="#EEF2FF"/>
+  <text x="168" y="46" font-size="10.5" font-weight="600" fill="#4F46E5" text-anchor="middle">近 30 天</text>
+  <rect x="452" y="30" width="94" height="26" rx="13" fill="#FFFFFF" stroke="#DDE3EE"/>
+  <text x="499" y="47" font-size="10.5" fill="#64748B" text-anchor="middle">导出报告 ↓</text>
+
+  <!-- KPI 2x2 -->
+  <rect x="34" y="70" width="260" height="92" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <text x="54" y="98" font-size="11" fill="#64748B">累计完成任务</text>
+  <text x="54" y="128" font-size="26" font-weight="700" fill="#0F172A">128</text>
+  <rect x="118" y="112" width="44" height="18" rx="9" fill="#ECFDF5"/>
+  <text x="140" y="125" font-size="9.5" font-weight="600" fill="#059669" text-anchor="middle">↑ 12%</text>
+  <path d="M236 132 v-52 M228 88 l8 -8 l8 8" stroke="#C7D2FE" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="306" y="70" width="260" height="92" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <circle cx="352" cy="116" r="27" fill="none" stroke="#EEF1F8" stroke-width="7"/>
+  <circle cx="352" cy="116" r="27" fill="none" stroke="#10B981" stroke-width="7" stroke-linecap="round" stroke-dasharray="125.4 169.6" transform="rotate(-90 352 116)"/>
+  <text x="352" y="121" font-size="12" font-weight="700" fill="#065F46" text-anchor="middle">74%</text>
+  <text x="396" y="102" font-size="11" fill="#64748B">平均完成率</text>
+  <text x="396" y="126" font-size="14" font-weight="600" fill="#0F172A">状态良好</text>
+
+  <rect x="34" y="174" width="260" height="92" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <text x="54" y="202" font-size="11" fill="#64748B">连续全清</text>
+  <text x="54" y="234" font-size="26" font-weight="700" fill="#EA580C">🔥 6 天</text>
+  <g>
+    <circle cx="196" cy="226" r="3.2" fill="#FED7AA"/><circle cx="210" cy="226" r="3.2" fill="#FED7AA"/>
+    <circle cx="224" cy="226" r="3.2" fill="#FED7AA"/><circle cx="238" cy="226" r="3.2" fill="#FED7AA"/>
+    <circle cx="252" cy="226" r="3.2" fill="#F59E0B"/><circle cx="266" cy="226" r="3.2" fill="#F59E0B"/>
+  </g>
+
+  <rect x="306" y="174" width="260" height="92" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <text x="326" y="202" font-size="11" fill="#64748B">待处理 · 高优先</text>
+  <text x="326" y="234" font-size="26" font-weight="700" fill="#EF4444">3</text>
+  <text x="360" y="234" font-size="11" fill="#94A3B8">项即将到期</text>
+  <rect x="474" y="206" width="72" height="26" rx="13" fill="#FEF2F2"/>
+  <text x="510" y="223" font-size="10" font-weight="600" fill="#DC2626" text-anchor="middle">立即处理 ›</text>
+
+  <!-- 柱状图 -->
+  <rect x="34" y="282" width="532" height="212" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <text x="54" y="310" font-size="13" font-weight="600" fill="#334155">近 14 天完成</text>
+  <rect x="478" y="294" width="68" height="22" rx="11" fill="#EEF2FF"/>
+  <text x="512" y="309" font-size="9.5" font-weight="600" fill="#4F46E5" text-anchor="middle">日均 4.2 个</text>
+  <line x1="54" y1="440" x2="546" y2="440" stroke="#EEF1F8"/>
+  <g>
+    <rect x="62"  y="392" width="22" height="48" rx="5" fill="#C7D2FE"/>
+    <rect x="97"  y="376" width="22" height="64" rx="5" fill="#C7D2FE"/>
+    <rect x="132" y="400" width="22" height="40" rx="5" fill="#C7D2FE"/>
+    <rect x="167" y="360" width="22" height="80" rx="5" fill="#C7D2FE"/>
+    <rect x="202" y="384" width="22" height="56" rx="5" fill="#C7D2FE"/>
+    <rect x="237" y="340" width="22" height="100" rx="5" fill="#C7D2FE"/>
+    <rect x="272" y="408" width="22" height="32" rx="5" fill="#C7D2FE"/>
+    <rect x="307" y="368" width="22" height="72" rx="5" fill="#C7D2FE"/>
+    <rect x="342" y="352" width="22" height="88" rx="5" fill="#C7D2FE"/>
+    <rect x="377" y="396" width="22" height="44" rx="5" fill="#C7D2FE"/>
+    <rect x="412" y="330" width="22" height="110" rx="5" fill="#C7D2FE"/>
+    <rect x="447" y="372" width="22" height="68" rx="5" fill="#C7D2FE"/>
+    <rect x="482" y="344" width="22" height="96" rx="5" fill="#C7D2FE"/>
+    <rect x="517" y="316" width="22" height="124" rx="5" fill="url(#bar5)"/>
+  </g>
+  <g font-size="8.5" fill="#94A3B8" text-anchor="middle">
+    <text x="73" y="456">8/9</text><text x="143" y="456">8/11</text><text x="213" y="456">8/13</text>
+    <text x="283" y="456">8/15</text><text x="353" y="456">8/17</text><text x="423" y="456">8/19</text>
+    <text x="493" y="456">8/21</text><text x="528" y="456" font-weight="600" fill="#6366F1">今天</text>
+  </g>
+  <g font-size="8.5" fill="#CBD5E1">
+    <text x="73" y="380" text-anchor="middle">3</text><text x="248" y="332" text-anchor="middle">6</text><text x="528" y="308" text-anchor="middle" fill="#6366F1" font-weight="600">8</text>
+  </g>
+
+  <!-- 经验成长折线 -->
+  <rect x="34" y="508" width="532" height="212" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <text x="54" y="536" font-size="13" font-weight="600" fill="#334155">经验成长</text>
+  <text x="150" y="536" font-size="10" fill="#94A3B8">近 30 天</text>
+  <rect x="478" y="520" width="68" height="22" rx="11" fill="#ECFDF5"/>
+  <text x="512" y="535" font-size="9.5" font-weight="600" fill="#059669" text-anchor="middle">+1,240 XP</text>
+  <line x1="54" y1="560" x2="546" y2="560" stroke="#F1F5F9"/>
+  <line x1="54" y1="606" x2="546" y2="606" stroke="#F1F5F9"/>
+  <line x1="54" y1="652" x2="546" y2="652" stroke="#EEF1F8"/>
+  <path d="M54 676 L84 668 L114 672 L144 656 L174 660 L204 644 L234 650 L264 632 L294 638 L324 618 L354 626 L384 604 L414 612 L444 590 L474 598 L504 574 L540 556"
+        fill="none" stroke="#6366F1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M54 676 L84 668 L114 672 L144 656 L174 660 L204 644 L234 650 L264 632 L294 638 L324 618 L354 626 L384 604 L414 612 L444 590 L474 598 L504 574 L540 556 L540 692 L54 692 Z"
+        fill="url(#area5)" opacity="0.6"/>
+  <circle cx="540" cy="556" r="4.5" fill="#6366F1" stroke="#fff" stroke-width="2"/>
+  <g font-size="8.5" fill="#94A3B8">
+    <text x="54" y="706">7月24日</text><text x="290" y="706" text-anchor="middle">8月7日</text><text x="540" y="706" text-anchor="end">8月22日</text>
+  </g>
+  <text x="500" y="550" font-size="10" font-weight="700" fill="#4F46E5" text-anchor="end">Lv.12 → Lv.13 还差 180 EXP</text>
+
+  <!-- 成就预览 -->
+  <rect x="34" y="734" width="532" height="152" rx="14" fill="#FFFFFF" stroke="#EAEEF6"/>
+  <text x="54" y="762" font-size="13" font-weight="600" fill="#334155">成就徽章</text>
+  <rect x="140" y="748" width="64" height="20" rx="10" fill="#FFF7ED"/>
+  <text x="172" y="762" font-size="10" font-weight="600" fill="#EA580C" text-anchor="middle">12 / 20</text>
+  <text x="530" y="762" font-size="10.5" fill="#6366F1" text-anchor="end">查看全部 ›</text>
+  <g transform="translate(58,780)">
+    <circle cx="26" cy="30" r="24" fill="#EEF2FF"/><text x="26" y="36" font-size="18" text-anchor="middle">🚀</text>
+    <text x="26" y="74" font-size="9" font-weight="500" fill="#475569" text-anchor="middle">初次启程</text>
+    <circle cx="120" cy="30" r="24" fill="#EEF2FF"/><text x="120" y="36" font-size="18" text-anchor="middle">⚡</text>
+    <text x="120" y="74" font-size="9" font-weight="500" fill="#475569" text-anchor="middle">连击之火 ×5</text>
+    <circle cx="214" cy="30" r="24" fill="url(#brand5)" opacity="0.15"/>
+    <circle cx="214" cy="30" r="24" fill="none" stroke="#8B5CF6" stroke-width="2"/>
+    <text x="214" y="36" font-size="18" text-anchor="middle">🏆</text>
+    <text x="214" y="74" font-size="9" font-weight="600" fill="#7C3AED" text-anchor="middle">百大成就（稀有）</text>
+    <circle cx="308" cy="30" r="24" fill="#ECFDF5"/><text x="308" y="36" font-size="18" text-anchor="middle">🍅</text>
+    <text x="308" y="74" font-size="9" font-weight="500" fill="#475569" text-anchor="middle">专注大师</text>
+    <circle cx="402" cy="30" r="24" fill="#F1F5F9"/>
+    <g transform="translate(394,22)" stroke="#94A3B8" stroke-width="1.6" fill="none"><rect x="1" y="8" width="16" height="12" rx="3"/><path d="M5 8 V5 a4 4 0 0 1 8 0 v3"/></g>
+    <text x="402" y="74" font-size="9" fill="#94A3B8" text-anchor="middle">未解锁</text>
+    <circle cx="496" cy="30" r="24" fill="#F1F5F9"/>
+    <g transform="translate(488,22)" stroke="#94A3B8" stroke-width="1.6" fill="none"><rect x="1" y="8" width="16" height="12" rx="3"/><path d="M5 8 V5 a4 4 0 0 1 8 0 v3"/></g>
+    <text x="496" y="74" font-size="9" fill="#94A3B8" text-anchor="middle">未解锁</text>
+  </g>
+</svg>

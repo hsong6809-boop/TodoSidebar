@@ -403,6 +403,9 @@ namespace TodoSidebar
                 Width = ExpandedWidth;
                 Height = 600;
             }
+
+            // P2：真实亚克力背板（失败静默降级为半透明纯色）
+            DwmBackdropHelper.ApplyMainShellAcrylic(this);
         }
 
         #region 鼠标悬停展开/收起
