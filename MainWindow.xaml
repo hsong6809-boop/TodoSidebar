@@ -73,12 +73,10 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- ===== 头部：头像 + 问候 + 操作圆钮 ===== -->
+                <!-- ===== 头部：头像 + 问候 + 操作圆钮（扁平化，无条带）===== -->
                 <Border Grid.Row="0"
-                        Background="{DynamicResource GlassLightBrush}"
-                        Padding="16,12"
-                        BorderThickness="0,0,0,1"
-                        BorderBrush="{DynamicResource BorderBrush}"
+                        Background="Transparent"
+                        Padding="16,14,12,10"
                         Cursor="SizeAll"
                         MouseLeftButtonDown="Header_MouseLeftButtonDown">
                     <Grid>
@@ -109,6 +107,9 @@
                             <Button Style="{StaticResource HeaderIconButton}" Click="SettingsButton_Click" ToolTip="设置" Margin="2,0,0,0">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.Settings}" FontSize="13"/>
                             </Button>
+                            <Button Style="{StaticResource HeaderIconButton}" Click="ExpandFullMode_Click" ToolTip="展开完整窗口" Margin="2,0,0,0">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.OpenInNewWindow}" FontSize="12"/>
+                            </Button>
                             <Button Style="{StaticResource HeaderIconButton}" Click="CollapseButton_Click" ToolTip="收起" Margin="2,0,0,0">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.ChevronLeft}" FontSize="11"/>
                             </Button>
@@ -116,46 +117,57 @@
                     </Grid>
                 </Border>
 
-                <!-- ===== Hero：等级进度卡 ===== -->
+                <!-- ===== Hero：今日进度卡（对齐示意图）===== -->
                 <Border Grid.Row="1" Background="Transparent" Padding="16,12,16,4">
                     <Border Background="{DynamicResource CardBrush}"
-                            CornerRadius="16" Padding="16,13"
+                            CornerRadius="16" Padding="16,14"
                             BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1">
-                        <StackPanel Orientation="Horizontal">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- 进度环 -->
                             <Grid Width="66" Height="66" VerticalAlignment="Center">
                                 <controls:CircularProgress Size="66" StrokeThickness="7"
-                                                           Progress="{Binding LevelProgress}"
+                                                           Progress="{Binding TodayProgressRate}"
                                                            ProgressBrush="{DynamicResource AccentGradientBrush}"
                                                            BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
-                                <TextBlock Text="{Binding LevelProgress, Converter={StaticResource FractionToPercent}}"
+                                <TextBlock Text="{Binding TodayProgressRate, Converter={StaticResource FractionToPercent}}"
                                            FontSize="12" FontWeight="Bold"
                                            Foreground="{DynamicResource AccentBrush}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
+                            <!-- 主数值 -->
                             <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
-                                <TextBlock Text="等级进度" FontSize="{DynamicResource FontSizeCaption}"
+                                <TextBlock Text="今日进度" FontSize="{DynamicResource FontSizeCaption}"
                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <TextBlock Text="{Binding LevelDisplay}"
-                                           FontSize="14.5" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,2"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                                    <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="7,2"
-                                            Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
-                                        <TextBlock Text="{Binding ComboDisplay}" FontSize="10" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource ComboBrush}"/>
-                                    </Border>
-                                    <Border Background="{DynamicResource SuccessSoftBrush}" CornerRadius="999" Padding="7,2" Margin="6,0,0,0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}" FontSize="8"
-                                                              Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" Margin="0,0,3,0"/>
-                                            <TextBlock Text="{Binding TodayCompletedTasksCount, StringFormat='{}{0} 今日完成'}"
-                                                       FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource SuccessBrush}"/>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
+                                <TextBlock Text="{Binding TodayDoneText}"
+                                           FontSize="17" FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,3"/>
                             </StackPanel>
-                        </StackPanel>
+                            <!-- 右侧徽章列 -->
+                            <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                                <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="7,2"
+                                        HorizontalAlignment="Right"
+                                        Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
+                                    <TextBlock Text="{Binding ComboDisplay}" FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource ComboBrush}"/>
+                                </Border>
+                                <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="10" Padding="8,4"
+                                        HorizontalAlignment="Right" Margin="0,6,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding LevelDisplay}" FontSize="9.5" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"/>
+                                        <ProgressBar Height="3" Minimum="0" Maximum="1"
+                                                     Value="{Binding LevelProgress}" Margin="0,3,0,0" Width="44"
+                                                     Foreground="{DynamicResource AccentGradientBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
                     </Border>
                 </Border>
 
@@ -163,32 +175,33 @@
                 <Grid Grid.Row="2" Background="Transparent" Margin="16,10,16,6">
                     <!-- 快速添加 -->
                     <StackPanel Visibility="{Binding IsSearchMode, Converter={StaticResource InvertedBoolToVis}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Background="{DynamicResource CardBrush}"
-                                    CornerRadius="12"
-                                    BorderBrush="{DynamicResource BorderStrongBrush}"
-                                    BorderThickness="1">
+                        <Border Background="{DynamicResource CardBrush}"
+                                CornerRadius="999"
+                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
                                 <TextBox x:Name="QuickAddInput"
                                          controls:Placeholder.Text="添加任务，回车确认…"
                                          BorderThickness="0"
                                          Background="Transparent"
-                                         Padding="12,8"
+                                         Padding="14,9,44,9"
                                          FontSize="12.5"
                                          Foreground="{DynamicResource TextBrush}"
                                          VerticalContentAlignment="Center"
                                          KeyDown="QuickAddInput_KeyDown"/>
-                            </Border>
-                            <Button Grid.Column="1" Width="36" Height="36"
-                                    Style="{StaticResource PrimaryButton}" Padding="0"
-                                    Click="QuickAddButton_Click" ToolTip="快速添加任务">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="15" Foreground="White"/>
-                            </Button>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="2,7,0,0">
+                                <Button Grid.Column="1" Width="28" Height="28"
+                                        Style="{StaticResource PrimaryButton}" Padding="0"
+                                        Margin="0,0,6,0" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Click="QuickAddButton_Click" ToolTip="快速添加任务">
+                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="13" Foreground="White"/>
+                                </Button>
+                            </Grid>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="4,7,0,0">
                             <DatePicker x:Name="QuickDeadlinePicker" FontSize="10.5" Height="24"
                                         SelectedDateFormat="Short" Width="112"
                                         VerticalContentAlignment="Center"/>
@@ -357,6 +370,13 @@
                                                                    Margin="4,0,0,0"/>
                                                     </StackPanel>
                                                 </Border>
+                                                <Border x:Name="PriorityChipDeadline"
+                                                        Background="{DynamicResource DangerSoftBrush}"
+                                                        CornerRadius="999" Padding="7,2" Margin="6,0,0,0"
+                                                        Visibility="Collapsed">
+                                                    <TextBlock Text="高优先" FontSize="9" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource DangerBrush}"/>
+                                                </Border>
                                             </StackPanel>
                                             <!-- 每日任务标签（软底胶囊） -->
                                             <StackPanel x:Name="DailyRow"
@@ -370,6 +390,13 @@
                                                                FontSize="9"
                                                                Foreground="{DynamicResource AccentBrush}"
                                                                FontWeight="SemiBold"/>
+                                                </Border>
+                                                <Border x:Name="PriorityChipDaily"
+                                                        Background="{DynamicResource DangerSoftBrush}"
+                                                        CornerRadius="999" Padding="7,2" Margin="6,0,0,0"
+                                                        Visibility="Collapsed">
+                                                    <TextBlock Text="高优先" FontSize="9" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource DangerBrush}"/>
                                                 </Border>
                                             </StackPanel>
                                             <!-- 子任务进度（点击可展开） -->
@@ -484,6 +511,10 @@
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding HasSubTasks}" Value="True">
                                         <Setter TargetName="SubTaskRow" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Priority}" Value="High">
+                                        <Setter TargetName="PriorityChipDaily" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="PriorityChipDeadline" Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                     <Trigger SourceName="TaskCard" Property="IsMouseOver" Value="True">
                                         <Setter TargetName="DeleteTaskButton" Property="Opacity" Value="1"/>
@@ -630,10 +661,10 @@
                                 <TextBlock x:Name="MiniFocusState" Text="未开始"
                                            FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </StackPanel>
-                            <Button Style="{StaticResource MiniPomoButton}" Click="MiniFocusStart_Click"
-                                    ToolTip="开始专注" Margin="8,0,0,0" VerticalAlignment="Center">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="9"
-                                                  Foreground="{DynamicResource AccentBrush}"/>
+                            <Button Style="{StaticResource PrimaryButton}" Click="MiniFocusStart_Click"
+                                    ToolTip="开始专注" Margin="10,0,0,0" VerticalAlignment="Center"
+                                    Width="30" Height="30" Padding="0">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Play}" FontSize="10" Foreground="White"/>
                             </Button>
                             <Button Style="{StaticResource MiniPomoButton}" Click="MiniFocusPause_Click"
                                     ToolTip="暂停/继续" Margin="2,0,0,0" VerticalAlignment="Center">

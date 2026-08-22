@@ -5,11 +5,11 @@
     <!--
         ============================================================
         数据模板库（Styles.Templates）
-        从 App.xaml 迁入；P3 阶段将在此重设计任务卡。
+        V2.2：任务卡全面对齐示意图（圆形勾选钮 / chip 化元信息 / 悬停删除）。
         ============================================================
     -->
 
-    <!-- ========== 转换器（从 App.xaml 迁入，供模板与窗口使用）========== -->
+    <!-- ========== 转换器 ========== -->
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     <converters:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVis"/>
     <converters:NullToVisibilityConverter x:Key="NullToVis"/>
@@ -22,147 +22,229 @@
     <converters:FractionToPercentConverter x:Key="FractionToPercent"/>
     <converters:EmptyToCollapsedConverter x:Key="EmptyToVis"/>
 
-    <!-- ========== 通用任务卡片模板 ========== -->
+    <!-- 完成圆钮（任务卡左端，单击即完成） -->
+    <ControlTemplate x:Key="CompleteCircleTemplate" TargetType="Button">
+        <Grid Background="Transparent">
+            <Ellipse x:Name="CompleteRing"
+                     Stroke="{DynamicResource BorderStrongBrush}"
+                     StrokeThickness="1.5"/>
+            <controls:AppIcon x:Name="CompleteCheck"
+                              Glyph="{x:Static controls:Icons.CheckMark}"
+                              FontSize="10"
+                              Foreground="{DynamicResource SuccessBrush}"
+                              Visibility="Hidden"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"/>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="CompleteRing" Property="Stroke" Value="{DynamicResource SuccessBrush}"/>
+                <Setter TargetName="CompleteRing" Property="Fill" Value="{DynamicResource SuccessSoftBrush}"/>
+                <Setter TargetName="CompleteCheck" Property="Visibility" Value="Visible"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- ========== 通用任务卡片模板（每日任务）========== -->
     <DataTemplate x:Key="TaskCardTemplate">
-        <Border Background="{DynamicResource CardBrush}"
-                CornerRadius="10"
-                Padding="16,12"
-                Margin="0,4"
-                BorderThickness="0,0,4,0"
-                BorderBrush="{Binding TypeColor, FallbackValue=#6366F1}">
+        <Border x:Name="TaskCard"
+                Background="{DynamicResource CardBrush}"
+                CornerRadius="12"
+                Padding="12,10"
+                Margin="0,3"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource BorderBrush}"
+                Cursor="Hand">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <Border Background="{Binding PriorityColor, FallbackValue=#6366F1}"
-                                CornerRadius="4"
-                                Width="8"
-                                Height="8"
-                                Margin="0,0,8,0"/>
-                        <TextBlock Text="{Binding Title}"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   FontSize="15"
-                                   FontWeight="Medium"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="16,4,0,0">
-                        <TextBlock Text="{Binding PriorityIcon, StringFormat='优先级: {0}'}"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   FontSize="12"/>
-                        <!-- 子任务进度 -->
-                        <TextBlock Text="{Binding SubTasksProgressText}"
-                                   Foreground="{DynamicResource AccentBrush}"
-                                   FontSize="11"
-                                   Margin="8,0,0,0"
-                                   FontWeight="SemiBold"
-                                   Visibility="{Binding HasSubTasks, Converter={StaticResource BoolToVis}}"/>
+
+                <Button Grid.Column="0"
+                        Width="20" Height="20"
+                        VerticalAlignment="Center" Margin="0,0,10,0"
+                        FocusVisualStyle="{x:Null}"
+                        Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        ToolTip="完成任务"
+                        Template="{StaticResource CompleteCircleTemplate}"/>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontSize="12.5"
+                               FontWeight="Medium"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="999" Padding="7,2">
+                            <TextBlock Text="每日" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
+                        </Border>
+                        <Border x:Name="PriorityChip" Background="{DynamicResource DangerSoftBrush}"
+                                CornerRadius="999" Padding="7,2" Margin="6,0,0,0" Visibility="Collapsed">
+                            <TextBlock Text="高优先" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource DangerBrush}"/>
+                        </Border>
+                        <Grid x:Name="SubTaskBar" Margin="8,1,0,0" Visibility="Collapsed">
+                            <Border Width="56" Height="4" CornerRadius="2" Background="{DynamicResource SurfacePressedBrush}"/>
+                            <Border HorizontalAlignment="Left" Height="4" CornerRadius="2"
+                                    Background="{DynamicResource SuccessBrush}"/>
+                            <TextBlock Text="{Binding SubTasksProgressText}" FontSize="9" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SuccessBrush}" Margin="62,0,0,0"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
                     </StackPanel>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding}"
-                            Style="{DynamicResource SuccessButton}"
-                            Padding="10,7"
-                            Margin="4,0">
-                        <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}" FontSize="10" Foreground="White"/>
-                    </Button>
-                    <Button Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding}"
-                            Style="{DynamicResource DangerButton}"
-                            Padding="10,7">
-                        <controls:AppIcon Glyph="{x:Static controls:Icons.ChromeClose}" FontSize="9" Foreground="White"/>
-                    </Button>
-                </StackPanel>
+
+                <Button x:Name="DeleteTaskButton"
+                        Grid.Column="2" Opacity="0"
+                        Width="24" Height="24" VerticalAlignment="Center"
+                        Style="{DynamicResource IconButton}"
+                        Foreground="{DynamicResource DangerBrush}"
+                        Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        ToolTip="删除任务">
+                    <controls:AppIcon Glyph="{x:Static controls:Icons.Delete}" FontSize="11"/>
+                </Button>
             </Grid>
         </Border>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Priority}" Value="High">
+                <Setter TargetName="PriorityChip" Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding HasSubTasks}" Value="True">
+                <Setter TargetName="SubTaskBar" Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+            <Trigger SourceName="TaskCard" Property="IsMouseOver" Value="True">
+                <Setter TargetName="DeleteTaskButton" Property="Opacity" Value="1"/>
+            </Trigger>
+        </DataTemplate.Triggers>
     </DataTemplate>
 
-    <!-- ========== 截止任务卡片模板 ========== -->
+    <!-- ========== 截止任务卡片模板（暖底 + 倒计时胶囊）========== -->
     <DataTemplate x:Key="DeadlineTaskCardTemplate">
-        <Border Background="{DynamicResource CardBrush}"
-                CornerRadius="10"
-                Padding="16,12"
-                Margin="0,4"
-                BorderThickness="0,0,4,0"
-                BorderBrush="{DynamicResource TypeDeadlineBrush}">
+        <Border x:Name="TaskCard"
+                Background="{DynamicResource DeadlineCardBrush}"
+                CornerRadius="12"
+                Padding="12,10"
+                Margin="0,3"
+                BorderThickness="3,0,0,0"
+                BorderBrush="{DynamicResource WarningBrush}"
+                Cursor="Hand">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <Border Background="{Binding PriorityColor, FallbackValue=#6366F1}"
-                                CornerRadius="4"
-                                Width="8"
-                                Height="8"
-                                Margin="0,0,8,0"/>
-                        <TextBlock Text="{Binding Title}"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   FontSize="15"
-                                   FontWeight="Medium"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="16,4,0,0">
-                        <TextBlock Text="{Binding Deadline, StringFormat='截止: {0:yyyy/MM/dd}'}"
-                                   Foreground="{DynamicResource WarningBrush}"
-                                   FontSize="12"/>
-                        <!-- 子任务进度 -->
-                        <TextBlock Text="{Binding SubTasksProgressText}"
-                                   Foreground="{DynamicResource AccentBrush}"
-                                   FontSize="11"
-                                   Margin="8,0,0,0"
-                                   FontWeight="SemiBold"
-                                   Visibility="{Binding HasSubTasks, Converter={StaticResource BoolToVis}}"/>
+
+                <Button Grid.Column="0"
+                        Width="20" Height="20"
+                        VerticalAlignment="Center" Margin="0,0,10,0"
+                        FocusVisualStyle="{x:Null}"
+                        Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        ToolTip="完成任务"
+                        Template="{StaticResource CompleteCircleTemplate}"/>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontSize="12.5"
+                               FontWeight="Medium"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <Border Background="{DynamicResource WarningSoftBrush}" CornerRadius="999" Padding="7,2">
+                            <StackPanel Orientation="Horizontal">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Recent}" FontSize="8"
+                                                  Foreground="{DynamicResource WarningBrush}"
+                                                  VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBlock Text="{Binding Deadline, StringFormat='{}{0:MM/dd}'}"
+                                           FontSize="9.5" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource WarningBrush}"/>
+                                <TextBlock Text="{Binding DeadlineUrgency}"
+                                           FontSize="9.5" Foreground="{DynamicResource WarningBrush}"
+                                           Margin="4,0,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="PriorityChip" Background="{DynamicResource DangerSoftBrush}"
+                                CornerRadius="999" Padding="7,2" Margin="6,0,0,0" Visibility="Collapsed">
+                            <TextBlock Text="高优先" FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource DangerBrush}"/>
+                        </Border>
+                        <TextBlock x:Name="SubTaskMini" Text="{Binding SubTasksProgressText}" FontSize="9.5"
+                                   Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed"/>
                     </StackPanel>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Command="{Binding DataContext.CompleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding}"
-                            Style="{DynamicResource SuccessButton}"
-                            Padding="10,7"
-                            Margin="4,0">
-                        <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}" FontSize="10" Foreground="White"/>
-                    </Button>
-                    <Button Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding}"
-                            Style="{DynamicResource DangerButton}"
-                            Padding="10,7">
-                        <controls:AppIcon Glyph="{x:Static controls:Icons.ChromeClose}" FontSize="9" Foreground="White"/>
-                    </Button>
-                </StackPanel>
+
+                <Button x:Name="DeleteTaskButton"
+                        Grid.Column="2" Opacity="0"
+                        Width="24" Height="24" VerticalAlignment="Center"
+                        Style="{DynamicResource IconButton}"
+                        Foreground="{DynamicResource DangerBrush}"
+                        Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        ToolTip="删除任务">
+                    <controls:AppIcon Glyph="{x:Static controls:Icons.Delete}" FontSize="11"/>
+                </Button>
             </Grid>
         </Border>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Priority}" Value="High">
+                <Setter TargetName="PriorityChip" Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding HasSubTasks}" Value="True"/>
+                    <Condition Binding="{Binding SubTasksProgressText}" Value=""/>
+                </MultiDataTrigger.Conditions>
+                <Setter TargetName="SubTaskMini" Property="Visibility" Value="Visible"/>
+            </MultiDataTrigger>
+            <DataTrigger Binding="{Binding HasSubTasks}" Value="True">
+                <Setter TargetName="SubTaskMini" Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+            <Trigger SourceName="TaskCard" Property="IsMouseOver" Value="True">
+                <Setter TargetName="DeleteTaskButton" Property="Opacity" Value="1"/>
+            </Trigger>
+        </DataTemplate.Triggers>
     </DataTemplate>
 
     <!-- ========== 历史任务卡片模板 ========== -->
     <DataTemplate x:Key="HistoryTaskCardTemplate">
         <Border Background="{DynamicResource CardBrush}"
-                CornerRadius="10"
-                Padding="16,12"
-                Margin="0,4">
+                CornerRadius="12"
+                Padding="14,11"
+                Margin="0,3">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel>
+                <Ellipse Width="18" Height="18" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                <Path Data="M-11,0 l3,3 l5.5,-6" Stroke="White" StrokeThickness="1.7"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-15,0,0,0"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,8,0">
                     <TextBlock Text="{Binding Title}"
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                TextDecorations="Strikethrough"
-                               FontSize="15"/>
-                    <TextBlock Text="{Binding CompletedAt, StringFormat='完成于: {0:yyyy/MM/dd HH:mm}'}"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="12"
-                               Margin="0,4,0,0"/>
+                               FontSize="12.5"/>
+                    <TextBlock Text="{Binding CompletedAt, StringFormat='完成于 {0:MM/dd HH:mm}'}"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               FontSize="10"
+                               Margin="0,2,0,0"/>
                 </StackPanel>
-                <Button Grid.Column="1"
-                        Content="↩ 恢复"
+                <Button Grid.Column="2"
                         Command="{Binding DataContext.RestoreHistoryTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}"
-                        Style="{DynamicResource PrimaryButton}"
-                        Padding="12,6"/>
+                        Style="{DynamicResource SecondaryButton}"
+                        Padding="10,4" ToolTip="恢复到任务列表">
+                    <StackPanel Orientation="Horizontal">
+                        <controls:AppIcon Glyph="{x:Static controls:Icons.Restore}" FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <TextBlock Text="恢复" FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
     </DataTemplate>

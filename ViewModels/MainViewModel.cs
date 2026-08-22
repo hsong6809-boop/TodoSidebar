@@ -68,6 +68,22 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private string _comboDisplay = "";
 
+        // ===== V2 侧边栏驾驶舱：今日进度 =====
+        [ObservableProperty]
+        private double _todayProgressRate;
+
+        [ObservableProperty]
+        private string _todayDoneText = "0 / 0";
+
+        /// <summary>集合变化时重算今日进度（已完成 / 已完成+待办）。</summary>
+        private void RefreshTodayProgress()
+        {
+            var done = TodayCompletedTasks.Count;
+            var total = done + CurrentTasks.Count;
+            TodayProgressRate = total == 0 ? 0 : (double)done / total;
+            TodayDoneText = $"{done} / {total}";
+        }
+
         /// <summary>升级事件（窗口订阅显示横幅与粒子）</summary>
         public event EventHandler<LevelUpEventArgs>? LevelUpOccurred;
 
@@ -237,6 +253,10 @@ namespace TodoSidebar.ViewModels
             else if (sender == TodayCompletedTasks) OnPropertyChanged(nameof(TodayCompletedTasksCount));
             else if (sender == HistoryTasks) OnPropertyChanged(nameof(HistoryTasksCount));
             else if (sender == CurrentTasks) OnPropertyChanged(nameof(CurrentTasksCount));
+
+            // V2 侧边栏驾驶舱：今日进度环与计数联动
+            if (sender == TodayCompletedTasks || sender == CurrentTasks)
+                RefreshTodayProgress();
         }
 
         /// <summary>
