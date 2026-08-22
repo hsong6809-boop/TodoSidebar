@@ -634,6 +634,23 @@ namespace TodoSidebar
             if (page == "Achievements") LoadAchievements();
 
             AnimateActiveTabPanel();
+
+            // V2-W8：今日页两个任务流 + 成就墙交错入场
+            if (showDashboard)
+            {
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+                {
+                    AnimationService.AnimateListStagger(DailyTasksListBox);
+                    AnimationService.AnimateListStagger(DeadlineTasksListBox);
+                }));
+            }
+            if (page == "Achievements")
+            {
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+                {
+                    AnimationService.AnimateListStagger(AchievementsList, maxItems: 20);
+                }));
+            }
         }
 
         /// <summary>导航栏底部"设置"入口（不参与页面分组）。</summary>

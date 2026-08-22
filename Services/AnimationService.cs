@@ -234,5 +234,42 @@ namespace TodoSidebar.Services
                 particle.BeginAnimation(UIElement.OpacityProperty, opacityAnimation);
             }
         }
+
+        /// <summary>
+        /// V2-W8：列表交错入场（每项延迟 30ms，淡入 + 10px 上移）。
+        /// 需在容器已生成后调用（建议 Dispatcher.BeginInvoke(Loaded)）。
+        /// </summary>
+        public static void AnimateListStagger(System.Windows.Controls.ItemsControl? list, int maxItems = 12)
+        {
+            if (list?.Items == null || list.Items.Count == 0) return;
+
+            var count = Math.Min(list.Items.Count, maxItems);
+            var duration = TimeSpan.FromMilliseconds(220);
+            var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+            for (int i = 0; i < count; i++)
+            {
+                if (list.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement container)
+                    continue;
+
+                var delay = TimeSpan.FromMilliseconds(i * 30);
+                var translate = new TranslateTransform(0, 10);
+                container.RenderTransform = translate;
+
+                var fadeIn = new DoubleAnimation(0, 1, duration)
+                {
+                    BeginTime = delay,
+                    EasingFunction = easing
+                };
+                var slideUp = new DoubleAnimation(10, 0, duration)
+                {
+                    BeginTime = delay,
+                    EasingFunction = easing
+                };
+
+                container.BeginAnimation(UIElement.OpacityProperty, fadeIn);
+                translate.BeginAnimation(TranslateTransform.YProperty, slideUp);
+            }
+        }
     }
 }
