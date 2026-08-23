@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="840" viewBox="0 0 380 840" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+  <rect width="380" height="840" fill="#0B0F1A"/>
+  <rect x="18" y="14" width="344" height="812" rx="22" fill="#000000" opacity="0.45"/>
+  <rect x="10" y="8" width="344" height="812" rx="20" fill="#0F172A" stroke="#26324B"/>
+
+  <defs>
+    <linearGradient id="brandD" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818CF8"/><stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="xpbarD" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#818CF8"/><stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 头部 -->
+  <circle cx="46" cy="52" r="23" fill="url(#brandD)"/>
+  <path d="M37 53 l6 6 l12 -13" stroke="#0F172A" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="80" y="47" font-size="16" font-weight="600" fill="#F1F5F9">早上好，Alex</text>
+  <text x="80" y="66" font-size="11" fill="#94A3B8">8月22日 周五 · 6 项待办</text>
+  <circle cx="296" cy="50" r="15" fill="#FFFFFF" opacity="0.07"/>
+  <g stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round">
+    <line x1="290" y1="45" x2="302" y2="45"/><line x1="290" y1="50" x2="302" y2="50"/><line x1="290" y1="55" x2="302" y2="55"/>
+    <circle cx="294" cy="45" r="1.9" fill="#0F172A"/><circle cx="300" cy="50" r="1.9" fill="#0F172A"/><circle cx="293" cy="55" r="1.9" fill="#0F172A"/>
+  </g>
+  <circle cx="326" cy="50" r="15" fill="#FFFFFF" opacity="0.07"/>
+  <path d="M330 43 l-8 7 l8 7" stroke="#94A3B8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Hero 卡 -->
+  <rect x="24" y="96" width="316" height="76" rx="16" fill="#1E293B" stroke="#2C3A54"/>
+  <circle cx="58" cy="134" r="24" fill="none" stroke="#334155" stroke-width="7"/>
+  <circle cx="58" cy="134" r="24" fill="none" stroke="#818CF8" stroke-width="7" stroke-linecap="round"
+          stroke-dasharray="102.7 150.8" transform="rotate(-90 58 134)"/>
+  <text x="58" y="139" font-size="13" font-weight="700" fill="#F1F5F9" text-anchor="middle">68%</text>
+  <text x="96" y="124" font-size="11" fill="#94A3B8">今日进度</text>
+  <text x="96" y="147" font-size="18" font-weight="700" fill="#F1F5F9">13<tspan font-size="12" fill="#64748B" font-weight="400"> / 19</tspan></text>
+  <rect x="216" y="112" width="106" height="24" rx="12" fill="#3B2A10"/>
+  <text x="269" y="128" font-size="11" font-weight="600" fill="#FBBF24" text-anchor="middle">🔥 连击 6 天</text>
+  <rect x="216" y="142" width="106" height="22" rx="11" fill="#27314F"/>
+  <text x="230" y="157" font-size="10.5" font-weight="600" fill="#A5B4FC">Lv.12 冒险者</text>
+  <rect x="292" y="151" width="24" height="4" rx="2" fill="#37456B"/>
+  <rect x="292" y="151" width="15" height="4" rx="2" fill="url(#xpbarD)"/>
+
+  <!-- Composer -->
+  <rect x="24" y="186" width="316" height="40" rx="12" fill="#1E293B" stroke="#33415E"/>
+  <circle cx="44" cy="206" r="9" fill="#27314F"/>
+  <path d="M44 201.5 v9 M39.5 206 h9" stroke="#A5B4FC" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="62" y="211" font-size="12" fill="#64748B">添加任务，回车确认…</text>
+  <rect x="292" y="192" width="42" height="28" rx="8" fill="url(#brandD)"/>
+  <path d="M306 206 h14 M313 199 v14" stroke="#0F172A" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- 分组标题 -->
+  <text x="26" y="256" font-size="13" font-weight="600" fill="#CBD5E1">今天</text>
+  <rect x="60" y="243" width="22" height="18" rx="9" fill="#27314F"/>
+  <text x="71" y="256" font-size="11" font-weight="600" fill="#A5B4FC" text-anchor="middle">6</text>
+  <g transform="translate(316,250)" stroke="#64748B" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M2 3 h12 M11 8 h3 M2 13 h12"/>
+    <circle cx="7" cy="3" r="2.2" fill="#0F172A"/><circle cx="9" cy="13" r="2.2" fill="#0F172A"/>
+  </g>
+
+  <!-- 任务卡 1 截止 -->
+  <rect x="24" y="270" width="316" height="58" rx="14" fill="#1E293B" stroke="#2C3A54"/>
+  <rect x="24" y="270" width="4" height="58" rx="2" fill="#FBBF24"/>
+  <circle cx="50" cy="299" r="9.5" fill="none" stroke="#475569" stroke-width="1.6"/>
+  <text x="68" y="294" font-size="12.5" font-weight="500" fill="#F1F5F9">写产品周报并发送</text>
+  <rect x="68" y="301" width="88" height="19" rx="9.5" fill="#3B2A10"/>
+  <circle cx="78" cy="310.5" r="2.5" fill="#FBBF24"/>
+  <text x="86" y="314.5" font-size="10" font-weight="600" fill="#FCD34D">明天 18:00 截止</text>
+  <rect x="162" y="301" width="52" height="19" rx="9.5" fill="#3F1D20"/>
+  <text x="188" y="314.5" font-size="10" font-weight="600" fill="#F87171" text-anchor="middle">高优先</text>
+
+  <!-- 任务卡 2 -->
+  <rect x="24" y="336" width="316" height="58" rx="14" fill="#1E293B" stroke="#2C3A54"/>
+  <rect x="24" y="336" width="4" height="58" rx="2" fill="#34D399"/>
+  <circle cx="50" cy="365" r="9.5" fill="none" stroke="#475569" stroke-width="1.6"/>
+  <text x="68" y="360" font-size="12.5" font-weight="500" fill="#F1F5F9">晨间阅读 30 分钟</text>
+  <rect x="68" y="367" width="46" height="19" rx="9.5" fill="#27314F"/>
+  <text x="91" y="380.5" font-size="10" font-weight="600" fill="#A5B4FC" text-anchor="middle">每日</text>
+  <rect x="122" y="370" width="70" height="5" rx="2.5" fill="#33415E"/>
+  <rect x="122" y="370" width="42" height="5" rx="2.5" fill="#34D399"/>
+  <text x="198" y="377" font-size="10" font-weight="600" fill="#34D399">3/5</text>
+
+  <!-- 任务卡 3 -->
+  <rect x="24" y="402" width="316" height="58" rx="14" fill="#1E293B" stroke="#2C3A54"/>
+  <rect x="24" y="402" width="4" height="58" rx="2" fill="#FBBF24"/>
+  <circle cx="50" cy="431" r="9.5" fill="none" stroke="#475569" stroke-width="1.6"/>
+  <text x="68" y="426" font-size="12.5" font-weight="500" fill="#F1F5F9">代码评审：PR #142</text>
+  <rect x="68" y="433" width="46" height="19" rx="9.5" fill="#27314F"/>
+  <text x="91" y="446.5" font-size="10" font-weight="600" fill="#A5B4FC" text-anchor="middle">每日</text>
+  <rect x="122" y="436" width="52" height="19" rx="9.5" fill="#283548"/>
+  <text x="148" y="449.5" font-size="10" fill="#94A3B8" text-anchor="middle">📋 1/2</text>
+
+  <!-- 已完成卡 -->
+  <rect x="24" y="468" width="316" height="58" rx="14" fill="#1E293B" stroke="#2C3A54" opacity="0.72"/>
+  <circle cx="50" cy="497" r="9.5" fill="#34D399"/>
+  <path d="M45.5 497 l3.2 3.2 l6 -6.5" stroke="#0F172A" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="68" y="492" font-size="12.5" fill="#64748B" text-decoration="line-through">晨间站会</text>
+  <rect x="68" y="499" width="46" height="19" rx="9.5" fill="#27314F" opacity="0.6"/>
+  <text x="91" y="512.5" font-size="10" fill="#818CF8" text-anchor="middle">每日</text>
+  <text x="308" y="502" font-size="10" fill="#475569">09:42</text>
+
+  <!-- 折叠分组 -->
+  <rect x="24" y="540" width="316" height="34" rx="10" fill="#FFFFFF" opacity="0.05"/>
+  <path d="M42 553 l4.5 5 l4.5 -5" stroke="#94A3B8" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="60" y="561" font-size="12" font-weight="600" fill="#94A3B8">已完成 · 13</text>
+  <text x="322" y="561" font-size="10.5" fill="#475569">展开</text>
+
+  <!-- 本周概览 -->
+  <text x="26" y="606" font-size="13" font-weight="600" fill="#CBD5E1">本周概览</text>
+  <rect x="24" y="618" width="316" height="64" rx="14" fill="#1E293B" stroke="#2C3A54"/>
+  <g font-size="9" fill="#64748B" text-anchor="middle">
+    <text x="52" y="638">一</text><text x="94" y="638">二</text><text x="136" y="638">三</text>
+    <text x="178" y="638">四</text><text x="220" y="638">五</text><text x="262" y="638">六</text><text x="304" y="638">日</text>
+  </g>
+  <g>
+    <rect x="40" y="646" width="24" height="26" rx="8" fill="#283548"/><text x="52" y="663" font-size="10" fill="#94A3B8" text-anchor="middle">18</text>
+    <rect x="82" y="646" width="24" height="26" rx="8" fill="#283548"/><text x="94" y="663" font-size="10" fill="#94A3B8" text-anchor="middle">19</text>
+    <rect x="124" y="646" width="24" height="26" rx="8" fill="#283548"/><text x="136" y="663" font-size="10" fill="#94A3B8" text-anchor="middle">20</text>
+    <rect x="166" y="646" width="24" height="26" rx="8" fill="#283548"/><text x="178" y="663" font-size="10" fill="#94A3B8" text-anchor="middle">21</text>
+    <rect x="208" y="644" width="24" height="30" rx="8" fill="#818CF8"/><text x="220" y="663" font-size="10" font-weight="700" fill="#0F172A" text-anchor="middle">22</text>
+    <rect x="250" y="646" width="24" height="26" rx="8" fill="#283548"/><text x="262" y="663" font-size="10" fill="#475569" text-anchor="middle">23</text>
+    <rect x="292" y="646" width="24" height="26" rx="8" fill="#283548"/><text x="304" y="663" font-size="10" fill="#475569" text-anchor="middle">24</text>
+  </g>
+  <g>
+    <circle cx="58" cy="679" r="2" fill="#34D399"/><circle cx="100" cy="679" r="2" fill="#34D399"/>
+    <circle cx="142" cy="679" r="2" fill="#34D399"/><circle cx="184" cy="679" r="2" fill="#34D399"/>
+    <circle cx="220" cy="681" r="2.5" fill="#0F172A"/>
+  </g>
+
+  <!-- 底部 Dock -->
+  <rect x="10" y="742" width="344" height="78" rx="20" fill="#141E33"/>
+  <rect x="10" y="742" width="344" height="1" fill="#26324B"/>
+  <circle cx="48" cy="781" r="17" fill="none" stroke="#33415E" stroke-width="4.5"/>
+  <circle cx="48" cy="781" r="17" fill="none" stroke="#818CF8" stroke-width="4.5" stroke-linecap="round"
+          stroke-dasharray="53.4 106.8" transform="rotate(-90 48 781)"/>
+  <text x="76" y="777" font-size="15" font-weight="700" fill="#F1F5F9">12:36</text>
+  <text x="76" y="793" font-size="10" fill="#64748B">专注中 · 第 2 回合</text>
+  <circle cx="176" cy="781" r="14" fill="url(#brandD)"/>
+  <path d="M171 774.5 l11 6.5 l-11 6.5 z" fill="#0F172A"/>
+  <g transform="translate(232,768)">
+    <rect width="30" height="26" rx="8" fill="#283548"/>
+    <path d="M8 17 v-6 M15 17 V9 M22 17 v-4" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(268,768)">
+    <rect width="30" height="26" rx="8" fill="#283548"/>
+    <path d="M15 8 v7 m0 0 l-3.5 -3.5 m3.5 3.5 l3.5 -3.5 M8 18 h14" stroke="#94A3B8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g transform="translate(304,768)">
+    <rect width="30" height="26" rx="8" fill="#283548"/>
+    <g stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round">
+      <line x1="8" y1="10" x2="22" y2="10"/><line x1="8" y1="16" x2="22" y2="16"/>
+      <circle cx="12" cy="10" r="2.1" fill="#283548"/><circle cx="18" cy="16" r="2.1" fill="#283548"/>
+    </g>
+  </g>
+</svg>

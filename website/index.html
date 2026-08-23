@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日任务 TodoSidebar — 把每一天，过成进度条</title>
+<meta name="description" content="贴边侧边栏 + 完整仪表盘的双模式 Windows 待办应用。内置番茄钟、等级连击、成就徽章、数据可视化与 Supabase 云同步。">
+<style>
+  :root{
+    --accent:#6366F1; --accent2:#8B5CF6; --ink:#0F172A; --sub:#64748B;
+    --tertiary:#94A3B8; --line:#E4E9F2; --card:#FFFFFF; --bg:#F7F8FC;
+    --soft:#EEF2FF; --ok:#10B981; --warn:#F59E0B;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);line-height:1.6}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+
+  /* ===== 导航 ===== */
+  nav{position:sticky;top:0;z-index:50;background:rgba(247,248,252,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;gap:28px;height:60px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+  .logo .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#6366F1,#8B5CF6);display:flex;align-items:center;justify-content:center}
+  .logo svg{width:16px;height:16px}
+  .nav-links{display:flex;gap:22px;font-size:13.5px;color:var(--sub);margin-left:auto}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-gh{border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:13px;background:#fff}
+
+  /* ===== Hero ===== */
+  header.hero{padding:72px 0 84px;position:relative;overflow:hidden}
+  .blob{position:absolute;width:520px;height:520px;border-radius:50%;filter:blur(90px);opacity:.16;
+        background:radial-gradient(circle at 35% 35%,#6366F1,#8B5CF6 55%,transparent 75%);right:-80px;top:-120px}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;position:relative}
+  h1{font-size:42px;line-height:1.22;letter-spacing:-.5px}
+  h1 .grad{background:linear-gradient(90deg,#6366F1,#8B5CF6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin-top:18px;font-size:16px;color:var(--sub);max-width:480px}
+  .cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 26px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 8px 20px -8px rgba(99,102,241,.6)}
+  .btn.primary:hover{transform:translateY(-1px)}
+  .btn.ghost{border:1px solid var(--line);background:#fff;color:var(--ink)}
+  .meta{margin-top:16px;font-size:12.5px;color:var(--tertiary)}
+  .hero-shot{position:relative}
+  .hero-shot img{border-radius:18px;border:1px solid var(--line);
+                box-shadow:0 30px 60px -20px rgba(15,23,42,.25)}
+  .float-card{position:absolute;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 14px;
+              box-shadow:0 12px 30px -12px rgba(15,23,42,.2);font-size:11px;color:var(--sub)}
+  .fc1{left:-26px;bottom:34px}.fc2{right:-14px;top:26px}
+  .fc b{display:block;font-size:13px;color:var(--ink)}
+
+  /* ===== 区块通用 ===== */
+  section{padding:76px 0}
+  .kicker{font-size:13px;font-weight:600;color:var(--accent);letter-spacing:2px;margin-bottom:10px}
+  h2{font-size:30px;letter-spacing:-.3px;margin-bottom:14px}
+  .lead{color:var(--sub);max-width:560px}
+
+  /* 功能网格 */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:38px}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 20px;transition:.2s}
+  .feat:hover{transform:translateY(-3px);box-shadow:0 14px 30px -16px rgba(15,23,42,.18)}
+  .feat .ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:13px}
+  .feat h3{font-size:15.5px;margin-bottom:7px}
+  .feat p{font-size:13px;color:var(--sub)}
+
+  /* 截图展示 */
+  .shots{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:38px}
+  .shot{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;transition:.2s}
+  .shot:hover{transform:translateY(-3px);box-shadow:0 14px 30px -16px rgba(15,23,42,.18)}
+  .shot img{border-radius:9px;border:1px solid var(--line)}
+  .shot figcaption{text-align:center;font-size:12.5px;color:var(--sub);padding-top:10px;font-weight:600}
+
+  /* 更新日志摘要 */
+  .log{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-top:36px}
+  .log h3{font-size:16px;margin-bottom:12px}
+  .log ul{list-style:none}
+  .log li{font-size:13.5px;color:var(--sub);padding:5px 0 5px 22px;position:relative}
+  .log li::before{content:"✦";position:absolute;left:2px;color:var(--accent)}
+
+  /* 下载 */
+  .dl-band{background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:20px;color:#fff;
+           padding:46px 44px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;
+           box-shadow:0 24px 50px -20px rgba(99,102,241,.55)}
+  .dl-band h2{color:#fff;margin-bottom:8px}
+  .dl-band p{opacity:.92;font-size:14px}
+  .dl-btns{display:flex;gap:14px;flex-wrap:wrap}
+  .btn.white{background:#fff;color:var(--accent)}
+  .btn.line-w{border:1.5px solid rgba(255,255,255,.75);color:#fff}
+  .dl-file{font-size:12px;opacity:.85;margin-top:10px}
+
+  footer{padding:34px 0 40px;color:var(--tertiary);font-size:12.5px;text-align:center}
+  footer a{color:var(--sub)}
+
+  @media (max-width:900px){
+    .hero-grid{grid-template-columns:1fr}
+    .feat-grid{grid-template-columns:repeat(2,1fr)}
+    .shots{grid-template-columns:repeat(2,1fr)}
+    .nav-links{display:none}
+    h1{font-size:32px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="logo" href="#top">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5 L10 17.5 L19 7" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      每日任务
+    </a>
+    <div class="nav-links">
+      <a href="#features">功能</a><a href="#screens">界面</a><a href="#changelog">更新日志</a><a href="#download">下载</a>
+    </div>
+    <a class="nav-gh" href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">GitHub</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="blob"></div>
+  <div class="wrap hero-grid">
+    <div>
+      <h1>把每一天，<br>过成一条<span class="grad">进度条</span></h1>
+      <p class="sub">「每日任务」是一款双模式 Windows 待办应用：320px 贴边侧边栏随时瞄一眼，完整仪表盘深度管理。内置番茄钟、经验等级、连续全清与成就徽章——让坚持这件事，看得见也上瘾。</p>
+      <div class="cta">
+        <a class="btn primary" href="#download">⬇ 免费下载 v5.0.0</a>
+        <a class="btn ghost" href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">查看源码</a>
+      </div>
+      <p class="meta">Windows 10 / 11 · x64 · 自包含运行时免安装环境 · 基于 WPF &amp; .NET 8</p>
+    </div>
+    <div class="hero-shot">
+      <img src="assets/mockup-01-sidebar-light.svg" alt="侧边栏驾驶舱预览">
+      <div class="float-card fc1"><b>🔥 连击 ×3</b>今日全清保持中</div>
+      <div class="float-card fc2"><b>Lv.12</b>距离升级还差 180 EXP</div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="kicker">FEATURES</div>
+    <h2>一个应用，装下你的全部节奏</h2>
+    <p class="lead">从记录到回顾，从专注到激励——每个模块都为“每天多用一次”而设计。</p>
+
+    <div class="feat-grid">
+      <div class="feat"><div class="ic" style="background:#EEF2FF">🖥️</div>
+        <h3>双模式驾驶舱</h3><p>320px 贴边侧边栏不占工作区，鼠标靠近即展开；640px 完整仪表盘承载六大页面，一键互切。</p></div>
+      <div class="feat"><div class="ic" style="background:#ECFDF5">📊</div>
+        <h3>统计可视化</h3><p>近 14 天完成柱状图、30 天趋势折线、完成率环——自研轻量图表，数据一目了然。</p></div>
+      <div class="feat"><div class="ic" style="background:#FFF7ED">🎮</div>
+        <h3>游戏化激励</h3><p>经验等级 × 连续全清连击 × 20 枚成就徽章。完成任务不再是清单打勾，而是升级打怪。</p></div>
+      <div class="feat"><div class="ic" style="background:#FEF2F2">🍅</div>
+        <h3>沉浸番茄钟</h3><p>25 分钟渐变大环、回合圆点、任务绑定；侧边栏迷你番茄随时暂停，数据全部计入成长。</p></div>
+      <div class="feat"><div class="ic" style="background:#EFF6FF">☁️</div>
+        <h3>Supabase 云同步</h3><p>多设备实时同步、冲突自动合并；断网照常用，联网增量上传，本地 SQLite 永不离线。</p></div>
+      <div class="feat"><div class="ic" style="background:#FAF5FF">🌗</div>
+        <h3>主题随心</h3><p>亮暗双主题语义化配色 + 五套强调色（靛蓝/海蓝/落日/松林/黑白）即时换肤，矢量图标全程锐利。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="screens" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="kicker">SCREENS</div>
+    <h2>看一眼就懂的设计</h2>
+    <p class="lead">扁平卡片 · 柔和圆角 · 单一强调色。所有界面都遵循同一套设计令牌。</p>
+    <div class="shots">
+      <figure class="shot"><img src="assets/mockup-03-full-dashboard.svg" alt="完整模式仪表盘"><figcaption>完整模式 · 今日仪表盘</figcaption></figure>
+      <figure class="shot"><img src="assets/mockup-01-sidebar-light.svg" alt="侧边栏驾驶舱"><figcaption>侧边栏 · 驾驶舱</figcaption></figure>
+      <figure class="shot"><img src="assets/mockup-04-focus.svg" alt="沉浸专注"><figcaption>专注页 · 番茄钟</figcaption></figure>
+      <figure class="shot"><img src="assets/mockup-05-stats.svg" alt="统计图表"><figcaption>统计 · 趋势与成就</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="changelog">
+  <div class="wrap">
+    <div class="kicker">CHANGELOG</div>
+    <h2>v5.0.0 —— 效率工作台正式版</h2>
+    <div class="log">
+      <h3>2026-08-22 · 本轮核心</h3>
+      <ul>
+        <li>UI 全面重构：设计令牌双主题系统，五套强调色即时换肤，32 枚矢量图标根治字体缺字</li>
+        <li>完整模式导航栏化：今日仪表盘、截止紧急度分组、统计图表、沉浸番茄、成就墙、命令面板</li>
+        <li>侧边栏驾驶舱：问候头部、今日进度环、「接下来」行动卡、本周概览七日条、迷你番茄 Dock</li>
+        <li>截止到期语义修正：截止日当天 24 点才算逾期，通知与倒计时全面对齐</li>
+        <li>昵称体系 · 减少动效开关 · 真实同步时间戳 · 首次收缩裁切修复</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <div class="dl-band">
+      <div>
+        <h2>现在就开始第一天</h2>
+        <p>安装包自带 .NET 运行时，双击即用。支持桌面图标与开机自启，卸载时可保留本地数据。</p>
+        <p class="dl-file">每日任务-Setup-5.0.0.exe · 50 MB · Windows x64</p>
+      </div>
+      <div class="dl-btns">
+        <a class="btn white" href="https://github.com/hsong6809-boop/TodoSidebar/releases/latest" target="_blank">⬇ 下载安装包</a>
+        <a class="btn line-w" href="https://github.com/hsong6809-boop/TodoSidebar/releases" target="_blank">历史版本</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    © 2026 TodoSidebar · 每日任务 · 采用 BSL 1.1 协议（2030 年起转为 Apache 2.0）<br>
+    用 WPF · .NET 8 · SQLite · Supabase 构建 · <a href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">GitHub 仓库</a>
+  </div>
+</footer>
+
+</body>
+</html>
