@@ -4,203 +4,333 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>每日任务 TodoSidebar — 把每一天，过成进度条</title>
-<meta name="description" content="贴边侧边栏 + 完整仪表盘的双模式 Windows 待办应用。内置番茄钟、等级连击、成就徽章、数据可视化与 Supabase 云同步。">
+<meta name="description" content="双模式 Windows 待办应用：贴边侧边栏 + 效率仪表盘。番茄钟、等级连击、成就徽章、数据可视化与 Supabase 云同步。">
 <style>
-  :root{
-    --accent:#6366F1; --accent2:#8B5CF6; --ink:#0F172A; --sub:#64748B;
-    --tertiary:#94A3B8; --line:#E4E9F2; --card:#FFFFFF; --bg:#F7F8FC;
-    --soft:#EEF2FF; --ok:#10B981; --warn:#F59E0B;
-  }
-  *{margin:0;padding:0;box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);line-height:1.6}
-  a{color:inherit;text-decoration:none}
-  img{max-width:100%;display:block}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+:root{
+  --bg:#F7F8FC; --card:#FFFFFF; --line:#E6EAF2;
+  --ink:#0F172A; --sub:#5B6B84; --ter:#94A3B8;
+  --acc:#6366F1; --acc2:#8B5CF6; --ok:#10B981;
+  --dark:#0A0F1E; --dark2:#111A30; --dline:#1E2A44;
+  --sh-big:0 30px 70px -25px rgba(10,15,30,.45);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);line-height:1.65;-webkit-font-smoothing:antialiased}
+a{text-decoration:none;color:inherit}
+img{display:block;max-width:100%}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+.d1{transition-delay:.08s}.d2{transition-delay:.16s}.d3{transition-delay:.24s}
 
-  /* ===== 导航 ===== */
-  nav{position:sticky;top:0;z-index:50;background:rgba(247,248,252,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .nav-in{display:flex;align-items:center;gap:28px;height:60px}
-  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
-  .logo .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#6366F1,#8B5CF6);display:flex;align-items:center;justify-content:center}
-  .logo svg{width:16px;height:16px}
-  .nav-links{display:flex;gap:22px;font-size:13.5px;color:var(--sub);margin-left:auto}
-  .nav-links a:hover{color:var(--ink)}
-  .nav-gh{border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:13px;background:#fff}
+/* ===== 浮动胶囊导航 ===== */
+.nav{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:100;
+     display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;
+     background:rgba(10,15,30,.72);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.09);
+     box-shadow:0 10px 30px -10px rgba(0,0,0,.5)}
+.nav .logo{display:flex;align-items:center;gap:8px;padding:0 12px 0 4px;color:#fff;font-weight:700;font-size:14px}
+.nav .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#6366F1,#8B5CF6);display:grid;place-items:center}
+.nav a.lk{color:#B9C4D8;font-size:13px;padding:7px 13px;border-radius:999px;transition:.2s}
+.nav a.lk:hover{color:#fff;background:rgba(255,255,255,.08)}
+.nav .gh{margin-left:4px;background:#fff;color:#0F172A;font-weight:600;font-size:12.5px;padding:7px 14px;border-radius:999px}
+.nav .gh:hover{background:#E2E8F0}
 
-  /* ===== Hero ===== */
-  header.hero{padding:72px 0 84px;position:relative;overflow:hidden}
-  .blob{position:absolute;width:520px;height:520px;border-radius:50%;filter:blur(90px);opacity:.16;
-        background:radial-gradient(circle at 35% 35%,#6366F1,#8B5CF6 55%,transparent 75%);right:-80px;top:-120px}
-  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;position:relative}
-  h1{font-size:42px;line-height:1.22;letter-spacing:-.5px}
-  h1 .grad{background:linear-gradient(90deg,#6366F1,#8B5CF6);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .sub{margin-top:18px;font-size:16px;color:var(--sub);max-width:480px}
-  .cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 26px;border-radius:10px;font-weight:600;font-size:15px}
-  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 8px 20px -8px rgba(99,102,241,.6)}
-  .btn.primary:hover{transform:translateY(-1px)}
-  .btn.ghost{border:1px solid var(--line);background:#fff;color:var(--ink)}
-  .meta{margin-top:16px;font-size:12.5px;color:var(--tertiary)}
-  .hero-shot{position:relative}
-  .hero-shot img{border-radius:18px;border:1px solid var(--line);
-                box-shadow:0 30px 60px -20px rgba(15,23,42,.25)}
-  .float-card{position:absolute;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 14px;
-              box-shadow:0 12px 30px -12px rgba(15,23,42,.2);font-size:11px;color:var(--sub)}
-  .fc1{left:-26px;bottom:34px}.fc2{right:-14px;top:26px}
-  .fc b{display:block;font-size:13px;color:var(--ink)}
+/* ===== 深色 Hero ===== */
+.hero{position:relative;background:var(--dark);color:#fff;padding:170px 0 110px;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(700px 420px at 78% 18%,rgba(99,102,241,.28),transparent 65%),
+             radial-gradient(520px 380px at 12% 78%,rgba(139,92,246,.18),transparent 70%)}
+.hero::after{content:"";position:absolute;inset:0;opacity:.5;
+  background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:26px 26px}
+.hero .wrap{position:relative;z-index:2}
+.badge{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:#C7D2FE;
+       border:1px solid rgba(165,180,252,.35);background:rgba(99,102,241,.14);
+       padding:6px 14px;border-radius:999px;margin-bottom:26px}
+.badge i{width:7px;height:7px;border-radius:50%;background:#34D399;display:inline-block}
+h1{font-size:clamp(38px,5.4vw,60px);line-height:1.14;letter-spacing:-1px;font-weight:800}
+h1 .g{background:linear-gradient(92deg,#A5B4FC,#C4B5FD 55%,#6EE7B7);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.lead{margin-top:22px;font-size:17.5px;color:#A9B6CC;max-width:560px}
+.cta{display:flex;gap:14px;margin-top:34px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:15px;
+     padding:14px 28px;border-radius:12px;transition:.2s}
+.btn.w{background:#fff;color:#0F172A}
+.btn.w:hover{transform:translateY(-2px);box-shadow:0 14px 30px -12px rgba(255,255,255,.35)}
+.btn.o{border:1.5px solid rgba(255,255,255,.28);color:#E2E8F0}
+.btn.o:hover{border-color:#8B9CC0;background:rgba(255,255,255,.05)}
+.hero .meta{margin-top:20px;font-size:12.5px;color:#5B6B84}
 
-  /* ===== 区块通用 ===== */
-  section{padding:76px 0}
-  .kicker{font-size:13px;font-weight:600;color:var(--accent);letter-spacing:2px;margin-bottom:10px}
-  h2{font-size:30px;letter-spacing:-.3px;margin-bottom:14px}
-  .lead{color:var(--sub);max-width:560px}
+/* Hero 视觉层叠 */
+.stage{position:relative;height:520px}
+.shot-main{position:absolute;right:-30px;top:20px;width:620px;border-radius:16px;
+           border:1px solid rgba(255,255,255,.12);box-shadow:var(--sh-big);z-index:2}
+.shot-side{position:absolute;left:-6px;top:120px;width:250px;border-radius:14px;
+           border:1px solid rgba(255,255,255,.14);box-shadow:0 26px 60px -20px rgba(0,0,0,.6);z-index:3}
+.chip{position:absolute;z-index:4;display:flex;align-items:center;gap:9px;
+      background:rgba(17,26,48,.92);border:1px solid var(--dline);border-radius:13px;
+      padding:10px 14px;backdrop-filter:blur(8px);box-shadow:0 16px 40px -14px rgba(0,0,0,.55);
+      animation:float 5.5s ease-in-out infinite}
+.chip .n{font-size:15px;font-weight:700;color:#fff}
+.chip .t{font-size:10px;color:#8B9CC0}
+.chip .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:15px}
+.c1{left:24px;bottom:52px;animation-delay:0s}
+.c2{right:36px;bottom:-6px;animation-delay:1.4s}
+.c2 .ic{background:rgba(52,211,153,.16)}
+.c1 .ic{background:rgba(99,102,241,.2)}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
 
-  /* 功能网格 */
-  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:38px}
-  .feat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 20px;transition:.2s}
-  .feat:hover{transform:translateY(-3px);box-shadow:0 14px 30px -16px rgba(15,23,42,.18)}
-  .feat .ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:13px}
-  .feat h3{font-size:15.5px;margin-bottom:7px}
-  .feat p{font-size:13px;color:var(--sub)}
+/* 数据条 */
+.stats{background:var(--dark);color:#fff;padding:0 0 84px}
+.stats .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
+             border-top:1px solid var(--dline);padding-top:44px}
+.stat b{font-size:34px;font-weight:800;background:linear-gradient(90deg,#A5B4FC,#6EE7B7);
+        -webkit-background-clip:text;background-clip:text;color:transparent}
+.stat span{display:block;font-size:13px;color:#8B9CC0;margin-top:4px}
 
-  /* 截图展示 */
-  .shots{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:38px}
-  .shot{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;transition:.2s}
-  .shot:hover{transform:translateY(-3px);box-shadow:0 14px 30px -16px rgba(15,23,42,.18)}
-  .shot img{border-radius:9px;border:1px solid var(--line)}
-  .shot figcaption{text-align:center;font-size:12.5px;color:var(--sub);padding-top:10px;font-weight:600}
+/* ===== 亮色区块 ===== */
+.sec{padding:96px 0}
+.sec h2{font-size:clamp(26px,3.4vw,36px);letter-spacing:-.5px;font-weight:800}
+.kicker{font-size:13px;font-weight:700;color:var(--acc);letter-spacing:2.5px;margin-bottom:12px}
+.lead{color:var(--sub);font-size:15.5px;max-width:540px;margin-top:12px}
 
-  /* 更新日志摘要 */
-  .log{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-top:36px}
-  .log h3{font-size:16px;margin-bottom:12px}
-  .log ul{list-style:none}
-  .log li{font-size:13.5px;color:var(--sub);padding:5px 0 5px 22px;position:relative}
-  .log li::before{content:"✦";position:absolute;left:2px;color:var(--accent)}
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:44px}
+.feat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px 24px;transition:.25s}
+.feat:hover{transform:translateY(-4px);box-shadow:0 20px 44px -20px rgba(15,23,42,.22);border-color:#D9E0EC}
+.feat .ic{width:44px;height:44px;border-radius:12px;background:var(--soft);display:grid;place-items:center;margin-bottom:16px}
+.feat .ic svg{width:22px;height:22px;stroke:var(--acc);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.feat h3{font-size:16px;margin-bottom:8px}
+.feat p{font-size:13.5px;color:var(--sub)}
 
-  /* 下载 */
-  .dl-band{background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:20px;color:#fff;
-           padding:46px 44px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;
-           box-shadow:0 24px 50px -20px rgba(99,102,241,.55)}
-  .dl-band h2{color:#fff;margin-bottom:8px}
-  .dl-band p{opacity:.92;font-size:14px}
-  .dl-btns{display:flex;gap:14px;flex-wrap:wrap}
-  .btn.white{background:#fff;color:var(--accent)}
-  .btn.line-w{border:1.5px solid rgba(255,255,255,.75);color:#fff}
-  .dl-file{font-size:12px;opacity:.85;margin-top:10px}
+/* ===== 展示：标签 + 大图 ===== */
+.show{background:var(--dark);color:#fff;padding:100px 0;position:relative;overflow:hidden}
+.show::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(640px 400px at 85% 10%,rgba(139,92,246,.16),transparent 65%)}
+.show .wrap{position:relative;z-index:2}
+.show h2{color:#fff}
+.show .lead{color:#8B9CC0}
+.tabs{display:inline-flex;gap:4px;background:rgba(255,255,255,.06);border:1px solid var(--dline);
+      border-radius:999px;padding:5px;margin:34px 0 30px}
+.tabs button{border:0;background:transparent;color:#8B9CC0;font-size:13px;font-weight:600;
+             padding:8px 20px;border-radius:999px;cursor:pointer;transition:.2s;font-family:inherit}
+.tabs button.on{background:#fff;color:#0F172A}
+.frame{background:#0D1526;border:1px solid var(--dline);border-radius:18px;padding:18px;
+       box-shadow:var(--sh-big)}
+.frame img{border-radius:10px;width:100%;transition:opacity .25s}
+.frame img.fade{opacity:0}
 
-  footer{padding:34px 0 40px;color:var(--tertiary);font-size:12.5px;text-align:center}
-  footer a{color:var(--sub)}
+/* ===== 游戏化分栏 ===== */
+.game{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;margin-top:44px}
+.game ul{list-style:none;margin-top:8px}
+.game li{display:flex;gap:14px;padding:13px 0;border-bottom:1px dashed var(--line);align-items:flex-start}
+.game li:last-child{border:0}
+.game .b{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:16px;flex:none}
+.game b{font-size:14.5px}
+.game p{font-size:13px;color:var(--sub);margin-top:1px}
+.game .shot-r img{border-radius:16px;border:1px solid var(--line);box-shadow:var(--sh-big)}
 
-  @media (max-width:900px){
-    .hero-grid{grid-template-columns:1fr}
-    .feat-grid{grid-template-columns:repeat(2,1fr)}
-    .shots{grid-template-columns:repeat(2,1fr)}
-    .nav-links{display:none}
-    h1{font-size:32px}
-  }
+/* ===== 日志 ===== */
+.log-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:40px}
+.log{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px 28px}
+.log h3{font-size:15.5px;margin-bottom:6px}
+.log .d{font-size:12px;color:var(--ter);margin-bottom:14px}
+.log ul{list-style:none}
+.log li{font-size:13.5px;color:var(--sub);padding:6px 0 6px 24px;position:relative}
+.log li::before{content:"";position:absolute;left:4px;top:14px;width:7px;height:7px;border-radius:50%;
+                background:linear-gradient(135deg,var(--acc),var(--acc2))}
+
+/* ===== 下载 ===== */
+.dl{padding:40px 0 110px}
+.band{background:linear-gradient(120deg,#4F46E5,#7C3AED 60%,#8B5CF6);border-radius:24px;
+      padding:54px 52px;color:#fff;display:flex;justify-content:space-between;align-items:center;
+      gap:30px;flex-wrap:wrap;box-shadow:0 34px 70px -28px rgba(79,70,229,.65);position:relative;overflow:hidden}
+.band::after{content:"";position:absolute;right:-70px;top:-90px;width:320px;height:320px;border-radius:50%;
+             background:rgba(255,255,255,.12)}
+.band h2{font-size:32px;margin-bottom:10px;position:relative;z-index:1}
+.band p{opacity:.94;font-size:14.5px;position:relative;z-index:1}
+.band .file{margin-top:14px;font-size:12.5px;opacity:.85;position:relative;z-index:1}
+.band .btns{display:flex;flex-direction:column;gap:12px;position:relative;z-index:1;min-width:230px}
+.band .btn{justify-content:center}
+.band .btn.p{background:#fff;color:#4338CA}
+.band .btn.p:hover{transform:translateY(-2px)}
+.band .btn.s{background:rgba(255,255,255,.14);border:1.5px solid rgba(255,255,255,.5);color:#fff}
+.band .btn.s:hover{background:rgba(255,255,255,.24)}
+
+footer{background:var(--dark);color:#5B6B84;padding:44px 0;font-size:12.5px;text-align:center}
+footer a{color:#8B9CC0}
+footer .f-in{display:flex;justify-content:center;gap:26px;margin-bottom:14px;flex-wrap:wrap}
+
+@media(max-width:980px){
+  .hero-grid{grid-template-columns:1fr}.stage{height:auto;margin-top:40px}
+  .shot-main{position:relative;right:0;top:0;width:100%}
+  .shot-side{display:none}.c1,.c2{display:none}
+  .stats .wrap{grid-template-columns:repeat(2,1fr);row-gap:28px}
+  .feat-grid{grid-template-columns:1fr 1fr}
+  .game{grid-template-columns:1fr;gap:30px}
+  .log-grid{grid-template-columns:1fr}
+  .band{padding:40px 30px}
+}
 </style>
 </head>
 <body>
 
-<nav>
-  <div class="wrap nav-in">
-    <a class="logo" href="#top">
-      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5 L10 17.5 L19 7" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      每日任务
-    </a>
-    <div class="nav-links">
-      <a href="#features">功能</a><a href="#screens">界面</a><a href="#changelog">更新日志</a><a href="#download">下载</a>
-    </div>
-    <a class="nav-gh" href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">GitHub</a>
-  </div>
+<!-- 浮动导航 -->
+<nav class="nav">
+  <a class="logo" href="#top"><span class="mark"><svg viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M5 12.5 10 17.5 19 7" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>每日任务</a>
+  <a class="lk" href="#features">功能</a>
+  <a class="lk" href="#screens">界面</a>
+  <a class="lk" href="#game">激励</a>
+  <a class="lk" href="#changelog">日志</a>
+  <a class="gh" href="#download">下载 v5.0</a>
 </nav>
 
+<!-- ============ 深色 Hero ============ -->
 <header class="hero" id="top">
-  <div class="blob"></div>
-  <div class="wrap hero-grid">
-    <div>
-      <h1>把每一天，<br>过成一条<span class="grad">进度条</span></h1>
-      <p class="sub">「每日任务」是一款双模式 Windows 待办应用：320px 贴边侧边栏随时瞄一眼，完整仪表盘深度管理。内置番茄钟、经验等级、连续全清与成就徽章——让坚持这件事，看得见也上瘾。</p>
-      <div class="cta">
-        <a class="btn primary" href="#download">⬇ 免费下载 v5.0.0</a>
-        <a class="btn ghost" href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">查看源码</a>
-      </div>
-      <p class="meta">Windows 10 / 11 · x64 · 自包含运行时免安装环境 · 基于 WPF &amp; .NET 8</p>
+  <div class="wrap">
+    <div class="badge"><i></i>v5.0.0 正式版 · 效率工作台 · 2026-08-22</div>
+    <h1>每一天，<br>都是一条向上生长的<span class="g">进度条</span></h1>
+    <p class="lead">贴边侧边栏随时瞄一眼，完整仪表盘深度管理。番茄专注、经验等级、连续全清、成就徽章——「每日任务」让坚持这件事，看得见、摸得着、上瘾。</p>
+    <div class="cta">
+      <a class="btn w" href="#download">⬇ 免费下载 Windows 版</a>
+      <a class="btn o" href="#screens">先看看界面</a>
     </div>
-    <div class="hero-shot">
-      <img src="assets/mockup-01-sidebar-light.svg" alt="侧边栏驾驶舱预览">
-      <div class="float-card fc1"><b>🔥 连击 ×3</b>今日全清保持中</div>
-      <div class="float-card fc2"><b>Lv.12</b>距离升级还差 180 EXP</div>
+    <p class="meta">Windows 10 / 11 · x64 · 自包含运行时 · 数据离线优先 + Supabase 云同步</p>
+
+    <div class="stage">
+      <img class="shot-main reveal" src="assets/mockup-03-full-dashboard.svg" alt="完整模式仪表盘">
+      <img class="shot-side reveal d2" src="assets/mockup-01-sidebar-light.svg" alt="侧边栏驾驶舱">
+      <div class="chip c1"><span class="ic">🔥</span><span><span class="n">×3</span><span class="t"> 连续全清</span></span></div>
+      <div class="chip c2"><span class="ic">⚡</span><span><span class="n">Lv.12</span><span class="t"> 冒险者 · 320/500 XP</span></span></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="wrap">
+      <div class="stat"><b>6</b><span>功能页面</span></div>
+      <div class="stat"><b>20+</b><span>成就徽章</span></div>
+      <div class="stat"><b>5</b><span>套强调色换肤</span></div>
+      <div class="stat"><b>32</b><span>枚矢量图标</span></div>
     </div>
   </div>
 </header>
 
-<section id="features">
+<!-- ============ 功能 ============ -->
+<section class="sec" id="features">
   <div class="wrap">
-    <div class="kicker">FEATURES</div>
-    <h2>一个应用，装下你的全部节奏</h2>
-    <p class="lead">从记录到回顾，从专注到激励——每个模块都为“每天多用一次”而设计。</p>
+    <div class="kicker reveal">FEATURES</div>
+    <h2 class="reveal">从记录到回顾，每个模块都为「每天多用一次」而设计</h2>
+    <p class="lead reveal">不是又一个待办清单——任务、专注与成长在同一套体系里互相喂养。</p>
 
     <div class="feat-grid">
-      <div class="feat"><div class="ic" style="background:#EEF2FF">🖥️</div>
-        <h3>双模式驾驶舱</h3><p>320px 贴边侧边栏不占工作区，鼠标靠近即展开；640px 完整仪表盘承载六大页面，一键互切。</p></div>
-      <div class="feat"><div class="ic" style="background:#ECFDF5">📊</div>
-        <h3>统计可视化</h3><p>近 14 天完成柱状图、30 天趋势折线、完成率环——自研轻量图表，数据一目了然。</p></div>
-      <div class="feat"><div class="ic" style="background:#FFF7ED">🎮</div>
-        <h3>游戏化激励</h3><p>经验等级 × 连续全清连击 × 20 枚成就徽章。完成任务不再是清单打勾，而是升级打怪。</p></div>
-      <div class="feat"><div class="ic" style="background:#FEF2F2">🍅</div>
-        <h3>沉浸番茄钟</h3><p>25 分钟渐变大环、回合圆点、任务绑定；侧边栏迷你番茄随时暂停，数据全部计入成长。</p></div>
-      <div class="feat"><div class="ic" style="background:#EFF6FF">☁️</div>
-        <h3>Supabase 云同步</h3><p>多设备实时同步、冲突自动合并；断网照常用，联网增量上传，本地 SQLite 永不离线。</p></div>
-      <div class="feat"><div class="ic" style="background:#FAF5FF">🌗</div>
-        <h3>主题随心</h3><p>亮暗双主题语义化配色 + 五套强调色（靛蓝/海蓝/落日/松林/黑白）即时换肤，矢量图标全程锐利。</p></div>
-    </div>
-  </div>
-</section>
-
-<section id="screens" style="background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
-  <div class="wrap">
-    <div class="kicker">SCREENS</div>
-    <h2>看一眼就懂的设计</h2>
-    <p class="lead">扁平卡片 · 柔和圆角 · 单一强调色。所有界面都遵循同一套设计令牌。</p>
-    <div class="shots">
-      <figure class="shot"><img src="assets/mockup-03-full-dashboard.svg" alt="完整模式仪表盘"><figcaption>完整模式 · 今日仪表盘</figcaption></figure>
-      <figure class="shot"><img src="assets/mockup-01-sidebar-light.svg" alt="侧边栏驾驶舱"><figcaption>侧边栏 · 驾驶舱</figcaption></figure>
-      <figure class="shot"><img src="assets/mockup-04-focus.svg" alt="沉浸专注"><figcaption>专注页 · 番茄钟</figcaption></figure>
-      <figure class="shot"><img src="assets/mockup-05-stats.svg" alt="统计图表"><figcaption>统计 · 趋势与成就</figcaption></figure>
-    </div>
-  </div>
-</section>
-
-<section id="changelog">
-  <div class="wrap">
-    <div class="kicker">CHANGELOG</div>
-    <h2>v5.0.0 —— 效率工作台正式版</h2>
-    <div class="log">
-      <h3>2026-08-22 · 本轮核心</h3>
-      <ul>
-        <li>UI 全面重构：设计令牌双主题系统，五套强调色即时换肤，32 枚矢量图标根治字体缺字</li>
-        <li>完整模式导航栏化：今日仪表盘、截止紧急度分组、统计图表、沉浸番茄、成就墙、命令面板</li>
-        <li>侧边栏驾驶舱：问候头部、今日进度环、「接下来」行动卡、本周概览七日条、迷你番茄 Dock</li>
-        <li>截止到期语义修正：截止日当天 24 点才算逾期，通知与倒计时全面对齐</li>
-        <li>昵称体系 · 减少动效开关 · 真实同步时间戳 · 首次收缩裁切修复</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<section id="download">
-  <div class="wrap">
-    <div class="dl-band">
-      <div>
-        <h2>现在就开始第一天</h2>
-        <p>安装包自带 .NET 运行时，双击即用。支持桌面图标与开机自启，卸载时可保留本地数据。</p>
-        <p class="dl-file">每日任务-Setup-5.0.0.exe · 50 MB · Windows x64</p>
+      <div class="feat reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></div>
+        <h3>双模式驾驶舱</h3>
+        <p>320px 贴边侧边栏不占工作区，靠近即展开；640px 完整仪表盘承载今日、截止、历史、统计、专注、成就六大页面。</p>
       </div>
-      <div class="dl-btns">
-        <a class="btn white" href="https://github.com/hsong6809-boop/TodoSidebar/releases/latest" target="_blank">⬇ 下载安装包</a>
-        <a class="btn line-w" href="https://github.com/hsong6809-boop/TodoSidebar/releases" target="_blank">历史版本</a>
+      <div class="feat reveal d1">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 20h16M7 20v-8M12 20V4M17 20v-5"/></svg></div>
+        <h3>统计可视化</h3>
+        <p>近 14 天完成柱状图、30 天趋势折线、完成率渐变环——自研轻量图表控件，无第三方依赖。</p>
+      </div>
+      <div class="feat reveal d2">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M8.5 14.5 7 21l5-2.5L17 21l-1.5-6.5M12 2v2M5 5l1.5 1.5M19 5l-1.5 1.5"/></svg></div>
+        <h3>游戏化激励</h3>
+        <p>经验等级、每日全清连击、20 枚成就徽章。完成任务不是打勾，是升级打怪。</p>
+      </div>
+      <div class="feat reveal">
+        <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6M12 2v3"/></svg></div>
+        <h3>沉浸番茄钟</h3>
+        <p>25 分钟渐变大环、四回合圆点、任务绑定计时；中断不计经验，专注数据全部沉淀。</p>
+      </div>
+      <div class="feat reveal d1">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M6.5 18a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19 10.5 3.75 3.75 0 0 1 18.5 18Z"/></svg></div>
+        <h3>Supabase 云同步</h3>
+        <p>多设备增量同步、冲突自动合并；断网照常用，本地 SQLite 永不离线，上传下载一键手动可控。</p>
+      </div>
+      <div class="feat reveal d2">
+        <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" opacity=".35"/></svg></div>
+        <h3>亮暗主题 × 五套强调色</h3>
+        <p>靛蓝 / 海蓝 / 落日 / 松林 / 黑白，一键即时换肤；32 枚矢量图标在任何缩放下锐利如初。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 界面展示（标签切换大图）============ -->
+<section class="show" id="screens">
+  <div class="wrap">
+    <div class="kicker reveal" style="color:#A5B4FC">SCREENS</div>
+    <h2 class="reveal">看一眼就懂的设计</h2>
+    <p class="lead reveal">扁平卡片、柔和圆角、单一强调色——所有界面共享同一套设计令牌。</p>
+
+    <div class="tabs reveal" id="shotTabs">
+      <button class="on" data-src="assets/mockup-03-full-dashboard.svg">今日仪表盘</button>
+      <button data-src="assets/mockup-01-sidebar-light.svg">侧边栏驾驶舱</button>
+      <button data-src="assets/mockup-04-focus.svg">沉浸专注</button>
+      <button data-src="assets/mockup-05-stats.svg">统计图表</button>
+      <button data-src="assets/mockup-02-sidebar-dark.svg">深色侧边栏</button>
+    </div>
+    <div class="frame reveal"><img id="shotImg" src="assets/mockup-03-full-dashboard.svg" alt="界面预览"></div>
+  </div>
+</section>
+
+<!-- ============ 游戏化分栏 ============ -->
+<section class="sec" id="game">
+  <div class="wrap">
+    <div class="kicker reveal">GAMIFICATION</div>
+    <h2 class="reveal">坚持，也应该有正反馈</h2>
+    <div class="game">
+      <div class="reveal">
+        <ul>
+          <li><span class="b" style="background:#EEF2FF">⚡</span><span><b>经验与等级</b><p>完成任务、番茄、挑战都涨经验；升级解锁称号，从「初出茅庐」一路到「传说冒险者」。</p></span></li>
+          <li><span class="b" style="background:#FFF7ED">🔥</span><span><b>连续全清连击</b><p>当天每日任务全部完成即续连击，断一天清零——连击越高，加成越多。</p></span></li>
+          <li><span class="b" style="background:#ECFDF5">🏅</span><span><b>20 枚成就徽章</b><p>任务量、专注时长、连击纪录、早起夜猫彩蛋，图鉴面板实时解锁。</p></span></li>
+          <li><span class="b" style="background:#FAF5FF">🎯</span><span><b>每日随机挑战</b><p>每天刷新 3 个小目标，完成后额外经验奖励，给日常加点新鲜感。</p></span></li>
+        </ul>
+      </div>
+      <div class="shot-r reveal d1"><img src="assets/mockup-05-stats.svg" alt="成长统计"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 更新日志 ============ -->
+<section class="sec" id="changelog" style="padding-top:0">
+  <div class="wrap">
+    <div class="kicker reveal">CHANGELOG</div>
+    <h2 class="reveal">v5.0.0 带来了什么</h2>
+    <div class="log-grid">
+      <div class="log reveal">
+        <h3>效率工作台正式版</h3><div class="d">2026-08-22</div>
+        <ul>
+          <li>UI 全面重构：双主题设计令牌 + 五套强调色即时换肤 + 32 枚矢量图标</li>
+          <li>完整模式导航栏化：六大页面 + Ctrl+K 命令面板</li>
+          <li>统计可视化：14 天柱状图、30 天趋势折线、完成率环</li>
+          <li>截止到期语义修正：截止日当天 24 点才算逾期</li>
+        </ul>
+      </div>
+      <div class="log reveal d1">
+        <h3>侧边栏驾驶舱</h3><div class="d">同日发布</div>
+        <ul>
+          <li>问候头部 + 今日进度 Hero 卡（环 / 完成数 / 等级块）</li>
+          <li>「接下来」行动卡：当前该做哪件事，一键开始专注</li>
+          <li>本周概览七日条 + 折叠式已完成分组</li>
+          <li>迷你番茄 Dock：不展开窗口也能起一个番茄</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 下载 ============ -->
+<section class="dl" id="download">
+  <div class="wrap">
+    <div class="band reveal">
+      <div>
+        <h2>现在，就开始第一天</h2>
+        <p>安装包自带 .NET 运行时，双击即用。支持桌面图标与开机自启，卸载时可选择保留本地数据。</p>
+        <p class="file">每日任务-Setup-5.0.0.exe · 50 MB · Windows 10/11 x64 · 发布于 2026-08-22</p>
+      </div>
+      <div class="btns">
+        <a class="btn p" href="https://github.com/hsong6809-boop/TodoSidebar/releases/latest" target="_blank">⬇ 下载安装包</a>
+        <a class="btn s" href="https://github.com/hsong6809-boop/TodoSidebar/releases" target="_blank">浏览历史版本</a>
       </div>
     </div>
   </div>
@@ -208,10 +338,27 @@
 
 <footer>
   <div class="wrap">
-    © 2026 TodoSidebar · 每日任务 · 采用 BSL 1.1 协议（2030 年起转为 Apache 2.0）<br>
-    用 WPF · .NET 8 · SQLite · Supabase 构建 · <a href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">GitHub 仓库</a>
+    <div class="f-in">
+      <a href="https://github.com/hsong6809-boop/TodoSidebar" target="_blank">GitHub</a>
+      <a href="#features">功能</a><a href="#download">下载</a><a href="#changelog">更新日志</a>
+    </div>
+    © 2026 TodoSidebar · 每日任务 · BSL 1.1 协议（2030 年起自动转为 Apache 2.0）<br>
+    用 WPF · .NET 8 · SQLite · Supabase 构建
   </div>
 </footer>
 
+<script>
+// 界面标签切换
+const tabs=document.querySelectorAll('#shotTabs button'),img=document.getElementById('shotImg');
+tabs.forEach(b=>b.addEventListener('click',()=>{
+  tabs.forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  img.classList.add('fade');
+  setTimeout(()=>{img.src=b.dataset.src;img.onload=()=>img.classList.remove('fade');
+                  setTimeout(()=>img.classList.remove('fade'),400);},120);
+}));
+// 滚动渐入
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
 </body>
 </html>
