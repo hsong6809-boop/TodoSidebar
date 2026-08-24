@@ -41,3 +41,8 @@ if (done != task)
 
 var r = task.Result;
 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 返回: 耗时={sw.ElapsedMilliseconds}ms Success={r.Success} Error={r.Error?.Substring(0, Math.Min(120, r.Error?.Length ?? 0))}");
+
+// M40：顺带验证更新检测链路（GitHub API + 版本比较）
+var info = await TodoSidebar.Services.UpdateChecker.CheckAsync();
+if (info == null) Console.WriteLine("[Update] 检测失败（网络/API）");
+else Console.WriteLine($"[Update] 当前={info.CurrentVersion} 远程={info.RemoteTag} HasUpdate={info.HasUpdate}");

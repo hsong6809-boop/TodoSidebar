@@ -126,6 +126,40 @@ namespace TodoSidebar
 
         private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
+        /// <summary>
+        /// M40：手动检查更新。不受每日门控限制；
+        /// 发现新版本时弹确认框，确认后跳转浏览器打开 Release 下载页。
+        /// </summary>
+        private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateCheckButton.IsEnabled = false;
+            UpdateStatusText.Text = "正在检查更新…";
+            UpdateStatusText.Foreground = FindResource("TextSecondaryBrush") as System.Windows.Media.Brush
+                ?? System.Windows.Media.Brushes.Gray;
+
+            var info = await Services.UpdateChecker.CheckAsync();
+
+            UpdateCheckButton.IsEnabled = true;
+
+            if (info == null)
+            {
+                UpdateStatusText.Text = "检查失败，请稍后重试";
+                return;
+            }
+
+            if (!info.HasUpdate)
+            {
+                UpdateStatusText.Text = $"当前已是最新版本（{info.CurrentVersion}）✓";
+                return;
+            }
+
+            UpdateStatusText.Text = $"发现新版本 {info.RemoteVersion}！";
+            UpdateStatusText.Foreground = FindResource("AccentBrush") as System.Windows.Media.Brush
+                ?? System.Windows.Media.Brushes.DodgerBlue;
+
+            Services.UpdateChecker.PromptDownload(info);
+        }
+
         private void Theme_Changed(object sender, RoutedEventArgs e)
         {
             if (sender is System.Windows.Controls.RadioButton radio && radio.Tag is string themeStr)

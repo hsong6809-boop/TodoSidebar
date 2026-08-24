@@ -74,6 +74,10 @@ namespace TodoSidebar
                 // 异步初始化认证服务（await 期间 UI 线程不阻塞）
                 await InitializeAuthAsync();
 
+                // M40：每日首次启动静默检测更新（后台执行；发现新版本才弹窗，
+                // 检测失败/无网络完全静默，不影响启动流程与登录分支）
+                _ = TodoSidebar.Services.UpdateChecker.RunDailyCheckAsync();
+
                 var authService = Services.GetRequiredService<IAuthService>();
 
                 if (!authService.IsLoggedIn)
