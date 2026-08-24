@@ -679,7 +679,10 @@ namespace TodoSidebar.Services
             return result?.ToString();
         }
 
-        public void SetSetting(string key, string value) => ExecuteLocked(() =>
+        public void SetSetting(string key, string value) => ExecuteLocked(() => SetSettingCore(key, value));
+
+        /// <summary>无锁版设置写入（供已持有 _dbLock 的内部方法复用，M38d 修复重入死锁）</summary>
+        private void SetSettingCore(string key, string value)
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
@@ -688,7 +691,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@key", key);
             cmd.Parameters.AddWithValue("@value", value);
             cmd.ExecuteNonQuery();
-        });
+        }
 
         // ========== 每日任务完成记录（全部加锁） ==========
 
@@ -1156,7 +1159,9 @@ namespace TodoSidebar.Services
                     // 首次运行新版本（无归属记录）：只登记归属、不清库。
                     // 运行时验证发现"未知即清库"会在老用户升级首启时误清未同步的离线数据；
                     // 云端有完整数据时可恢复，但离线数据将丢失。保守处理更安全。
-                    SetSetting("LastUserId", userId);
+                    // M38d 修复：此处已持有 _dbLock，必须用无锁版 SetSettingCore，
+                    // 否则 SemaphoreSlim 不可重入 => 自己等自己 => 全库死锁（登录卡"登录中"）
+                    SetSettingCore("LastUserId", userId);
                     return;
                 }
 

@@ -26,6 +26,50 @@ namespace TodoSidebar
 
             // P2：真实亚克力背板（默认关闭；设置 AcrylicEnabled=true 可开启，失败静默降级）
             Loaded += (_, _) => DwmBackdropHelper.ApplyMainShellAcrylic(this);
+
+            // M37：进入登录页即后台预检同步服务器连通性（不阻塞 UI），
+            // 网络不通时提前给出可行动提示，而不是等用户点登录后"卡住无反应"
+            _ = RunConnectivityPreflightAsync();
+        }
+
+        /// <summary>
+        /// M37：预检 Supabase /auth/v1/health（5 秒超时）。
+        /// - 配置缺失：直接显示明确配置错误；
+        /// - 网络不通/SSL 被重置：显示"需要代理/换网络"提示；
+        /// 成功则不打扰用户。
+        /// </summary>
+        private async Task RunConnectivityPreflightAsync()
+        {
+            string url;
+            try
+            {
+                url = SupabaseConfig.Url;
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex.Message);
+                return;
+            }
+
+            try
+            {
+                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                using var resp = await http.GetAsync(url.TrimEnd('/') + "/auth/v1/health");
+                if (!resp.IsSuccessStatusCode)
+                {
+                    ShowWarning($"同步服务器响应异常（HTTP {(int)resp.StatusCode}），登录可能失败");
+                }
+            }
+            catch (Exception)
+            {
+                ShowWarning("⚠ 当前网络连接同步服务器不稳定：登录/注册可能失败。链路干扰是间歇性的，可稍等片刻多点几次重试；持续失败请检查网络或使用代理");
+            }
+        }
+
+        /// <summary>与 ShowError 同区域展示警告类提示（带 ⚠ 前缀区分）。</summary>
+        private void ShowWarning(string message)
+        {
+            ShowError(message);
         }
 
         /// <summary>密码可见性切换：同步明文框与密码框内容。</summary>
@@ -134,8 +178,10 @@ namespace TodoSidebar
             for (int i = 0; i < count; i++)
             {
                 var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
-                if (child is Button button)
+                if (child is Button button && button.Name != "CloseButton")
                 {
+                    // M37 修复：busy 时保留右上角关闭按钮可用，
+                    // 否则网络挂起时用户连窗口都关不掉
                     button.IsEnabled = enabled;
                 }
                 SetButtonsEnabled(child, enabled);
@@ -179,29 +225,42 @@ namespace TodoSidebar
             LoginButton.Content = "登录中...";
             HideError();
 
+            // M37：请求发出即写日志（邮箱脱敏），远程排查时可区分
+            // "请求已发出但无返回"（网络挂起）与"处理器根本没执行"
+            LogLoginDiag($"[attempt] 登录请求已发出: {MaskEmail(email)}");
+
             try
             {
                 var result = await AuthService.Instance.LoginWithEmailPasswordAsync(email, password);
 
                 if (result.Success)
                 {
+                    LogLoginDiag("[ui] 认证成功，开始切换主窗口");
+
                     // 保存凭据（如果勾选了记住我）
                     SaveCredentials(email, password);
+                    LogLoginDiag("[ui] 凭据保存完成");
 
                     // 登录成功：先释放旧 ViewModel（避免定时器/订阅泄漏），再初始化新实例
                     App.SharedViewModel?.Dispose();
+                    LogLoginDiag($"[ui] 旧 ViewModel 处理完成(原为{(App.SharedViewModel == null ? "null" : "非null")})，开始创建 MainViewModel");
                     App.SharedViewModel = new ViewModels.MainViewModel();
+                    LogLoginDiag("[ui] MainViewModel 创建完成，启动通知服务");
                     Services.NotificationService.Instance.Start();
+                    LogLoginDiag("[ui] 通知服务已启动，创建 MainWindow");
                     var mainWindow = new MainWindow();
+                    LogLoginDiag("[ui] MainWindow 构造完成，调用 Show()");
                     mainWindow.Show();
+                    LogLoginDiag("[ui] MainWindow.Show() 完成，关闭登录窗口");
                     Close();
+                    return;
                 }
                 else
                 {
                     // L22 修复：完整诊断（含 AnonKey 前 24 字符片段）只写入日志文件，
                     // UI 仅显示模糊提示，避免把 Key 片段暴露在界面上
                     var errMsg = (result.Error ?? "登录失败") + BuildConfigDiag();
-                    LogLoginDiag(errMsg);
+                    LogLoginDiag("[ui] 认证失败: " + errMsg);
                     ShowError((result.Error ?? "登录失败") + ConfigHint);
                 }
             }
@@ -209,7 +268,7 @@ namespace TodoSidebar
             {
                 // L22 修复：同上，诊断细节仅入日志
                 var errMsg = $"登录出错: {ex.Message}" + BuildConfigDiag();
-                LogLoginDiag(errMsg);
+                LogLoginDiag("[ui] 切换过程异常: " + ex.GetType().Name + ": " + ex.Message + "\n" + ex.StackTrace);
                 ShowError($"登录出错: {ex.Message}" + ConfigHint);
             }
             finally
@@ -257,6 +316,7 @@ namespace TodoSidebar
             SetBusy(true);
             LoginButton.Content = "注册中...";
             HideError();
+            LogLoginDiag($"[attempt] 注册请求已发出: {MaskEmail(email)}");
 
             try
             {
@@ -296,6 +356,7 @@ namespace TodoSidebar
             }
 
             SetBusy(true);
+            LogLoginDiag($"[attempt] 忘记密码请求已发出: {MaskEmail(email)}");
 
             try
             {
@@ -364,6 +425,13 @@ namespace TodoSidebar
             {
                 return false;
             }
+        }
+
+        /// <summary>M37：日志用邮箱脱敏（只保留域名部分），避免明文邮箱落盘。</summary>
+        private static string MaskEmail(string email)
+        {
+            var at = email.IndexOf('@');
+            return at > 0 ? "***" + email.Substring(at) : "***";
         }
     }
 }

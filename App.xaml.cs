@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using TodoSidebar.Config;
 using TodoSidebar.Services;
 using TodoSidebar.ViewModels;
 
@@ -77,6 +78,22 @@ namespace TodoSidebar
 
                 if (!authService.IsLoggedIn)
                 {
+                    // M37：启动即校验 Supabase 配置。原先配置缺失被静默吞掉，
+                    // 全新安装的机器上用户点登录只会莫名失败，这里给出明确提示。
+                    try
+                    {
+                        _ = SupabaseConfig.Url;
+                        _ = SupabaseConfig.AnonKey;
+                    }
+                    catch (Exception cfgEx)
+                    {
+                        MessageBox.Show(
+                            "同步服务配置缺失，登录 / 注册 / 忘记密码均不可用。\n\n" +
+                            $"{cfgEx.Message}\n\n" +
+                            "请将 supabase.json 放到程序安装目录后重新打开程序。",
+                            "配置缺失", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+
                     var loginWindow = new LoginWindow();
                     loginWindow.Show();
                     return;
@@ -212,15 +229,19 @@ namespace TodoSidebar
                         {
                             // S6 修复：登录/切换账号时校验本地数据归属
                             var uid = AuthService.Instance.CurrentUser?.Id;
+                            TodoSidebar.Services.AuthService.LogAuthDiag($"[handler] 开始 EnsureUserScope(uid={uid})");
                             if (!string.IsNullOrEmpty(uid))
                                 DatabaseService.Instance.EnsureUserScope(uid);
+                            TodoSidebar.Services.AuthService.LogAuthDiag("[handler] EnsureUserScope 完成，开始 SyncService 初始化");
 
                             await SyncService.Instance.InitializeAsync();
+                            TodoSidebar.Services.AuthService.LogAuthDiag("[handler] SyncService 初始化完成");
                         }
                     }
                     catch (Exception ex)
                     {
                         LogError("Login state handler error", ex);
+                        TodoSidebar.Services.AuthService.LogAuthDiag($"[handler] 异常: {ex.GetType().Name}: {ex.Message}");
                     }
                 };
                 AuthService.Instance.LoginStateChanged += _loginStateHandler;

@@ -161,6 +161,12 @@ dotnet run
 dotnet publish -c Release -r win-x64 --self-contained true -o bin\publish
 ```
 
+> ⚠️ **发布必读**：Supabase 配置（`supabase.json`）**不会**随构建自动生成。
+> 开发机上的配置在 `%APPDATA%\TodoSidebar\supabase.json`，发布前必须把它拷贝到输出目录
+> （如 `bin\publish`、`bin\publish_sc`，Inno Setup 会自动随包安装该文件），
+> 否则全新机器上登录 / 注册 / 忘记密码均不可用（启动时会提示"配置缺失"）。
+> `supabase.json` 含 Anon Key，不要提交到仓库。
+
 ### 创建安装包
 
 1. 安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)

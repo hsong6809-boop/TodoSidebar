@@ -5,7 +5,7 @@
 ;   3. 点击 编译 -> 编译 即可生成安装包
 
 #define MyAppName "每日任务"
-#define MyAppVersion "5.0.0"
+#define MyAppVersion "5.0.1"
 #define MyAppPublisher "TodoSidebar"
 #define MyAppExeName "TodoSidebar.exe"
 
@@ -36,7 +36,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "开机自启动"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "bin\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "bin\publish_sc\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "TodoSidebar.pdb"
+; M37：同步服务配置。发布前把 supabase.json 放进 bin\publish_sc 即会随包安装；
+; 文件不存在时跳过（此时安装后的程序启动会提示配置缺失）
+Source: "bin\publish_sc\supabase.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

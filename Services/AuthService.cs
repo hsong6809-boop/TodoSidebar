@@ -1,6 +1,10 @@
 using System;
 using System.IO;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Supabase.Gotrue;
 using Supabase.Gotrue.Interfaces;
@@ -61,6 +65,106 @@ namespace TodoSidebar.Services
         private AuthService()
         {
         }
+
+        /// <summary>
+        /// M37：认证请求超时秒数。Gotrue 库内部 HttpClient 无短超时，
+        /// 网络不通（如 supabase.co 被墙/被拦截）时请求会挂起约 100 秒，
+        /// 期间登录窗口全部按钮被禁用，用户感知为"点啥都没反应"。
+        /// 这里统一用短超时快速失败并给出可行动的错误提示。
+        /// </summary>
+        private const int AuthTimeoutSeconds = 15;
+
+        /// <summary>给认证请求套上短超时，并对"快速失败型"网络错误自动重试。
+        /// M38：大陆到 supabase.co（Cloudflare 边缘）的干扰是间歇性的——
+        /// 同一台机器同一网络，前一分钟 TLS 被重置、后一分钟完全正常。
+        /// 因此对 SSL 重置/连接中断这类秒级失败的瞬时网络错误自动快速重试，
+        /// 命中"好窗口"即可成功；整体超时（15 秒挂起）不自动重试，避免长时间无反馈。</summary>
+        private static async Task<T> WithAuthTimeout<T>(Func<Task<T>> operation)
+        {
+            const int MaxAttempts = 3;
+            for (int attempt = 1; ; attempt++)
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AuthTimeoutSeconds));
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    // M38b：整个调用放到线程池执行。gotrue 库内部存在同步等待异步的代码路径，
+                    // 在 WPF UI 线程（带 SynchronizationContext）上调用会死锁——表现为点击登录后
+                    // 永远停留在"登录中..."且任何超时机制都无法生效（await 根本没到达）。
+                    // 线程池线程没有同步上下文，从根源规避；同时让下方超时/重试真正生效。
+                    return await Task.Run(operation).WaitAsync(cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (attempt < MaxAttempts && IsFastTransientNetworkError(ex, sw.Elapsed))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Auth transient error (attempt {attempt}/{MaxAttempts}), retrying: {ex.Message}");
+                    await Task.Delay(500).ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>无返回值版本，复用泛型实现的超时与重试逻辑。</summary>
+        private static Task WithAuthTimeout(Func<Task> operation)
+            => WithAuthTimeout<object?>(async () =>
+            {
+                await operation().ConfigureAwait(false);
+                return null;
+            });
+
+        /// <summary>
+        /// 是否为值得重试的"快速失败型"瞬时网络错误：
+        /// - 仅当失败发生得很快（&lt;5 秒）才重试——慢失败说明链路整体不通，重试大概率无效；
+        /// - 整体超时（TaskCanceledException）不重试；
+        /// - 配置缺失（InvalidOperationException 等）不属于网络错误，直接抛出。
+        /// </summary>
+        private static bool IsFastTransientNetworkError(Exception ex, TimeSpan elapsed)
+        {
+            if (elapsed > TimeSpan.FromSeconds(5)) return false;
+            switch (ex)
+            {
+                case TaskCanceledException:
+                    return false;
+                case HttpRequestException:
+                case SocketException:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 把底层网络异常翻译成用户能行动的中文提示：
+        /// - 超时：网络无法到达服务器（最常见：目标网络直连 supabase.co 不通，需代理/换网络）
+        /// - SSL 内层异常：TLS 握手被重置（典型于网络拦截）
+        /// - 其他 HttpRequestException/SocketException：断网/DNS 失败
+        /// </summary>
+        private static string FriendlyAuthError(Exception ex)
+        {
+            switch (ex)
+            {
+                case TaskCanceledException:
+                case TimeoutException:
+                    return $"连接服务器超时（{AuthTimeoutSeconds} 秒）。当前网络到同步服务器的链路可能暂时不稳定，请稍后重试几次；持续失败请检查网络或使用代理";
+                case HttpRequestException hre when FindInner<AuthenticationException>(hre) != null:
+                    return "与同步服务器的安全连接（SSL）被重置：当前网络链路到服务器暂时不稳定，程序已自动重试仍失败，请稍后再试几次或更换网络";
+                case HttpRequestException:
+                    return "无法连接同步服务器，请检查网络连接后重试";
+                case SocketException:
+                    return "网络不可用，请检查网络连接后重试";
+                default:
+                    return ex.Message;
+            }
+        }
+
+        private static Exception? FindInner<T>(Exception ex) where T : Exception
+        {
+            var cur = ex;
+            while (cur != null)
+            {
+                if (cur is T) return cur;
+                cur = cur.InnerException;
+            }
+            return null;
+        }
         
         /// <summary>
         /// 初始化认证服务
@@ -86,14 +190,16 @@ namespace TodoSidebar.Services
                             DeleteSessionFile();
                             return;
                         }
-                        var session = await SupabaseClientService.Client.Auth.SetSession(
-                            savedSession.AccessToken!,
-                            savedSession.RefreshToken!);
+                        var session = await WithAuthTimeout(() =>
+                            SupabaseClientService.Client.Auth.SetSession(
+                                savedSession.AccessToken!,
+                                savedSession.RefreshToken!));
 
                         if (session?.User != null)
                         {
                             CurrentUser = session.User;
-                            LoginStateChanged?.Invoke(this, true);
+                            LogAuthDiag("[auth] 会话恢复成功，后台触发状态处理器");
+                            FireLoginStateChanged(true);
                             return;
                         }
                     }
@@ -136,32 +242,85 @@ namespace TodoSidebar.Services
             }
         }
         
+        /// <summary>认证链路诊断日志（与登录窗口共用 login_diag.txt）。</summary>
+        internal static void LogAuthDiag(string message)
+        {
+            try
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "TodoSidebar", "logs");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(
+                    Path.Combine(dir, "login_diag.txt"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+            }
+            catch { /* 日志失败不影响主流程 */ }
+        }
+
+        /// <summary>
+        /// M38c：后台触发登录状态变化事件。处理器中的数据库/同步初始化不再阻塞认证返回路径。
+        /// </summary>
+        private void FireLoginStateChanged(bool isLoggedIn)
+        {
+            var handlers = LoginStateChanged;
+            if (handlers == null)
+            {
+                LogAuthDiag($"[auth] LoginStateChanged 无订阅者({isLoggedIn})");
+                return;
+            }
+
+            _ = Task.Run(() =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    handlers.Invoke(this, isLoggedIn);
+                    LogAuthDiag($"[auth] 全部状态处理器执行完毕, 耗时={sw.ElapsedMilliseconds}ms");
+                }
+                catch (Exception ex)
+                {
+                    LogAuthDiag($"[auth] 状态处理器异常({sw.ElapsedMilliseconds}ms): {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                }
+            });
+        }
+
         /// <summary>
         /// 邮箱密码登录
         /// </summary>
         public async Task<AuthResult> LoginWithEmailPasswordAsync(string email, string password)
         {
+            LogAuthDiag("[auth] LoginWithEmailPasswordAsync 进入");
             try
             {
-                var session = await SupabaseClientService.Client.Auth.SignIn(email, password);
-                
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var session = await WithAuthTimeout(() =>
+                    SupabaseClientService.Client.Auth.SignIn(email, password));
+                LogAuthDiag($"[auth] SignIn 返回: 耗时={sw.ElapsedMilliseconds}ms User={(session?.User != null ? session.User.Id : "null")}");
+
                 if (session?.User != null)
                 {
                     CurrentUser = session.User;
-                    LoginStateChanged?.Invoke(this, true);
-                    
-                    // 保存 session 到本地文件
                     SaveSessionToFile(session);
-                    
+                    LogAuthDiag($"[auth] session 已保存({(File.Exists(SessionFilePath) ? "文件存在" : "文件缺失!")})，即将触发 LoginStateChanged");
+
+                    // M38c：异步触发状态变化处理器。原先同步 Invoke 会把处理器的同步前缀
+                    // （EnsureUserScope 建库归属、SyncService 初始化）串在登录返回路径上，
+                    // 任一环卡住 => 登录永远停在"登录中"。现在立即返回，处理器后台执行。
+                    FireLoginStateChanged(true);
+
+                    LogAuthDiag("[auth] LoginStateChanged 已后台触发，登录方法返回");
                     return new AuthResult { Success = true };
                 }
-                
+
+                LogAuthDiag("[auth] SignIn 返回但 User 为空");
                 return new AuthResult { Success = false, Error = "登录失败" };
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Login error: {ex.Message}");
-                return new AuthResult { Success = false, Error = ex.Message };
+                LogAuthDiag($"[auth] SignIn 异常: {ex.GetType().Name}: {ex.Message}");
+                return new AuthResult { Success = false, Error = FriendlyAuthError(ex) };
             }
         }
         
@@ -172,24 +331,25 @@ namespace TodoSidebar.Services
         {
             try
             {
-                var result = await SupabaseClientService.Client.Auth.SignUp(email, password);
-                
+                var result = await WithAuthTimeout(() =>
+                    SupabaseClientService.Client.Auth.SignUp(email, password));
+
                 if (result?.User != null)
                 {
                     // 注册成功，可能需要邮箱验证
-                    return new AuthResult 
-                    { 
-                        Success = true, 
-                        Message = "注册成功，请检查邮箱进行验证" 
+                    return new AuthResult
+                    {
+                        Success = true,
+                        Message = "注册成功，请检查邮箱进行验证"
                     };
                 }
-                
+
                 return new AuthResult { Success = false, Error = "注册失败" };
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"SignUp error: {ex.Message}");
-                return new AuthResult { Success = false, Error = ex.Message };
+                return new AuthResult { Success = false, Error = FriendlyAuthError(ex) };
             }
         }
         
@@ -200,10 +360,10 @@ namespace TodoSidebar.Services
         {
             try
             {
-                await SupabaseClientService.Client.Auth.SignOut();
+                await WithAuthTimeout(() => SupabaseClientService.Client.Auth.SignOut());
                 CurrentUser = null;
-                LoginStateChanged?.Invoke(this, false);
-                
+                FireLoginStateChanged(false);
+
                 // 删除本地 session 文件
                 DeleteSessionFile();
             }
@@ -220,13 +380,14 @@ namespace TodoSidebar.Services
         {
             try
             {
-                await SupabaseClientService.Client.Auth.ResetPasswordForEmail(email);
+                await WithAuthTimeout(() =>
+                    SupabaseClientService.Client.Auth.ResetPasswordForEmail(email));
                 return new AuthResult { Success = true, Message = "重置密码邮件已发送" };
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"ResetPassword error: {ex.Message}");
-                return new AuthResult { Success = false, Error = ex.Message };
+                return new AuthResult { Success = false, Error = FriendlyAuthError(ex) };
             }
         }
         
