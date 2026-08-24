@@ -36,6 +36,9 @@ namespace TodoSidebar
         private DispatcherTimer? _failSafeTimer;
         private DateTime _lastCollapseTime = DateTime.MinValue;
         private const int CollapseCooldownMs = 500;
+
+        // V2.4：置顶保持定时器
+        private DispatcherTimer? _topmostTimer;
         
         // 当前展开的任务
         private FrameworkElement? _expandedTaskCard;
@@ -449,7 +452,49 @@ namespace TodoSidebar
 
             // P2：真实亚克力背板（失败静默降级为半透明纯色）
             DwmBackdropHelper.ApplyMainShellAcrylic(this);
+
+            // V2.4+：置顶保持——每 3 秒重申 HWND_TOPMOST，防止其他全屏/置顶应用抢占层级
+            _topmostTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            _topmostTimer.Tick += (_, _) => ReAssertTopmost();
+            _topmostTimer.Start();
+            ReAssertTopmost();
+            Deactivated += (_, _) => ReAssertTopmost();
         }
+
+        #region 置顶保持
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        private static readonly IntPtr HwndTopmost = new(-1);
+        private const uint SwpNoMove = 0x0002;
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoActivate = 0x0010;
+
+        /// <summary>
+        /// V2.4：重申侧边栏永远置顶。WPF 的 Topmost 只保证进入 TOPMOST 层，
+        /// 其他同样置顶的全屏应用（视频播放器/F11 浏览器）激活后会压到本窗口之上；
+        /// 周期性以 SWP_NOACTIVATE 重设层级即可稳定压回，且不抢焦点。
+        /// 注意：独占全屏（DirectX 排斥模式）受系统限制无法覆盖，属正常现象。
+        /// </summary>
+        private void ReAssertTopmost()
+        {
+            try
+            {
+                if (_isCollapsed) return;
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                SetWindowPos(hwnd, HwndTopmost, 0, 0, 0, 0,
+                    SwpNoMove | SwpNoSize | SwpNoActivate);
+                if (!Topmost) Topmost = true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ReAssertTopmost error: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #region 鼠标悬停展开/收起
 
