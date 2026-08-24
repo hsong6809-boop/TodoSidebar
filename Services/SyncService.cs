@@ -93,6 +93,10 @@ namespace TodoSidebar.Services
             // 防止重复初始化
             if (_cts != null) return;
 
+            // M39 修复：先清空内存游标再读取——切换账号后若新账号无保存游标，
+            // 原实现会残留上一个账号的同步时间，导致新账号首次增量下载漏数据
+            _lastSyncTimeUtc = null;
+
             await SupabaseClientService.InitializeAsync();
 
             // 从数据库恢复上次同步时间（S8 修复：游标按用户隔离，
@@ -139,6 +143,11 @@ namespace TodoSidebar.Services
         {
             try
             {
+                // M39：启动后立即同步一次，不再干等第一个 30 秒 tick
+                // （登录/切号后用户很快会查看数据，首次同步应尽快完成）
+                try { await SyncAsync(); }
+                catch (Exception firstEx) { System.Diagnostics.Debug.WriteLine($"Initial sync failed: {firstEx.Message}"); }
+
                 while (await _syncTimer!.WaitForNextTickAsync(ct))
                 {
                     try
@@ -199,6 +208,7 @@ namespace TodoSidebar.Services
                 result.Conflicts = downloadResult.conflicts;
                 
                 // 3. 成长数据同步（XP 流水/番茄会话上传 + 用户档案合并；尽力而为，失败不影响主流程）
+                //    M39：失败不再完全静默——写入 sync_log 留痕，便于发现"云端缺表/RLS 未配"类问题
                 try
                 {
                     await SyncGrowthDataAsync();
@@ -206,6 +216,13 @@ namespace TodoSidebar.Services
                 catch (Exception growthEx)
                 {
                     System.Diagnostics.Debug.WriteLine($"Growth sync skipped: {growthEx.Message}");
+                    _syncLog.Log(new SyncLogEntry
+                    {
+                        Action = "growth",
+                        Success = false,
+                        ErrorMessage = growthEx.Message,
+                        Details = "成长数据同步失败（请检查 Supabase 是否已建 xp_log/pomodoro_session/user_profile 表及 RLS 策略）"
+                    });
                 }
 
                 // 4. 定期清理软删除记录（30天前的）
@@ -509,6 +526,9 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 比较本地任务与远程任务的业务内容是否一致（M10 缓解：回声下载跳过用）。
         /// 不比较 SyncId/IsDirty/LastSyncedAt 等同步元数据。
+        /// M39 修复：补齐 Deadline/CompletedAt/CreatedAt 比较——原实现遗漏这三个字段，
+        /// "仅改截止时间"这类跨设备变更会被误判为内容一致而跳过写入，静默丢失。
+        /// 本地库时间为本地偏移格式、远端为 UTC，统一转 UTC 后比较。
         /// </summary>
         private static bool TaskContentEquals(TaskItem local, SyncTask remote)
         {
@@ -520,8 +540,27 @@ namespace TodoSidebar.Services
                 && local.Tags == remote.Tags
                 && local.SortOrder == remote.SortOrder
                 && local.SubTasksJson == remote.SubtasksJson
-                && local.IsDeleted == remote.IsDeleted;
+                && local.IsDeleted == remote.IsDeleted
+                && NullableDateEquals(local.Deadline, remote.Deadline)
+                && NullableDateEquals(local.CompletedAt, remote.CompletedAt)
+                && NullableDateEquals(local.CreatedAt, remote.CreatedAt);
         }
+
+        /// <summary>M39：时间比较前归一化到 UTC（本地值可能是 Unspecified/Local 种类）。</summary>
+        private static bool NullableDateEquals(DateTime? localValue, DateTime? remoteValue)
+        {
+            if (!localValue.HasValue || !remoteValue.HasValue)
+                return localValue.HasValue == remoteValue.HasValue;
+            return ToUtc(localValue.Value) == ToUtc(remoteValue.Value);
+        }
+
+        private static DateTime ToUtc(DateTime value)
+            => value.Kind switch
+            {
+                DateTimeKind.Utc => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime()
+            };
         
         /// <summary>
         /// 成长数据同步（P5，尽力而为）：

@@ -281,6 +281,11 @@ namespace TodoSidebar.ViewModels
             LoadHistoryTasks();
             LoadCurrentTasks();
             StatisticsViewModel.LoadStatistics();
+
+            // M39 修复：同步完成后刷新等级/连击显示——云端档案合并进本地库后，
+            // 原实现只重载任务列表，等级要重启应用才会变对，造成"等级没同步"的观感
+            LoadLevelInfo();
+            UpdateComboDisplay();
         }
 
         private void LoadDailyTasks()
