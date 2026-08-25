@@ -10,6 +10,10 @@ namespace TodoSidebar.Services
     {
         void ExportToJson(string filePath);
         void ExportToCsv(string filePath);
+
+        /// <summary>v5.3：导出 Markdown（Obsidian/Notion 友好）。</summary>
+        void ExportToMarkdown(string filePath);
+
         int ImportFromJson(string filePath);
         string CreateBackup();
         int RestoreBackup(string backupPath);

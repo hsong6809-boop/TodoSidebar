@@ -335,7 +335,9 @@ namespace TodoSidebar.Services
                 { "LastSyncedAt", "TEXT" },
                 { "IsDeleted", "INTEGER DEFAULT 0" },
                 // S7 修复：本地编辑时间戳（UTC），用于同步冲突时与云端 UpdatedAt 做真正的 LWW 比较
-                { "LocalUpdatedAt", "TEXT" }
+                { "LocalUpdatedAt", "TEXT" },
+                // v5.3 回收站：软删除时间戳（本地时间 O 格式），30 天自动清除依据
+                { "DeletedAt", "TEXT" }
             };
 
             foreach (var column in columnsToCheck)
@@ -463,13 +465,113 @@ namespace TodoSidebar.Services
 
         public void DeleteTask(int id) => ExecuteLocked(() =>
         {
-            // 软删除：标记 IsDeleted + IsDirty，同步时会上传到云端
+            // 软删除：标记 IsDeleted + IsDirty + DeletedAt（v5.3 回收站 30 天保留期起点），同步时会上传到云端
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id";
+            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1, DeletedAt = @deletedAt, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.Parameters.AddWithValue("@deletedAt", DateTime.Now.ToString("O"));
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+            cmd.ExecuteNonQuery();
+        });
+
+        /// <summary>
+        /// v5.3 回收站：从回收站恢复任务（清除软删标记，标记脏待同步）。
+        /// </summary>
+        public void RestoreTask(int id) => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "UPDATE Tasks SET IsDeleted = 0, DeletedAt = NULL, IsDirty = 1, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id AND IsDeleted = 1";
             cmd.Parameters.AddWithValue("@id", id);
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         });
+
+        /// <summary>
+        /// v5.3 回收站：查询全部软删除任务（按删除时间倒序）。
+        /// </summary>
+        public List<TaskItem> GetDeletedTasks() => ExecuteLocked(() =>
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Tasks WHERE IsDeleted = 1 ORDER BY DeletedAt DESC";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) tasks.Add(ReadTask(reader));
+            return tasks;
+        });
+
+        /// <summary>回收站保留期（天）。</summary>
+        internal const int TrashRetentionDays = 30;
+
+        /// <summary>
+        /// v5.3 回收站：彻底删除单个任务（硬删，连带清理子表记录）。
+        /// 返回是否删除了行。
+        /// </summary>
+        public bool PurgeTask(int id) => ExecuteLocked(() =>
+        {
+            using var transaction = _connection!.BeginTransaction();
+            try
+            {
+                int affected;
+                using (var cmd = _connection!.CreateCommand())
+                {
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = "DELETE FROM Tasks WHERE Id = @id AND IsDeleted = 1";
+                    cmd.Parameters.AddWithValue("@id", id);
+                    affected = cmd.ExecuteNonQuery();
+                }
+                CleanupOrphanRecords(transaction);
+                transaction.Commit();
+                return affected > 0;
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
+        });
+
+        /// <summary>
+        /// v5.3 回收站：清除超过保留期的软删除任务，并清理指向失效任务的子表孤儿记录。
+        /// 启动时调用。返回清除的任务数。
+        /// </summary>
+        public int PurgeExpiredDeletedTasks() => ExecuteLocked(() =>
+        {
+            var cutoff = DateTime.Now.AddDays(-TrashRetentionDays).ToString("O");
+            using var transaction = _connection!.BeginTransaction();
+            try
+            {
+                int purged;
+                using (var cmd = _connection!.CreateCommand())
+                {
+                    cmd.Transaction = transaction;
+                    // IsDirty=0 守卫：未上云的删除墓碑不能本地清除，否则下次同步会"复活"
+                    cmd.CommandText = "DELETE FROM Tasks WHERE IsDeleted = 1 AND IsDirty = 0 AND DeletedAt IS NOT NULL AND DeletedAt < @cutoff";
+                    cmd.Parameters.AddWithValue("@cutoff", cutoff);
+                    purged = cmd.ExecuteNonQuery();
+                }
+                if (purged > 0)
+                    CleanupOrphanRecords(transaction);
+                transaction.Commit();
+                return purged;
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
+            }
+        });
+
+        /// <summary>v5.3：清理子表中指向已不存在任务的孤儿记录（与导入恢复同口径）。</summary>
+        private void CleanupOrphanRecords(SqliteTransaction transaction)
+        {
+            foreach (var table in new[] { "DailyTaskCompletion", "XpLog", "PomodoroSession" })
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.Transaction = transaction;
+                cmd.CommandText = $"DELETE FROM {table} WHERE TaskId IS NOT NULL AND TaskId NOT IN (SELECT Id FROM Tasks)";
+                cmd.ExecuteNonQuery();
+            }
+        }
 
         /// <summary>
         /// 事务化导入任务（M4 修复）：单事务包裹整批插入（失败整体回滚），
@@ -645,7 +747,8 @@ namespace TodoSidebar.Services
                 IsDirty = reader.IsDBNull(reader.GetOrdinal("IsDirty")) ? true : reader.GetInt32(reader.GetOrdinal("IsDirty")) == 1,
                 LastSyncedAt = ReadDateTime(reader, "LastSyncedAt"),
                 IsDeleted = reader.IsDBNull(reader.GetOrdinal("IsDeleted")) ? false : reader.GetInt32(reader.GetOrdinal("IsDeleted")) == 1,
-                LocalUpdatedAt = ReadDateTime(reader, "LocalUpdatedAt")
+                LocalUpdatedAt = ReadDateTime(reader, "LocalUpdatedAt"),
+                DeletedAt = ReadDateTime(reader, "DeletedAt")
             };
         }
 
@@ -785,6 +888,53 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@id", taskId);
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
+        });
+
+        /// <summary>
+        /// v5.3 热力图：统计区间内每日完成次数（每日任务完成记录 + 当日完成的截止任务）。
+        /// 返回 yyyy-MM-dd → 次数。
+        /// </summary>
+        public Dictionary<string, int> GetHeatmapCounts(DateTime start, DateTime end) => ExecuteLocked(() =>
+        {
+            var result = new Dictionary<string, int>();
+            var startStr = start.ToString("yyyy-MM-dd");
+            var endStr = end.ToString("yyyy-MM-dd");
+
+            // 每日任务完成记录
+            using (var cmd = _connection!.CreateCommand())
+            {
+                cmd.CommandText = @"
+                    SELECT d.Date, COUNT(*) FROM DailyTaskCompletion d
+                    INNER JOIN Tasks t ON t.Id = d.TaskId AND t.IsDeleted = 0
+                    WHERE d.Date >= @start AND d.Date <= @end
+                    GROUP BY d.Date";
+                cmd.Parameters.AddWithValue("@start", startStr);
+                cmd.Parameters.AddWithValue("@end", endStr);
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    result[reader.GetString(0)] = Convert.ToInt32(reader.GetInt64(1));
+            }
+
+            // 截止任务按 CompletedAt 当日计
+            using (var cmd = _connection!.CreateCommand())
+            {
+                cmd.CommandText = @"
+                    SELECT substr(CompletedAt, 1, 10), COUNT(*) FROM Tasks
+                    WHERE Type = @type AND IsCompleted = 1 AND IsDeleted = 0
+                      AND CompletedAt IS NOT NULL
+                      AND substr(CompletedAt, 1, 10) >= @start AND substr(CompletedAt, 1, 10) <= @end
+                    GROUP BY substr(CompletedAt, 1, 10)";
+                cmd.Parameters.AddWithValue("@type", (int)TaskType.Deadline);
+                cmd.Parameters.AddWithValue("@start", startStr);
+                cmd.Parameters.AddWithValue("@end", endStr);
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var day = reader.GetString(0);
+                    result[day] = result.TryGetValue(day, out var cur) ? cur + Convert.ToInt32(reader.GetInt64(1)) : Convert.ToInt32(reader.GetInt64(1));
+                }
+            }
+            return result;
         });
 
         /// <summary>

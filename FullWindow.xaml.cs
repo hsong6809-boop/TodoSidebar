@@ -685,6 +685,7 @@ namespace TodoSidebar
                 "Stats" => NavStats,
                 "Focus" => NavFocus,
                 "Achievements" => NavAchievements,
+                "Trash" => NavTrash,
                 _ => NavDashboard
             };
 
@@ -701,14 +702,16 @@ namespace TodoSidebar
         private void Nav_ApplyPage(string page)
         {
             var showDashboard = page == "Dashboard";
+            var vm = DataContext as MainViewModel;
             DashboardPanel.Visibility = showDashboard ? Visibility.Visible : Visibility.Collapsed;
             DeadlinesPanel.Visibility = page == "Deadline" ? Visibility.Visible : Visibility.Collapsed;
             HistoryPanel.Visibility = page == "History" ? Visibility.Visible : Visibility.Collapsed;
             StatisticsPanel.Visibility = page == "Stats" ? Visibility.Visible : Visibility.Collapsed;
             FocusPanel.Visibility = page == "Focus" ? Visibility.Visible : Visibility.Collapsed;
             AchievementsPanel.Visibility = page == "Achievements" ? Visibility.Visible : Visibility.Collapsed;
+            TrashPanel.Visibility = page == "Trash" ? Visibility.Visible : Visibility.Collapsed;
 
-            if (DataContext is MainViewModel vm)
+            if (vm != null)
             {
                 vm.SelectedTabIndex = page switch
                 {
@@ -730,7 +733,14 @@ namespace TodoSidebar
                 UpdateFocusPanel();
                 LoadFocusTasks();
             }
-            if (page == "Stats") LoadTrendChart();
+            if (page == "Stats")
+            {
+                LoadTrendChart();
+                // v5.3：重进页面时刷新热力图（跟随主题/强调色与最新数据）
+                if (vm != null)
+                    vm.StatisticsViewModel.LoadHeatmap(vm.StatisticsViewModel.HeatmapYear);
+            }
+            if (page == "Trash") vm?.LoadDeletedTasks();
             if (page == "Achievements") LoadAchievements();
 
             AnimateActiveTabPanel();
@@ -841,8 +851,7 @@ namespace TodoSidebar
         }
 
         /// <summary>V2-W6：加载近 30 天完成趋势折线图。</summary>
-        private void LoadTrendChart()
-        {
+        private void LoadTrendChart()        {
             try
             {
                 var records = DatabaseService.Instance.GetDailyCompletionRecords(30);
@@ -863,6 +872,47 @@ namespace TodoSidebar
             {
                 System.Diagnostics.Debug.WriteLine($"LoadTrendChart error: {ex.Message}");
             }
+        }
+
+        // ==================== v5.3 年度热力图 ====================
+
+        private void HeatmapPrevYear_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.StatisticsViewModel.LoadHeatmap(vm.StatisticsViewModel.HeatmapYear - 1);
+        }
+
+        private void HeatmapNextYear_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel vm
+                && vm.StatisticsViewModel.HeatmapYear < DateTime.Today.Year)
+                vm.StatisticsViewModel.LoadHeatmap(vm.StatisticsViewModel.HeatmapYear + 1);
+        }
+
+        /// <summary>热力图横向滚动区：滚轮纵向输入转为横向翻页（不劫持页面滚动）。</summary>
+        private void HeatmapScroll_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            if (sender is System.Windows.Controls.ScrollViewer sv && sv.ScrollableWidth > 0)
+            {
+                e.Handled = true;
+                sv.ScrollToHorizontalOffset(sv.HorizontalOffset - e.Delta);
+            }
+        }
+
+        // ==================== v5.3 回收站 ====================
+
+        private void PurgeAllTrash_Click(object sender, RoutedEventArgs e)
+        {
+            var count = (DataContext as MainViewModel)?.DeletedTasks.Count ?? 0;
+            if (count == 0) return;
+            var result = MessageBox.Show(this,
+                $"将彻底删除回收站中的 {count} 个任务，且无法恢复。确定继续吗？",
+                "清空回收站", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+
+            // 逐条走命令路径，保持 VM 集合与库状态一致
+            if (DataContext is MainViewModel vm)
+                vm.PurgeAllTrashCommand.Execute(null);
         }
 
         /// <summary>对当前可见的内容面板播放淡入 + 轻微上移动画（用 RenderTransform，不影响布局）。</summary>

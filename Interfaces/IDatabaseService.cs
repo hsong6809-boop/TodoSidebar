@@ -21,6 +21,15 @@ namespace TodoSidebar.Services
         List<TaskItem> GetTasks();  // 获取所有任务（用于导出）
         List<TaskItem> SearchTasks(string keyword, TaskType? type = null, TaskPriority? priority = null);
 
+        // v5.3 回收站
+        void RestoreTask(int taskId);
+        List<TaskItem> GetDeletedTasks();
+        bool PurgeTask(int taskId);
+        int PurgeExpiredDeletedTasks();
+
+        // v5.3 热力图
+        Dictionary<string, int> GetHeatmapCounts(DateTime start, DateTime end);
+
         // 设置
         string? GetSetting(string key);
         void SetSetting(string key, string value);

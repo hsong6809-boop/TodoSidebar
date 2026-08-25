@@ -109,6 +109,21 @@ namespace TodoSidebar.Models
         /// </summary>
         public bool IsDeleted { get; set; } = false;
 
+        /// <summary>
+        /// v5.3 回收站：软删除时间（本地时间），30 天保留期起点。
+        /// </summary>
+        public DateTime? DeletedAt { get; set; }
+
+        /// <summary>v5.3 回收站：删除于 N 天前（展示用）。</summary>
+        public string DeletedAgoText => DeletedAt.HasValue
+            ? (DateTime.Now - DeletedAt.Value).TotalDays switch
+            {
+                < 1 => "今天删除",
+                < 2 => "昨天删除",
+                var d => $"{(int)d} 天前删除"
+            }
+            : "已删除";
+
         private string? _subTasksJson;
         public string? SubTasksJson
         {

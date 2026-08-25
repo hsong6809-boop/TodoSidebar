@@ -659,8 +659,7 @@
                 <Border Grid.Row="5" Margin="16,10,16,14"
                         Background="{DynamicResource CardBrush}"
                         CornerRadius="16" Padding="12,9"
-                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                    <Grid>
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
@@ -734,6 +733,27 @@
         <Canvas x:Name="ParticleLayer"
                 IsHitTestVisible="False"
                 Panel.ZIndex="100"/>
+
+        <!-- v5.3 删除撤销条（Snackbar） -->
+        <Border Panel.ZIndex="99"
+                Visibility="{Binding IsUndoBarVisible, Converter={StaticResource BoolToVis}}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,84">
+            <Border Background="#E6202A33" CornerRadius="999" Padding="16,8">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.35"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding UndoMessage}" FontSize="12" Foreground="#F1F5F9"
+                               VerticalAlignment="Center"/>
+                    <Button Content="撤销" Cursor="Hand" FontSize="12" FontWeight="Bold"
+                            Foreground="{DynamicResource AccentBrush}" Background="Transparent"
+                            BorderThickness="0" Padding="10,0" Margin="6,0,-4,0"
+                            Command="{Binding UndoDeleteCommand}"/>
+                </StackPanel>
+            </Border>
+        </Border>
 
         <!-- 升级横幅 -->
         <Border x:Name="LevelUpBanner"

@@ -54,6 +54,10 @@ namespace TodoSidebar.Models
         
         [Column("is_deleted")]
         public bool IsDeleted { get; set; }
+
+        /// <summary>v5.3 回收站：软删除时间（ISO 文本，展示参考；老客户端忽略）。</summary>
+        [Column("deleted_at")]
+        public string? DeletedAt { get; set; }
     }
 
     /// <summary>

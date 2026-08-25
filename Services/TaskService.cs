@@ -170,6 +170,16 @@ namespace TodoSidebar.Services
             _db.DeleteTask(id);
         }
 
+        // ==================== v5.3 回收站 ====================
+
+        public void RestoreTask(int id) => _db.RestoreTask(id);
+
+        public List<TaskItem> GetDeletedTasks() => _db.GetDeletedTasks();
+
+        public bool PurgeTask(int id) => _db.PurgeTask(id);
+
+        public int PurgeExpiredDeletedTasks() => _db.PurgeExpiredDeletedTasks();
+
         // 获取历史完成任务
         public List<TaskItem> GetHistoryTasks(DateTime? fromDate = null, DateTime? toDate = null)
         {

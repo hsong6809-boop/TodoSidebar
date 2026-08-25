@@ -459,8 +459,86 @@ namespace TodoSidebar.ViewModels
         private void DeleteTask(TaskItem? task)
         {
             if (task == null) return;
+            var title = task.Title;
             _taskService.DeleteTask(task.Id);
             LoadData();
+            ShowUndoBar(task.Id, title);
+        }
+
+        // ===== v5.3 回收站：删除撤销条 =====
+
+        /// <summary>撤销条可见性（5 秒后自动隐藏）。</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsUndoBarVisible))]
+        private string? _undoMessage;
+
+        /// <summary>供 XAML BooleanToVisibility 绑定。</summary>
+        public bool IsUndoBarVisible => UndoMessage != null;
+
+        private int _lastDeletedTaskId;
+        private DispatcherTimer? _undoTimer;
+
+        /// <summary>v5.3：显示"已删除 · 撤销"提示条，5 秒后自动消失。</summary>
+        private void ShowUndoBar(int taskId, string title)
+        {
+            _lastDeletedTaskId = taskId;
+            UndoMessage = $"已删除「{title}」";
+            _undoTimer?.Stop();
+            _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _undoTimer.Tick += (_, _) =>
+            {
+                _undoTimer!.Stop();
+                UndoMessage = null;
+            };
+            _undoTimer.Start();
+        }
+
+        [RelayCommand]
+        private void UndoDelete()
+        {
+            _undoTimer?.Stop();
+            if (_lastDeletedTaskId > 0)
+                _taskService.RestoreTask(_lastDeletedTaskId);
+            _lastDeletedTaskId = 0;
+            UndoMessage = null;
+            LoadData();
+        }
+
+        // ===== v5.3 回收站 =====
+
+        public ObservableCollection<TaskItem> DeletedTasks { get; } = new();
+
+        /// <summary>加载回收站列表（回收站页打开时调用）。</summary>
+        public void LoadDeletedTasks()
+        {
+            var items = _taskService.GetDeletedTasks();
+            DeletedTasks.Clear();
+            foreach (var t in items) DeletedTasks.Add(t);
+        }
+
+        [RelayCommand]
+        private void RestoreFromTrash(TaskItem? task)
+        {
+            if (task == null) return;
+            _taskService.RestoreTask(task.Id);
+            LoadDeletedTasks();
+            LoadData();
+        }
+
+        [RelayCommand]
+        private void PurgeFromTrash(TaskItem? task)
+        {
+            if (task == null) return;
+            _taskService.PurgeTask(task.Id);
+            LoadDeletedTasks();
+        }
+
+        [RelayCommand]
+        private void PurgeAllTrash()
+        {
+            foreach (var t in DeletedTasks.ToList())
+                _taskService.PurgeTask(t.Id);
+            LoadDeletedTasks();
         }
 
         [RelayCommand]

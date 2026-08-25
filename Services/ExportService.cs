@@ -49,10 +49,87 @@ namespace TodoSidebar.Services
             }
         }
 
-        // 导出为 CSV（修复转义问题）
-        public void ExportToCsv(string filePath)
+        /// <summary>
+        /// v5.3：导出为 Markdown（Obsidian / Notion 友好）。
+        /// 已完成任务按完成日期分组 `- [x]`；未完成任务单列一节。
+        /// </summary>
+        public void ExportToMarkdown(string filePath)
         {
             try
+            {
+                var tasks = _dbService.GetTasks();
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"# 每日任务导出 · {DateTime.Now:yyyy-MM-dd HH:mm}");
+                sb.AppendLine();
+                sb.AppendLine($"> 共 {tasks.Count} 个任务，其中已完成 {tasks.Count(t => t.IsCompleted)} 个。由 TodoSidebar 导出。");
+                sb.AppendLine();
+
+                // 已完成：按完成日期倒序分组
+                var completed = tasks
+                    .Where(t => t.IsCompleted && t.CompletedAt.HasValue)
+                    .OrderByDescending(t => t.CompletedAt)
+                    .ToList();
+                if (completed.Count > 0)
+                {
+                    sb.AppendLine("## ✅ 已完成");
+                    sb.AppendLine();
+                    foreach (var group in completed.GroupBy(t => t.CompletedAt!.Value.Date).OrderByDescending(g => g.Key))
+                    {
+                        sb.AppendLine($"### {group.Key:yyyy-MM-dd} 周{GetWeekdayCn(group.Key)}");
+                        sb.AppendLine();
+                        foreach (var t in group)
+                            sb.AppendLine($"- [x] {EscapeMarkdown(t.Title)}{FormatTaskSuffix(t)} · {t.CompletedAt:HH:mm}");
+                        sb.AppendLine();
+                    }
+                }
+
+                // 未完成
+                var pending = tasks.Where(t => !t.IsCompleted).ToList();
+                if (pending.Count > 0)
+                {
+                    sb.AppendLine("## 🕙 进行中");
+                    sb.AppendLine();
+                    foreach (var t in pending.OrderBy(t => t.Type).ThenBy(t => t.Deadline ?? DateTime.MaxValue))
+                        sb.AppendLine($"- [ ] {EscapeMarkdown(t.Title)}{FormatTaskSuffix(t)}");
+                    sb.AppendLine();
+                }
+
+                // 原子写 + UTF-8 BOM（编辑器兼容性最好）
+                var tempPath = filePath + $".{Guid.NewGuid():N}.tmp";
+                using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+                {
+                    writer.Write(sb.ToString());
+                }
+                File.Move(tempPath, filePath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"导出 Markdown 失败: {ex.Message}", ex);
+            }
+        }
+
+        private static string FormatTaskSuffix(TaskItem t)
+        {
+            var parts = new List<string>();
+            if (t.Type == TaskType.Deadline && t.Deadline.HasValue)
+                parts.Add($"截止 {t.Deadline.Value:MM-dd HH:mm}");
+            if (!string.IsNullOrWhiteSpace(t.Tags))
+                parts.Add(string.Join(" ", t.Tags.Split('#', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => "#" + x.Trim())));
+            return parts.Count > 0 ? " （" + string.Join(" · ", parts) + "）" : "";
+        }
+
+        private static string EscapeMarkdown(string text)
+            => text.Replace("[", "\\[", StringComparison.Ordinal)
+                   .Replace("]", "\\]", StringComparison.Ordinal);
+
+        private static string GetWeekdayCn(DateTime date)
+            => "日一二三四五六"[(int)date.DayOfWeek].ToString();
+
+        // 导出为 CSV（修复转义问题）
+        public void ExportToCsv(string filePath)
+        {            try
             {
                 var tasks = _dbService.GetTasks();
 

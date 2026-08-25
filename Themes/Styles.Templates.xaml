@@ -21,6 +21,7 @@
     <converters:MultiplyConverter x:Key="Multiply"/>
     <converters:FractionToPercentConverter x:Key="FractionToPercent"/>
     <converters:EmptyToCollapsedConverter x:Key="EmptyToVis"/>
+    <converters:HeatmapLevelToBrushConverter x:Key="HeatBrush"/>
 
     <!-- 完成圆钮（任务卡左端，单击即完成） -->
     <ControlTemplate x:Key="CompleteCircleTemplate" TargetType="Button">

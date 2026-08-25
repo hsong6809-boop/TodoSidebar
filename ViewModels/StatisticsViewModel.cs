@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using TodoSidebar.Models;
 using TodoSidebar.Services;
 
@@ -47,10 +48,78 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private List<TaskTypeStats> _taskTypeStats = new();
 
+        // ===== v5.3 年度热力图 =====
+
+        /// <summary>热力图展示年份（默认今年）。</summary>
+        [ObservableProperty]
+        private int _heatmapYear = DateTime.Today.Year;
+
+        /// <summary>热力图格子序列（含首周前置空白），供 WrapPanel 纵向换列渲染。</summary>
+        [ObservableProperty]
+        private List<HeatmapDay> _yearHeatmap = new();
+
+        /// <summary>热力图年度汇总文本。</summary>
+        [ObservableProperty]
+        private string _heatmapSummaryText = "";
+
+        /// <summary>图例色阶样例（L0~L4）。</summary>
+        public List<HeatmapDay> HeatmapLegend { get; } = new()
+        {
+            new(null, 0), new(null, 1), new(null, 3), new(null, 6), new(null, 10)
+        };
+
         public StatisticsViewModel(DatabaseService dbService)
         {
             _dbService = dbService;
             LoadStatistics();
+            LoadHeatmap(DateTime.Today.Year);
+        }
+
+        /// <summary>v5.3：加载指定年份的完成热力图数据。</summary>
+        public void LoadHeatmap(int year)
+        {
+            try
+            {
+                HeatmapYear = year;
+                var counts = _dbService.GetHeatmapCounts(
+                    new DateTime(year, 1, 1), new DateTime(year, 12, 31));
+
+                var list = new List<HeatmapDay>();
+                // 首周对齐：1 月 1 日是周几，就先补几个空白格（周一为第一行）
+                var jan1 = new DateTime(year, 1, 1);
+                var leadDays = ((int)jan1.DayOfWeek + 6) % 7; // 周一=0 … 周日=6
+                for (int i = 0; i < leadDays; i++)
+                    list.Add(HeatmapDay.Blank);
+
+                int total = 0, activeDays = 0;
+                var day = jan1;
+                while (day.Year == year)
+                {
+                    var key = day.ToString("yyyy-MM-dd");
+                    var count = counts.TryGetValue(key, out var c) ? c : 0;
+                    total += count;
+                    if (count > 0) activeDays++;
+                    list.Add(new HeatmapDay(day, count));
+                    day = day.AddDays(1);
+                }
+
+                YearHeatmap = list;
+                HeatmapSummaryText = $"{year} 年共完成 {total} 次 · 活跃 {activeDays} 天";
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadHeatmap error: {ex.Message}");
+            }
+        }
+
+        [RelayCommand]
+        private void PrevHeatmapYear() => LoadHeatmap(HeatmapYear - 1);
+
+        [RelayCommand]
+        private void NextHeatmapYear()
+        {
+            if (HeatmapYear < DateTime.Today.Year)
+                LoadHeatmap(HeatmapYear + 1);
         }
 
         public void LoadStatistics()
@@ -185,6 +254,39 @@ namespace TodoSidebar.ViewModels
 
             return stats;
         }
+    }
+
+    /// <summary>v5.3 热力图单元格。</summary>
+    public class HeatmapDay
+    {
+        /// <summary>色阶 0（无）~4（最密）；IsBlank 时无意义。</summary>
+        public const int MaxLevel = 4;
+
+        public DateTime? Date { get; }
+        public int Count { get; }
+        public bool IsBlank { get; }
+        public int Level { get; }
+
+        public static HeatmapDay Blank { get; } = new(null, 0, isBlank: true);
+
+        public HeatmapDay(DateTime? date, int count, bool isBlank = false)
+        {
+            Date = date;
+            Count = count;
+            IsBlank = isBlank;
+            Level = count switch
+            {
+                <= 0 => 0,
+                <= 2 => 1,
+                <= 5 => 2,
+                <= 9 => 3,
+                _ => 4
+            };
+        }
+
+        public string ToolTip => Date.HasValue
+            ? $"{Date.Value:M月d日} · 完成 {Count} 次"
+            : "";
     }
 
     public class DailyStats

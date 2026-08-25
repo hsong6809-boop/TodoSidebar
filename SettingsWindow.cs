@@ -198,6 +198,28 @@ namespace TodoSidebar
             }
         }
 
+        /// <summary>v5.3：导出 Markdown（Obsidian/Notion 友好）。</summary>
+        private void ExportMarkdown_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "Markdown 文件|*.md",
+                FileName = $"todo_export_{DateTime.Now:yyyyMMdd}.md"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _exportService.ExportToMarkdown(dialog.FileName);
+                    MessageBox.Show("导出成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"导出失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
         private void Import_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "JSON 文件|*.json" };

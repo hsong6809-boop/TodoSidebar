@@ -19,5 +19,11 @@ namespace TodoSidebar.Services
         void UncompleteTask(TaskItem task);
         void DeleteTask(int id);
         void UpdateSubTasks(TaskItem task, string subTasksJson);
+
+        // v5.3 回收站
+        void RestoreTask(int id);
+        List<TaskItem> GetDeletedTasks();
+        bool PurgeTask(int id);
+        int PurgeExpiredDeletedTasks();
     }
 }

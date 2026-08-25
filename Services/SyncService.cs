@@ -319,7 +319,8 @@ namespace TodoSidebar.Services
                         SortOrder = task.SortOrder,
                         SubtasksJson = task.SubTasksJson,
                         UpdatedAt = DateTime.UtcNow,
-                        IsDeleted = task.IsDeleted
+                        IsDeleted = task.IsDeleted,
+                        DeletedAt = task.DeletedAt?.ToString("O")
                     };
 
                     syncTasks.Add(syncTask);
@@ -443,6 +444,7 @@ namespace TodoSidebar.Services
                             SortOrder = remoteTask.SortOrder,
                             SubTasksJson = remoteTask.SubtasksJson,
                             IsDeleted = remoteTask.IsDeleted,
+                            DeletedAt = ParseRemoteDeletedAt(remoteTask.DeletedAt),
                             IsDirty = false,
                             LastSyncedAt = DateTime.UtcNow  // 与数据库 LastSyncedAt 存储格式（UTC）一致
                         };
@@ -521,6 +523,18 @@ namespace TodoSidebar.Services
             if (string.IsNullOrEmpty(title))
                 return string.Empty;
             return title.Length <= 8 ? title : title.Substring(0, 8) + "…";
+        }
+
+        /// <summary>
+        /// v5.3：解析云端 deleted_at（ISO 文本）为本地时间；
+        /// 空值/解析失败返回 null（老客户端或未执行 SQL 时云端无该列值）。
+        /// </summary>
+        private static DateTime? ParseRemoteDeletedAt(string? raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return null;
+            return DateTime.TryParse(raw, null, System.Globalization.DateTimeStyles.RoundtripKind, out var t)
+                ? t.ToLocalTime()
+                : null;
         }
 
         /// <summary>

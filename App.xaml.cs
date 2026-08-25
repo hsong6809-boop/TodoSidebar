@@ -62,6 +62,10 @@ namespace TodoSidebar
             try { Nickname = DatabaseService.Instance.GetSetting("Nickname") ?? string.Empty; }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"读取昵称失败: {ex.Message}"); }
 
+            // v5.3 回收站：启动时清除超过保留期（30 天）且已同步的软删除任务；失败不影响启动
+            try { DatabaseService.Instance.PurgeExpiredDeletedTasks(); }
+            catch (Exception ex) { LogError("回收站过期清理失败", ex); }
+
             // 注册全局异常处理
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;

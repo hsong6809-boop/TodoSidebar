@@ -203,6 +203,11 @@
                                         Padding="12,7"
                                         Margin="0,0,8,8"
                                         Click="ExportCsv_Click"/>
+                                <Button Content="导出 Markdown"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="12,7"
+                                        Margin="0,0,8,8"
+                                        Click="ExportMarkdown_Click"/>
                                 <Button Content="导入"
                                         Style="{StaticResource SecondaryButton}"
                                         Padding="12,7"
