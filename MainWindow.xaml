@@ -81,12 +81,11 @@
                         MouseLeftButtonDown="Header_MouseLeftButtonDown">
                     <Grid>
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="42" Height="42" CornerRadius="999"
-                                    Background="{DynamicResource AccentGradientBrush}">
-                                <controls:AppIcon Glyph="{x:Static controls:Icons.CheckMark}"
-                                                  Foreground="White" FontSize="17"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
+                            <controls:AvatarView x:Name="SidebarAvatar"
+                                                 Width="42" Height="42"
+                                                 Cursor="Hand"
+                                                 MouseLeftButtonDown="Avatar_Click"
+                                                 ToolTip="账号中心"/>
                             <StackPanel VerticalAlignment="Center" Margin="11,0,0,0">
                                 <TextBlock x:Name="GreetingText" Text="你好"
                                            FontSize="15" FontWeight="SemiBold"

@@ -153,6 +153,33 @@ namespace TodoSidebar.Models
     }
     
     /// <summary>
+    /// v5.2 账号中心：账号档案（对应 Supabase account_profile 表）。
+    /// user_id 为主键（每账号一行）；uid 为 8 位短账号 ID；
+    /// avatar_kind: d1~d8 内置 / custom 自定义（avatar_data 存 base64 PNG）。
+    /// </summary>
+    [Table("account_profile")]
+    public class SyncAccountProfile : BaseModel
+    {
+        [PrimaryKey("user_id")]
+        public string? UserId { get; set; }
+
+        [Column("uid")]
+        public string Uid { get; set; } = "";
+
+        [Column("nickname")]
+        public string Nickname { get; set; } = "";
+
+        [Column("avatar_kind")]
+        public string AvatarKind { get; set; } = "d1";
+
+        [Column("avatar_data")]
+        public string? AvatarData { get; set; }
+
+        [Column("updated_at")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    /// <summary>
     /// 同步状态
     /// </summary>
     public enum SyncStatus

@@ -43,27 +43,14 @@ namespace TodoSidebar
             // V2 收尾：减少动效开关初始态
             try { ReduceMotionCheck.IsChecked = DatabaseService.Instance.GetSetting("ReduceMotion") == "true"; }
             catch { ReduceMotionCheck.IsChecked = false; }
-
-            // V2：昵称
-            NicknameInput.Text = App.Nickname;
         }
 
-        /// <summary>保存昵称：持久化 + 更新运行时缓存（侧边栏问候语/头像即时可用）。</summary>
-        private void NicknameSave_Click(object sender, RoutedEventArgs e)
+        /// <summary>v5.2：昵称/头像编辑已迁移至账号中心，此处仅提供入口。</summary>
+        private void OpenAccountCenter_Click(object sender, RoutedEventArgs e)
         {
-            var nick = NicknameInput.Text.Trim();
-            try { DatabaseService.Instance.SetSetting("Nickname", nick); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存昵称失败: {ex.Message}"); }
-            App.Nickname = nick;
-
-            // 轻量确认：按钮短暂变为"已保存"
-            if (NicknameSaveButton != null)
-            {
-                NicknameSaveButton.Content = "已保存 ✓";
-                var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
-                t.Tick += (s, args) => { t.Stop(); NicknameSaveButton.Content = "保存"; };
-                t.Start();
-            }
+            var win = new AccountWindow { Owner = this };
+            win.Show();
+            win.Activate();
         }
 
         /// <summary>动效开关切换：立即生效并持久化。</summary>

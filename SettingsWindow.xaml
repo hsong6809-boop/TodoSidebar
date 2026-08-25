@@ -83,17 +83,12 @@
                                        FontSize="13"
                                        Foreground="{DynamicResource TextBrush}"/>
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                <TextBlock Text="昵称" FontSize="12"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center" Width="34"/>
-                                <TextBox x:Name="NicknameInput"
-                                         Style="{StaticResource GlassTextBox}"
-                                         FontSize="12" Padding="8,5"
-                                         Width="180" MaxLength="16"/>
-                                <Button x:Name="NicknameSaveButton" Content="保存"
+                                <Button Content="打开账号中心"
                                         Style="{StaticResource SecondaryButton}"
-                                        Padding="14,5" Margin="8,0,0,0"
-                                        Click="NicknameSave_Click"/>
+                                        Padding="13,5"
+                                        Click="OpenAccountCenter_Click"
+                                        ToolTip="管理昵称、头像与账号 ID"/>
+                                <!-- v5.2 昵称/头像编辑迁移至账号中心 -->
                             </StackPanel>
                         </StackPanel>
                     </Border>

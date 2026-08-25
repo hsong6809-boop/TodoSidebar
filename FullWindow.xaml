@@ -80,11 +80,11 @@
                                 Click="ThemeToggle_Click" ToolTip="切换明暗主题">
                             <controls:AppIcon x:Name="ThemeToggleIcon" Glyph="{x:Static controls:Icons.Moon}" FontSize="12"/>
                         </Button>
-                        <Border Width="28" Height="28" CornerRadius="999"
-                                Background="{DynamicResource AccentGradientBrush}" Margin="10,0,0,0">
-                            <TextBlock x:Name="AvatarText" Text="A" FontSize="11" FontWeight="Bold"
-                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <controls:AvatarView x:Name="TopBarAvatar"
+                                             Width="28" Height="28"
+                                             Cursor="Hand" Margin="10,0,0,0"
+                                             MouseLeftButtonDown="Avatar_Click"
+                                             ToolTip="账号中心"/>
                         <Button Style="{StaticResource HeaderIconButton}" Click="BrowseBadges_Click" ToolTip="成就图鉴">
                             <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}" FontSize="13"/>
                         </Button>

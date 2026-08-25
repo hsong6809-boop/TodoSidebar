@@ -1,0 +1,208 @@
+<Window x:Class="TodoSidebar.AccountWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:TodoSidebar.Controls"
+        Title="账号中心"
+        Width="430"
+        Height="660"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize">
+
+    <Border Background="{DynamicResource GlassBrush}"
+            CornerRadius="16"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.22"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ===== 标题栏 ===== -->
+            <Border Grid.Row="0"
+                    Background="{DynamicResource GlassLightBrush}"
+                    Padding="20,14"
+                    CornerRadius="16,16,0,0"
+                    BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    Cursor="SizeAll"
+                    MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
+                                          FontSize="14"
+                                          Foreground="{DynamicResource AccentBrush}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,8,0"/>
+                        <TextBlock Text="账号中心"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource CloseButtonStyle}"
+                            Click="CloseButton_Click"
+                            ToolTip="关闭"/>
+                </Grid>
+            </Border>
+
+            <!-- ===== 内容 ===== -->
+            <ScrollViewer Grid.Row="1"
+                          Padding="20,16"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <!-- 身份卡 -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="16,16"
+                            Margin="0,0,0,12">
+                        <StackPanel HorizontalAlignment="Center">
+                            <controls:AvatarView x:Name="HeroAvatar"
+                                                 Width="88" Height="88"
+                                                 HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="DisplayNameText" Text=""
+                                       FontSize="17" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                                <Border Background="{DynamicResource AccentSoftBrush}"
+                                        CornerRadius="999" Padding="8,2.5">
+                                    <TextBlock x:Name="UidText" Text="UID ——"
+                                               FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}"/>
+                                </Border>
+                                <Button Content="复制"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="9,2" FontSize="10.5" Margin="7,0,0,0"
+                                        Click="CopyUid_Click" ToolTip="复制账号 ID"/>
+                            </StackPanel>
+                            <TextBlock x:Name="EmailText" Text=""
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       HorizontalAlignment="Center" Margin="0,7,0,0"/>
+                            <TextBlock x:Name="GrowthSummaryText" Text=""
+                                       FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 昵称 -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="14,12"
+                            Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
+                                                  FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="昵称"
+                                           FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox x:Name="NicknameInput"
+                                         Style="{StaticResource GlassTextBox}"
+                                         FontSize="12" Padding="8,5"
+                                         Width="200" MaxLength="24"
+                                         KeyDown="NicknameInput_KeyDown"/>
+                                <Button x:Name="NicknameSaveButton" Content="保存"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="14,5" Margin="8,0,0,0"
+                                        Click="NicknameSave_Click"/>
+                                <TextBlock x:Name="NicknameHint" Text=""
+                                           FontSize="10.5" VerticalAlignment="Center"
+                                           Margin="9,0,0,0"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 头像 -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="14,12"
+                            Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.ColorBg}"
+                                                  FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="头像"
+                                           FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <WrapPanel x:Name="AvatarSwatchPanel" Margin="0,2,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button x:Name="UploadAvatarButton" Content="上传自定义头像…"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="13,6"
+                                        Click="UploadAvatar_Click"/>
+                                <TextBlock Text="支持 JPG / PNG，自动裁圆并压缩至 128×128"
+                                           FontSize="10.5" VerticalAlignment="Center"
+                                           Margin="10,0,0,0"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 设备与同步 -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="14,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Sync}"
+                                                  FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="设备与同步"
+                                           FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="DeviceText" Text=""
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="SyncTimeText" Text=""
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="0,3,0,0"/>
+                            <TextBlock Text="在其他设备登录同一账号，任务与账号资料将自动保持一致。"
+                                       FontSize="10.5"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== 底栏 ===== -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource GlassLightBrush}"
+                    Padding="20,12"
+                    CornerRadius="0,0,16,16"
+                    BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource BorderBrush}">
+                <Button Content="关闭"
+                        Style="{StaticResource SecondaryButton}"
+                        Padding="28,7"
+                        HorizontalAlignment="Right"
+                        Click="CloseButton_Click"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

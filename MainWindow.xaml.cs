@@ -70,6 +70,10 @@ namespace TodoSidebar
             PomodoroService.Instance.StateChanged += OnFocusStateChanged;
             PomodoroService.Instance.SessionCompleted += OnFocusSessionCompleted;
             UpdateMiniFocus();
+
+            // v5.2 账号中心：侧边栏头像随账号资料变化刷新
+            AccountService.Instance.ProfileChanged += OnAccountProfileChanged;
+            RefreshAccountAvatar();
             
             // 初始化悬停延迟定时器
             _hoverDelayTimer = new DispatcherTimer
@@ -179,8 +183,15 @@ namespace TodoSidebar
             PomodoroService.Instance.StateChanged -= OnFocusStateChanged;
             PomodoroService.Instance.SessionCompleted -= OnFocusSessionCompleted;
 
+            // 退订账号中心事件
+            AccountService.Instance.ProfileChanged -= OnAccountProfileChanged;
+
             base.OnClosed(e);
         }
+
+        /// <summary>v5.2 账号中心：头像资料变化时回 UI 线程刷新。</summary>
+        private void OnAccountProfileChanged(object? sender, EventArgs e)
+            => Dispatcher.Invoke(RefreshAccountAvatar);
 
         private void UpdateDateTime()
         {
@@ -197,6 +208,36 @@ namespace TodoSidebar
                 _ => ""
             };
             DateTimeText.Text = $"{now:M月d日} {dayOfWeek} · {now:HH:mm}";
+        }
+
+        /// <summary>v5.2 账号中心：刷新侧边栏左上角头像。</summary>
+        private void RefreshAccountAvatar()
+        {
+            if (SidebarAvatar == null) return;
+            var fallback = !string.IsNullOrWhiteSpace(App.Nickname)
+                ? App.Nickname
+                : SafeEmailPrefix();
+            AvatarLoader.Load(SidebarAvatar, AccountService.Instance, 42, fallback);
+        }
+
+        private static string SafeEmailPrefix()
+        {
+            try { return ((IAuthService)AuthService.Instance).CurrentEmail ?? ""; }
+            catch { return ""; }
+        }
+
+        /// <summary>v5.2 账号中心：点击侧边栏头像打开账号中心。</summary>
+        private void Avatar_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            e.Handled = true; // 阻断冒泡到头部拖拽区
+            OpenAccountCenter();
+        }
+
+        private void OpenAccountCenter()
+        {
+            var win = new AccountWindow { Owner = this };
+            win.Show();
+            win.Activate();
         }
 
         /// <summary>V2：驾驶舱问候语（时段 + 用户名），时钟每秒刷新时顺带更新。</summary>

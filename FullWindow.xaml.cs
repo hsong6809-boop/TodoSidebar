@@ -37,16 +37,11 @@ namespace TodoSidebar
                 DwmBackdropHelper.ApplyMainShellAcrylic(this);
                 UpdateThemeToggleGlyph();
                 LoadDashboardHeader();
-                try
-                {
-                    var initial = !string.IsNullOrWhiteSpace(App.Nickname)
-                        ? App.Nickname
-                        : ((IAuthService)AuthService.Instance).CurrentEmail ?? "";
-                    if (!string.IsNullOrWhiteSpace(initial))
-                        AvatarText.Text = initial.Substring(0, 1).ToUpperInvariant();
-                }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Avatar init error: {ex.Message}"); }
             };
+
+            // v5.2 账号中心：顶栏头像随账号资料变化刷新
+            AccountService.Instance.ProfileChanged += OnAccountProfileChanged;
+            RefreshAccountAvatar();
 
             // 订阅升级/成就事件：显示横幅 + 粒子特效
             if (DataContext is MainViewModel vm)
@@ -85,7 +80,39 @@ namespace TodoSidebar
             // 退订每日挑战单例事件
             DailyChallengeService.Instance.ChallengesUpdated -= OnChallengesUpdated;
 
+            // 退订账号中心事件
+            AccountService.Instance.ProfileChanged -= OnAccountProfileChanged;
+
             base.OnClosed(e);
+        }
+
+        /// <summary>v5.2 账号中心：头像资料变化时回 UI 线程刷新。</summary>
+        private void OnAccountProfileChanged(object? sender, EventArgs e)
+            => Dispatcher.Invoke(RefreshAccountAvatar);
+
+        /// <summary>v5.2 账号中心：刷新顶栏头像。</summary>
+        private void RefreshAccountAvatar()
+        {
+            if (TopBarAvatar == null) return;
+            var fallback = !string.IsNullOrWhiteSpace(App.Nickname)
+                ? App.Nickname
+                : SafeEmailPrefix();
+            AvatarLoader.Load(TopBarAvatar, AccountService.Instance, 28, fallback);
+        }
+
+        private static string SafeEmailPrefix()
+        {
+            try { return ((IAuthService)AuthService.Instance).CurrentEmail ?? ""; }
+            catch { return ""; }
+        }
+
+        /// <summary>v5.2 账号中心：点击顶栏头像打开账号中心。</summary>
+        private void Avatar_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            var win = new AccountWindow { Owner = this };
+            win.Show();
+            win.Activate();
         }
 
         #region 每日挑战面板

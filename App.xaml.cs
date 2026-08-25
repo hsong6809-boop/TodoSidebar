@@ -202,6 +202,7 @@ namespace TodoSidebar
             services.AddSingleton<IExportService>(sp =>
                 new ExportService(DatabaseService.Instance));
             services.AddSingleton<IThemeManager>(ThemeManager.Instance);
+            services.AddSingleton<IAccountService>(AccountService.Instance);
         }
 
         private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
@@ -240,6 +241,9 @@ namespace TodoSidebar
 
                             await SyncService.Instance.InitializeAsync();
                             TodoSidebar.Services.AuthService.LogAuthDiag("[handler] SyncService 初始化完成");
+
+                            // v5.2 账号中心：登录后供给账号档案（短 ID/昵称/头像），失败静默降级
+                            _ = AccountService.Instance.EnsureProvisionAsync();
                         }
                     }
                     catch (Exception ex)
@@ -258,6 +262,9 @@ namespace TodoSidebar
                     if (!string.IsNullOrEmpty(restoredUserId))
                         DatabaseService.Instance.EnsureUserScope(restoredUserId);
                     await SyncService.Instance.InitializeAsync();
+
+                    // v5.2 账号中心：会话恢复路径同样供给账号档案（不阻塞启动）
+                    _ = AccountService.Instance.EnsureProvisionAsync();
                 }
             }
             catch (Exception ex)

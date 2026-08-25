@@ -28,4 +28,9 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);TodoSidebar.Tests\**;tools\**</DefaultItemExcludes>
   </PropertyGroup>
 
+  <!-- v5.2：允许测试工程访问 internal 纯逻辑函数 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="TodoSidebar.Tests" />
+  </ItemGroup>
+
 </Project>
