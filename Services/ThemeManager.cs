@@ -95,15 +95,19 @@ namespace TodoSidebar.Services
         private ThemeManager()
         {
             _dbService = DatabaseService.Instance;
-            LoadThemePreference();
 
-            // V2-W2：加载持久化的强调色
+            // V5.1 修复：必须先读持久化强调色、再应用主题。
+            // 原顺序 LoadThemePreference() 在前，ApplyTheme→ApplyAccent 会以默认 Indigo 上屏，
+            // 随后读到的已保存颜色只改字段不再渲染 => 重启必回紫色；
+            // 且此时 setter 的同名短路使重选同色无效，表现为"自己弹回默认"。
             try
             {
                 var savedAccent = _dbService.GetSetting("Accent");
                 if (!string.IsNullOrWhiteSpace(savedAccent)) _currentAccent = NormalizeAccent(savedAccent);
             }
             catch (Exception ex) { Debug.WriteLine($"ThemeManager: 读取强调色失败: {ex.Message}"); }
+
+            LoadThemePreference();
 
             // M33：监听系统主题变化，"跟随系统"模式下实时响应明暗切换
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;

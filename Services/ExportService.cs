@@ -137,7 +137,7 @@ namespace TodoSidebar.Services
                 // 导入设置（仅导入非敏感设置）
                 if (importData.Settings != null)
                 {
-                    var safeKeys = new[] { "Theme", "AccentColor", "FontSize", "LastWeeklyReset" };
+                    var safeKeys = new[] { "Theme", "Accent", "FontSize", "LastWeeklyReset" };
                     foreach (var key in safeKeys)
                     {
                         if (importData.Settings.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
@@ -196,7 +196,7 @@ namespace TodoSidebar.Services
             // 3. 导入设置（仅导入非敏感设置）
             if (importData.Settings != null)
             {
-                var safeKeys = new[] { "Theme", "AccentColor", "FontSize", "LastWeeklyReset" };
+                var safeKeys = new[] { "Theme", "Accent", "FontSize", "LastWeeklyReset" };
                 foreach (var key in safeKeys)
                 {
                     if (importData.Settings.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
@@ -251,7 +251,7 @@ namespace TodoSidebar.Services
         {
             var settings = new Dictionary<string, string>();
             // 获取常用设置
-            var keys = new[] { "Theme", "LastWeeklyReset", "AccentColor", "FontSize" };
+            var keys = new[] { "Theme", "LastWeeklyReset", "Accent", "FontSize" };
 
             foreach (var key in keys)
             {
