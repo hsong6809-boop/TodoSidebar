@@ -347,13 +347,73 @@ namespace TodoSidebar.ViewModels
             }
         }
 
+        // ===== V5.1：Composer 自然语言解析 =====
+
+        /// <summary>解析输入框当前内容（纯静态函数，供提交前取用；无副作用）。</summary>
+        public ParsedTask ParseComposerInput() => NaturalLanguageParser.Parse(NewTaskTitle);
+
+        /// <summary>解析预览文本；为空时 Composer 预览条隐藏。形如 "📅 明天 15:00 · 高优先级 · #工作"。</summary>
+        [ObservableProperty]
+        private string _composerPreview = string.Empty;
+
+        /// <summary>Composer 自然语言解析出的待写入标签（落库后清空）。</summary>
+        public List<string>? PendingTags { get; set; }
+
+        partial void OnNewTaskTitleChanged(string value) => RefreshComposerPreview();
+
+        /// <summary>输入变化时刷新解析预览（纯计算，不落库）。</summary>
+        private void RefreshComposerPreview()
+        {
+            var p = NaturalLanguageParser.Parse(NewTaskTitle);
+            var parts = new List<string>();
+            if (p.DueDate.HasValue)
+                parts.Add(ComposerDateChip(p.DueDate.Value));
+            if (p.Priority.HasValue)
+                parts.Add(p.Priority.Value switch
+                {
+                    TaskPriority.High => "高优先级",
+                    TaskPriority.Low => "低优先级",
+                    _ => "中优先级"
+                });
+            parts.AddRange(p.Tags.Select(t => "#" + t));
+            ComposerPreview = string.Join("  ·  ", parts);
+        }
+
+        private static string ComposerDateChip(DateTime d)
+        {
+            var today = DateTime.Today;
+            var day = d.Date == today ? "今天"
+                    : d.Date == today.AddDays(1) ? "明天"
+                    : d.ToString("MM月dd日");
+            return d.TimeOfDay == TimeSpan.Zero ? day : $"{day} {d:HH:mm}";
+        }
+
+        /// <summary>新建任务落库后补写标签并清空暂存。</summary>
+        private void ApplyPendingTags(TaskItem task)
+        {
+            if (PendingTags is { Count: > 0 })
+            {
+                task.Tags = string.Join(",", PendingTags);
+                _dbService.UpdateTask(task);
+            }
+            PendingTags = null;
+        }
+
         // ========== 任务 CRUD 命令 ==========
 
         [RelayCommand]
         private void AddDailyTask()
         {
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
-            _taskService.AddTask(NewTaskTitle, TaskType.Daily, null, NewTaskPriority);
+
+            // V5.1：解析出的干净标题/标签/优先级在落库时生效（每日任务不含截止时间）
+            var parsed = NaturalLanguageParser.Parse(NewTaskTitle);
+            if (parsed.Title.Length > 0) NewTaskTitle = parsed.Title;
+            if (parsed.Tags.Count > 0) PendingTags = parsed.Tags;
+            var priority = parsed.Priority ?? NewTaskPriority;
+
+            var task = _taskService.AddTask(NewTaskTitle, TaskType.Daily, null, priority);
+            ApplyPendingTags(task);
             NewTaskTitle = string.Empty;
             NewTaskPriority = TaskPriority.Medium;
             LoadDailyTasks();
@@ -364,14 +424,22 @@ namespace TodoSidebar.ViewModels
         private void AddDeadlineTask()
         {
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
-            
-            if (NewTaskDeadline.HasValue && NewTaskDeadline.Value.Date < DateTime.Today)
+
+            // V5.1：把 "明天下午3点 交周报" 解析出的时间/优先级/标签并入提交
+            var parsed = NaturalLanguageParser.Parse(NewTaskTitle);
+            if (parsed.Title.Length > 0) NewTaskTitle = parsed.Title;
+            if (parsed.Tags.Count > 0) PendingTags = parsed.Tags;
+            var deadline = NewTaskDeadline ?? parsed.DueDate;
+            var priority = parsed.Priority ?? NewTaskPriority;
+
+            if (deadline.HasValue && deadline.Value.Date < DateTime.Today)
             {
                 _messageService.ShowWarning("截止日期不能早于今天！", "日期错误");
                 return;
             }
-            
-            _taskService.AddTask(NewTaskTitle, TaskType.Deadline, NewTaskDeadline, NewTaskPriority);
+
+            var task = _taskService.AddTask(NewTaskTitle, TaskType.Deadline, deadline, priority);
+            ApplyPendingTags(task);
             NewTaskTitle = string.Empty;
             NewTaskDeadline = null;
             NewTaskPriority = TaskPriority.Medium;

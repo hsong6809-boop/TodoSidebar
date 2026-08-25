@@ -210,20 +210,35 @@
 
                         <!-- Composer（今日页内，V2.1b 迁移自底栏）-->
                         <Grid Grid.Row="1" Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="TaskInput"
-                                     Text="{Binding NewTaskTitle, UpdateSourceTrigger=PropertyChanged}"
-                                     controls:Placeholder.Text="添加新任务，回车确认…"
-                                     Style="{StaticResource GlassTextBox}"/>
-                            <Button Grid.Column="1" Click="AddTaskButton_Click" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0">
-                                <StackPanel Orientation="Horizontal">
-                                    <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock Text="添加" Foreground="White" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TaskInput"
+                                         Text="{Binding NewTaskTitle, UpdateSourceTrigger=PropertyChanged}"
+                                         controls:Placeholder.Text="添加新任务，回车确认…"
+                                         Style="{StaticResource GlassTextBox}"
+                                         KeyDown="TaskInput_KeyDown"/>
+                                <Button Grid.Column="1" Click="AddTaskButton_Click" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:AppIcon Glyph="{x:Static controls:Icons.Add}" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                        <TextBlock Text="添加" Foreground="White" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <!-- V5.1：自然语言解析预览条（无可识别内容时隐藏）-->
+                            <Border Grid.Row="1" Margin="0,6,0,0" Padding="8,3" CornerRadius="8"
+                                    Background="{DynamicResource SurfaceHoverBrush}"
+                                    Visibility="{Binding ComposerPreview, Converter={StaticResource EmptyToVis}}">
+                                <TextBlock Text="{Binding ComposerPreview}" FontSize="11"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </Border>
                         </Grid>
 
                         <!-- 类型分段 + 优先级 + 截止日期 -->
@@ -238,9 +253,9 @@
                             </Border>
 
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                                <RadioButton Content="高" Tag="High" Foreground="{DynamicResource PriorityHighBrush}" Margin="0,0,10,0" Checked="Priority_Checked"/>
-                                <RadioButton Content="中" Tag="Medium" Foreground="{DynamicResource PriorityMediumBrush}" IsChecked="True" Margin="0,0,10,0" Checked="Priority_Checked"/>
-                                <RadioButton Content="低" Tag="Low" Foreground="{DynamicResource PriorityLowBrush}" Checked="Priority_Checked"/>
+                                <RadioButton x:Name="PriorityHighRadio" Content="高" Tag="High" Foreground="{DynamicResource PriorityHighBrush}" Margin="0,0,10,0" Checked="Priority_Checked"/>
+                                <RadioButton x:Name="PriorityMediumRadio" Content="中" Tag="Medium" Foreground="{DynamicResource PriorityMediumBrush}" IsChecked="True" Margin="0,0,10,0" Checked="Priority_Checked"/>
+                                <RadioButton x:Name="PriorityLowRadio" Content="低" Tag="Low" Foreground="{DynamicResource PriorityLowBrush}" Checked="Priority_Checked"/>
                             </StackPanel>
 
                             <DatePicker x:Name="DeadlinePicker"

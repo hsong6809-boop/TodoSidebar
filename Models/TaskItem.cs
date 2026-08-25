@@ -168,7 +168,7 @@ namespace TodoSidebar.Models
         /// V2：截止时刻 = 截止日当天 24 点（次日 0 点）。
         /// 设置 8 月 29 日到期 → 29 日全天可做，30 日 0 点才算逾期。
         /// </summary>
-        public DateTime DeadlineEndOfDay => Deadline.Value.Date.AddDays(1);
+        public DateTime DeadlineEndOfDay => Deadline!.Value.Date.AddDays(1);
 
         public string DeadlineUrgency
         {
@@ -231,7 +231,13 @@ namespace TodoSidebar.Models
                 return new List<string>(Tags.Split(',', StringSplitOptions.RemoveEmptyEntries));
             }
         }
-        
+
+        /// <summary>V5.1：是否有标签。</summary>
+        public bool HasTags => TagList.Count > 0;
+
+        /// <summary>V5.1：卡片展示用，形如 "#a #b"。</summary>
+        public string TagsDisplay => TagList.Count == 0 ? string.Empty : "#" + string.Join(" #", TagList);
+
         // 子任务列表（从JSON解析，带缓存）
         private List<SubTask>? _cachedSubTasks;
         private string? _lastSubTasksJson;

@@ -564,19 +564,55 @@ namespace TodoSidebar
         {
             if (DataContext is MainViewModel vm)
             {
-                vm.NewTaskPriority = _selectedPriority;
-                
-                if (TabDaily.IsChecked == true)
-                {
-                    vm.AddDailyTaskCommand.Execute(null);
-                    AnimateLastItem(DailyTasksListBox);
-                }
-                else if (TabDeadline.IsChecked == true)
+                // V5.1：先做自然语言解析，再决定类型与补全字段
+                var parsed = vm.ParseComposerInput();
+
+                // 解析出了时间 → 自动归「截止」并同步分段（日期选择器会随 TabDeadline 可见）
+                if (TabDaily.IsChecked == true && parsed.HasDue)
+                    TabDeadline.IsChecked = true;
+                if (parsed.HasDue)
+                    vm.NewTaskDeadline = parsed.DueDate;
+
+                // 优先级：解析关键词优先于手动选择；无关键词维持原手动选择
+                if (parsed.Priority.HasValue)
+                    SetPriorityRadio(parsed.Priority.Value);
+                else
+                    vm.NewTaskPriority = _selectedPriority;
+
+                if (TabDeadline.IsChecked == true)
                 {
                     vm.AddDeadlineTaskCommand.Execute(null);
                     AnimateLastItem(DeadlineTasksListBox);
                 }
+                else
+                {
+                    vm.AddDailyTaskCommand.Execute(null);
+                    AnimateLastItem(DailyTasksListBox);
+                }
             }
+        }
+
+        /// <summary>V5.1：回车即添加（与「添加」按钮同路径，含自然语言解析）。</summary>
+        private void TaskInput_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                AddTaskButton_Click(sender, e);
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>同步优先级单选钮到指定值（解析关键词覆盖时调用）。</summary>
+        private void SetPriorityRadio(TaskPriority priority)
+        {
+            var tag = priority switch
+            {
+                TaskPriority.High => "High",
+                TaskPriority.Low => "Low",
+                _ => "Medium"
+            };
+            foreach (var rb in new[] { PriorityHighRadio, PriorityMediumRadio, PriorityLowRadio })
+                rb.IsChecked = rb.Tag as string == tag;
         }
 
         private void AnimateLastItem(ListBox listBox)

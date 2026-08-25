@@ -93,6 +93,11 @@
                                        Foreground="{DynamicResource SuccessBrush}" Margin="62,0,0,0"
                                        VerticalAlignment="Center"/>
                         </Grid>
+                        <!-- V5.1：自然语言录入的标签（#a #b），无标签时隐藏 -->
+                        <TextBlock Text="{Binding TagsDisplay}" FontSize="9.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"
+                                   Margin="8,0,0,0" TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding TagsDisplay, Converter={StaticResource EmptyToVis}}"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -174,6 +179,11 @@
                         <TextBlock x:Name="SubTaskMini" Text="{Binding SubTasksProgressText}" FontSize="9.5"
                                    Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
                                    VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed"/>
+                        <!-- V5.1：自然语言录入的标签（#a #b），无标签时隐藏 -->
+                        <TextBlock Text="{Binding TagsDisplay}" FontSize="9.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"
+                                   Margin="8,0,0,0" TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding TagsDisplay, Converter={StaticResource EmptyToVis}}"/>
                     </StackPanel>
                 </StackPanel>
 
