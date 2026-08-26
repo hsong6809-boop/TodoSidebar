@@ -241,6 +241,34 @@ namespace TodoSidebar
                     SaveCredentials(email, password);
                     LogLoginDiag("[ui] 凭据保存完成");
 
+                    // R22/R57 修复（审查 sync-M3/M1）：在创建主窗口前同步完成数据归属校验。
+                    // ① 同步等待 EnsureUserScope（消除与后台处理器的竞态，新用户不再闪现上一账号数据）；
+                    // ② 检测到"切换到不同账号 且 本地有未上云的脏数据"时，先弹窗确认——
+                    //    原实现会无预警物理清库，离线积累的任务/回收站墓碑永久丢失。
+                    var currentUserId = Services.AuthService.Instance.CurrentUser?.Id;
+                    if (!string.IsNullOrEmpty(currentUserId))
+                    {
+                        var db = Services.DatabaseService.Instance;
+                        var lastUserId = db.GetSetting("LastUserId");
+                        var switchingAccount = !string.IsNullOrEmpty(lastUserId) && lastUserId != currentUserId;
+
+                        if (switchingAccount)
+                        {
+                            var dirtyCount = db.GetDirtyTaskCount();
+                            if (dirtyCount > 0 && !ConfirmDiscardDirtyData(dirtyCount))
+                            {
+                                // 用户取消切换：登出刚认证的新账号，留在登录窗口。
+                                // 提示其可登回原账号完成同步后再切换
+                                await Services.AuthService.Instance.LogoutAsync();
+                                ShowError("已取消切换账号。本机仍有未同步的数据，建议先登录原账号完成同步。");
+                                return;
+                            }
+                        }
+
+                        db.EnsureUserScope(currentUserId);
+                        LogLoginDiag("[ui] EnsureUserScope 同步完成");
+                    }
+
                     // 登录成功：先释放旧 ViewModel（避免定时器/订阅泄漏），再初始化新实例
                     App.SharedViewModel?.Dispose();
                     LogLoginDiag($"[ui] 旧 ViewModel 处理完成(原为{(App.SharedViewModel == null ? "null" : "非null")})，开始创建 MainViewModel");
@@ -251,7 +279,10 @@ namespace TodoSidebar
                     var mainWindow = new MainWindow();
                     LogLoginDiag("[ui] MainWindow 构造完成，调用 Show()");
                     mainWindow.Show();
-                    LogLoginDiag("[ui] MainWindow.Show() 完成，关闭登录窗口");
+                    // R41 修复（审查 H4）：重登后把全局热键重新注册到新主窗口——
+                    // 原实现热键只在应用启动时注册一次，登出销毁窗口后热键永久失效直到重启
+                    App.AttachHotkeysTo(mainWindow);
+                    LogLoginDiag("[ui] MainWindow.Show() 完成，热键已重新注册，关闭登录窗口");
                     Close();
                     return;
                 }
@@ -279,10 +310,24 @@ namespace TodoSidebar
         }
 
         /// <summary>
+        /// R57 修复（审查 M1）：切换账号且本地存在未上云数据时的确认弹窗。
+        /// 返回 true 表示用户接受丢失并继续切换。
+        /// </summary>
+        private bool ConfirmDiscardDirtyData(int dirtyCount)
+        {
+            var result = MessageBox.Show(
+                $"本机有 {dirtyCount} 条尚未同步到云端的修改（包括新建、编辑的任务，以及回收站中尚未上传的删除记录）。\n\n" +
+                "切换到其他账号后，这些数据将从本机清除且无法恢复。\n\n" +
+                "建议先取消，登录原账号完成同步后再切换。\n\n" +
+                "确定要继续切换吗？",
+                "发现未同步的数据", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            return result == MessageBoxResult.Yes;
+        }
+
+        /// <summary>
         /// 登录失败时把完整错误 + 配置诊断写入日志文件，便于排查（不回显完整 Key）。
         /// </summary>
-        private static void LogLoginDiag(string message)
-        {
+        private static void LogLoginDiag(string message)        {
             try
             {
                 var dir = System.IO.Path.Combine(
@@ -390,7 +435,9 @@ namespace TodoSidebar
         /// <summary>
         /// 登录失败时生成配置诊断（URL 与 Key 前缀），用于排查 Invalid API key。
         /// L22 修复：本方法结果仅允许写入 login_diag.txt 日志，禁止直接展示到 UI；
-        /// 仅显示 Key 前 24 字符，不回显完整凭据。
+        /// 仅显示 Key 指纹（SHA-256 前 8 位十六进制），不回显任何 Key 片段。
+        /// R21 修复（审查 sync-L2）：原实现把 AnonKey 前 24 字符写入明文诊断日志，
+        /// 属于不必要的凭据材料扩散；指纹足以核对配置是否一致。
         /// </summary>
         private static string BuildConfigDiag()
         {
@@ -401,13 +448,30 @@ namespace TodoSidebar
                 var k = SupabaseConfig.AnonKey;
                 key = string.IsNullOrEmpty(k)
                     ? "(空)"
-                    : k.Substring(0, Math.Min(24, k.Length)) + $"... 长度={k.Length}";
+                    : $"指纹={Fingerprint(k)} 长度={k.Length}";
             }
             catch (Exception ex)
             {
                 key = "(读取异常: " + ex.Message + ")";
             }
             return $"\n\n[诊断] URL = {url}\nKey = {key}";
+        }
+
+        /// <summary>R21：凭据指纹——SHA-256 前 8 个十六进制字符，可用于核对但不泄露原文。</summary>
+        private static string Fingerprint(string secret)
+        {
+            try
+            {
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(secret));
+                var sb = new System.Text.StringBuilder();
+                for (int i = 0; i < 4; i++) sb.Append(hash[i].ToString("x2"));
+                return sb.ToString();
+            }
+            catch
+            {
+                return "(计算失败)";
+            }
         }
         
         private void HideError()

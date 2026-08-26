@@ -455,7 +455,8 @@ namespace TodoSidebar
             var pomo = PomodoroService.Instance;
             if (pomo.State is not (PomodoroState.Focus or PomodoroState.Paused)) return;
 
-            var result = MessageBox.Show("停止当前番茄将视为中断，不获得经验。确定停止吗？",
+            // R45 修复（审查 L2）：确认框设置 owner
+            var result = MessageBox.Show(this, "停止当前番茄将视为中断，不获得经验。确定停止吗？",
                 "停止专注", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result == MessageBoxResult.Yes)
                 pomo.Stop(complete: false);
@@ -569,8 +570,8 @@ namespace TodoSidebar
                 
                 if (result == MessageBoxResult.Yes)
                 {
-                    // 退出登录
-                    await AuthService.Instance.LogoutAsync();
+                    // R19 修复（审查 H3）：本地清理与服务端解耦，失败也继续登出并如实提示
+                    var serverSignOutOk = await AuthService.Instance.LogoutAsync();
 
                     // 释放共享 ViewModel 并停止后台服务，避免登出后空转
                     App.StopBackgroundServices();
@@ -579,6 +580,12 @@ namespace TodoSidebar
                     var loginWindow = new LoginWindow();
                     loginWindow.Show();
                     Close();
+
+                    if (!serverSignOutOk)
+                    {
+                        MessageBox.Show("本机已退出登录，但服务器会话注销失败（网络原因）。\n如需确保其他设备安全，请稍后重新登录或修改密码。",
+                            "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
                 }
             }
             catch (Exception ex)
@@ -785,8 +792,9 @@ namespace TodoSidebar
                 if (TodayDeltaText != null)
                 {
                     var recs = DatabaseService.Instance.GetDailyCompletionRecords(2);
-                    var todayKey = now.ToString("yyyy-MM-dd");
-                    var yKey = now.AddDays(-1).ToString("yyyy-MM-dd");
+                    // R39（审查 M3/M12）：日期键统一 InvariantCulture
+                    var todayKey = now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                    var yKey = now.AddDays(-1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
                     var t = recs.TryGetValue(todayKey, out var a) ? a.Count : 0;
                     var y = recs.TryGetValue(yKey, out var b) ? b.Count : 0;
                     TodayDeltaText.Text = t == y ? "与昨日持平" : t > y ? $"↑ 比昨天 +{t - y}" : $"↓ 比昨天 {t - y}";
@@ -859,7 +867,8 @@ namespace TodoSidebar
                 var today = DateTime.Today;
                 for (int i = 29; i >= 0; i--)
                 {
-                    var key = today.AddDays(-i).ToString("yyyy-MM-dd");
+                    // R39（审查 M3/M12）：InvariantCulture
+                    var key = today.AddDays(-i).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
                     values.Add(records.TryGetValue(key, out var set) ? set.Count : 0);
                 }
                 ThirtyDayChart.Values = values;
@@ -1001,6 +1010,12 @@ namespace TodoSidebar
             {
                 _draggedTask = task;
             }
+            else
+            {
+                // R48 修复（审查 M2）：未命中任务卡片时清空残留引用（移植 MainWindow 的 M25 修复）——
+                // 原实现点过任务 A 后在空白处按下拖动，会误拖 A 执行重排
+                _draggedTask = null;
+            }
         }
 
         private void TaskListBox_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -1018,7 +1033,17 @@ namespace TodoSidebar
                 {
                     _isDragging = true;
                     var data = new DataObject("TaskItem", _draggedTask);
-                    DragDrop.DoDragDrop(listBox, data, DragDropEffects.Move);
+                    try
+                    {
+                        DragDrop.DoDragDrop(listBox, data, DragDropEffects.Move);
+                    }
+                    finally
+                    {
+                        // R48：无论正常结束、ESC 取消还是 DoDragDrop 抛 COM 异常，
+                        // 都要复位拖拽状态，避免悬挂的 _isDragging 短路后续 Move 判定
+                        _isDragging = false;
+                        _draggedTask = null;
+                    }
                 }
             }
         }

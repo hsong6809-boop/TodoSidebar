@@ -30,8 +30,11 @@ namespace TodoSidebar.Services
         /// <summary>邮箱注册</summary>
         Task<AuthResult> SignUpWithEmailPasswordAsync(string email, string password);
 
-        /// <summary>退出登录</summary>
-        Task LogoutAsync();
+        /// <summary>
+        /// 退出登录。R19 修复（审查 H3）：本地清理必定执行；
+        /// 返回值指示服务端会话是否成功吊销，供 UI 如实提示。
+        /// </summary>
+        Task<bool> LogoutAsync();
 
         /// <summary>重置密码</summary>
         Task<AuthResult> ResetPasswordAsync(string email);

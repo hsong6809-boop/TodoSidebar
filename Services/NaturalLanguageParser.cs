@@ -46,7 +46,11 @@ namespace TodoSidebar.Services
             new(@"(?<ap>上午|中午|下午|晚上)?\s*(?<hh>\d{1,2})[点时:：]\s*(?<mm>半|\d{1,2})?", RegexOptions.Compiled);
 
         private static readonly Regex RelHoursRx =
-            new(@"(?<h>\d+(?:\.\d+)?)\s*(?:个)?小时后|半小时后", RegexOptions.Compiled);
+            new(@"(?<h>\d+(?:\.\d+)?)\s*(?:个)?小时后"
+                + @"|(?<halfnum>\d+(?:\.\d+)?)\s*个?半\s*小时后"
+                + @"|(?<halfcn>一)个?半\s*小时后"
+                + @"|半小时后",
+                RegexOptions.Compiled);
 
         private static readonly Regex RelMinutesRx =
             new(@"(?<m>\d+)\s*分钟后", RegexOptions.Compiled);
@@ -86,7 +90,18 @@ namespace TodoSidebar.Services
             if (mh.Success && !result.DueDate.HasValue)
             {
                 double hours;
-                if (text.Contains("半小时") && mh.Groups["h"].Value.Length == 0) hours = 0.5;
+                // R30 修复（审查 NLP-L1）：「一个半小时后」此前在“半小时后”分支命中、被算成 0.5 小时；
+                // 现按 N + 0.5 计算（「1个半小时后」= 1.5，「一个半小时后」= 1.5，「2个半小时后」= 2.5）
+                if (mh.Groups["halfnum"].Success)
+                {
+                    var n = double.TryParse(mh.Groups["halfnum"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var nn) ? nn : 1;
+                    hours = n + 0.5;
+                }
+                else if (mh.Groups["halfcn"].Success)
+                {
+                    hours = 1.5; // 中文数字「一个半小时」
+                }
+                else if (text.Contains("半小时") && mh.Groups["h"].Value.Length == 0) hours = 0.5;
                 else if (!double.TryParse(mh.Groups["h"].Success ? mh.Groups["h"].Value : "1", NumberStyles.Float, CultureInfo.InvariantCulture, out var h))
                     hours = 1;
                 else hours = h;
@@ -124,6 +139,10 @@ namespace TodoSidebar.Services
                     result.DueDate = DateTime.Today.AddDays(delta);
                 }
                 text = WeekdayRx.Replace(text, " ", 1);
+
+                // R31 修复（审查 NLP-L12）：星期词命中后相对日分支会因门控跳过，
+                // 「明天周三交周报」的"明天"会残留在标题里——补一次清理
+                text = RelDayRx.Replace(text, " ");
             }
 
             // ---- 今天 / 明天 / 后天 / 大后天 ----
@@ -149,7 +168,13 @@ namespace TodoSidebar.Services
                     int.TryParse(mmd.Groups["d"].Value, out var day))
                 {
                     var year = DateTime.Today.Year;
-                    if (mon < DateTime.Today.Month) year++; // 已过的月份视为明年
+                    // R26 修复（审查 NLP-L2）：同月但已过的日期同样折算到明年，
+                    // 否则「12月1日」在 12 月 15 日输入会解析出过去日期、必然被表单拦截
+                    if (mon < DateTime.Today.Month ||
+                        (mon == DateTime.Today.Month && day < DateTime.Today.Day))
+                        year++;
+                    // R25 修复（审查 H7）：SafeDate 失败（4月31日/2月30日等）返回 null，
+                    // DueDate 保持为空；绝不再静默回落到「今天」并落库
                     result.DueDate = SafeDate(year, mon, day);
                 }
                 text = MdRx.Replace(text, " ", 1);
@@ -161,8 +186,10 @@ namespace TodoSidebar.Services
             if (mt.Success)
             {
                 timeOfDay = ParseTime(mt);
-                // 时间片段始终从标题中剥离
-                text = text.Remove(mt.Index, mt.Length).Insert(mt.Index, " ");
+                // R28 修复（审查 M4）：仅当解析成功才从标题剥离时间片段——
+                // 原实现无论合法与否一律删除，「25点开会」的"25点"凭空消失且无任何提示
+                if (timeOfDay.HasValue)
+                    text = text.Remove(mt.Index, mt.Length).Insert(mt.Index, " ");
             }
 
             if (timeOfDay.HasValue)
@@ -196,10 +223,13 @@ namespace TodoSidebar.Services
             _ => DayOfWeek.Sunday
         };
 
-        private static DateTime SafeDate(int y, int m, int d)
+        private static DateTime? SafeDate(int y, int m, int d)
         {
+            // R25 修复（审查 H7）：不存在的日期（4月31日、平年2月29日、13月1日等）
+            // 返回 null 让 DueDate 保持为空；原实现静默回落到「今天」并落库，
+            // 任务被悄悄安排成今天到期还触发今日通知，用户极难察觉
             try { return new DateTime(y, m, d); }
-            catch { return DateTime.Today; }
+            catch { return null; }
         }
 
         /// <summary>把“上午3点/晚上10点半/14:30”等片段解析为时刻。</summary>
@@ -209,13 +239,35 @@ namespace TodoSidebar.Services
             if (hh > 24) return null;
 
             var mmRaw = mt.Groups["mm"].Value;
+            // R29 修复（审查 v5.x-L8）：裸冒号形式（"15:xx"）必须带分钟才认，
+            // 避免「版本15:新特性」这类文本被误当时间剥离并把 due 设到 15:00
+            if ((mt.Value.Contains(':') || mt.Value.Contains('：')) && mmRaw.Length == 0)
+                return null;
+
             int mm = 0;
             if (mmRaw == "半") mm = 30;
             else if (mmRaw.Length > 0 && !int.TryParse(mmRaw, out mm)) return null;
 
             var ap = mt.Groups["ap"].Value;
-            if ((ap == "下午" || ap == "晚上") && hh < 12) hh += 12;
-            if (ap == "上午" && hh == 12) hh = 0;
+            // R27 修复（审查 M1）：12 小时制边界——
+            // 「晚上12点」= 午夜 0 点（原实现错成中午 12:00）；
+            // 「中午1点」= 13:00（原实现完全忽略"中午"、错成凌晨 01:00）
+            switch (ap)
+            {
+                case "中午":
+                    if (hh < 12) hh += 12;          // 中午12点保持 12:00
+                    break;
+                case "下午":
+                    if (hh < 12) hh += 12;          // 下午12点保持 12:00（正午）
+                    break;
+                case "晚上":
+                    if (hh < 12) hh += 12;
+                    else if (hh == 12) hh = 0;      // 晚上12点 = 午夜
+                    break;
+                case "上午":
+                    if (hh == 12) hh = 0;           // 上午12点按 0 点处理
+                    break;
+            }
 
             if (hh > 24 || mm > 59) return null;
             return new TimeSpan(hh == 24 ? 0 : hh, mm, 0);

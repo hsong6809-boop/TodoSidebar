@@ -40,9 +40,19 @@ namespace TodoSidebar.Services
 
         // 同步支持
         List<TaskItem> GetDirtyTasks();
+
+        /// <summary>R57（审查 M1）：未上云的本地脏数据行数，供切号确认弹窗使用</summary>
+        int GetDirtyTaskCount();
         void MarkTaskSynced(int localId, string syncId, string? expectedLocalUpdatedAt = null);
         TaskItem? GetTaskBySyncId(string syncId);
-        void UpsertTaskFromRemote(TaskItem task);
+
+        /// <summary>
+        /// 通过 SyncId 写入远端任务。R8 修复（审查 M4）：expectedLocalUpdatedAt 为乐观守卫——
+        /// 本地行的 LocalUpdatedAt 与预期不符（写入前被并发编辑）时放弃覆盖并返回 false，
+        /// 避免远端旧值静默覆盖刚写入的本地修改。
+        /// </summary>
+        /// <returns>是否实际写入了本地库</returns>
+        bool UpsertTaskFromRemote(TaskItem task, string? expectedLocalUpdatedAt = null);
         void PurgeDeletedTasks(int daysOld = 30);
 
         // 多用户隔离

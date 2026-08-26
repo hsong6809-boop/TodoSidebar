@@ -77,7 +77,11 @@ namespace TodoSidebar.Services
         {
             try
             {
-                var deadlineTasks = _taskService.GetDeadlineTasks();
+                // R24 修复（审查 H6）：通知检查必须包含已逾期任务——
+                // 原实现复用 GetDeadlineTasks() 的"过滤过期"口径，
+                // 导致下方「🔴 任务已过期」分支永远不可达，整个过期提醒功能静默失效。
+                // _notifiedTasks 去重保证同一任务只弹一次。
+                var deadlineTasks = _taskService.GetDeadlineTasks(includeOverdue: true);
 
                 foreach (var task in deadlineTasks)
                 {

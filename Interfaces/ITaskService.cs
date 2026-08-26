@@ -10,7 +10,9 @@ namespace TodoSidebar.Services
     public interface ITaskService
     {
         List<TaskItem> GetDailyTasks();
-        List<TaskItem> GetDeadlineTasks();
+
+        /// <summary>截止任务（未完成）；R24（审查 H6）：includeOverdue=true 时包含已逾期任务（通知源用）</summary>
+        List<TaskItem> GetDeadlineTasks(bool includeOverdue = false);
         List<TaskItem> GetCurrentTasks();
         List<TaskItem> GetHistoryTasks(DateTime? fromDate = null, DateTime? toDate = null);
 

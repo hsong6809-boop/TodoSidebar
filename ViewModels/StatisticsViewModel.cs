@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -95,7 +96,9 @@ namespace TodoSidebar.ViewModels
                 var day = jan1;
                 while (day.Year == year)
                 {
-                    var key = day.ToString("yyyy-MM-dd");
+                    // R39 修复（审查 M3/M12）：日期键统一 InvariantCulture，
+                    // 非公历默认日历文化下 ToString 会输出圣历年等键值、与库内数据永不匹配
+                    var key = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                     var count = counts.TryGetValue(key, out var c) ? c : 0;
                     total += count;
                     if (count > 0) activeDays++;
@@ -163,7 +166,8 @@ namespace TodoSidebar.ViewModels
             var pendingValidDeadlines = allTasks.Count(t => t.Type == TaskType.Deadline
                 && t.Deadline.HasValue && t.Deadline.Value.Date >= today && !t.IsCompleted);
             TodayTotal = dailyCount + pendingValidDeadlines;
-            var todayStr = today.ToString("yyyy-MM-dd");
+            // R39（审查 M3/M12）：与写入端(TaskService L7)对齐 InvariantCulture
+            var todayStr = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var todayCompletedDaily = dailyCompletionRecords.TryGetValue(todayStr, out var todaySet)
                 ? todaySet.Count : 0;
             TodayCompleted = todayCompletedDaily + todayCompletedDeadlines;
@@ -172,8 +176,11 @@ namespace TodoSidebar.ViewModels
             // 连续完成天数（M24：独立查询窗口 + 与连击结算口径对齐）
             StreakDays = CalculateStreakDays();
 
-            // 每日统计（最近7天）
-            DailyStats = CalculateDailyStats(dailyCompletionRecords, 7, dailyCount);
+            // 每日统计（最近7天）。
+            // R38 修复（审查 L4/L9）：历史天的分母改用"当天时点的每日任务数"序列
+            // （一次拉取、本地聚合），不再错用今天的任务数，也不再逐日打库
+            var asOfCounts = BuildAsOfCountSeries(today, 7);
+            DailyStats = CalculateDailyStats(dailyCompletionRecords, 7, asOfCounts);
 
             // 任务类型统计
             TaskTypeStats = new List<TaskTypeStats>
@@ -208,19 +215,24 @@ namespace TodoSidebar.ViewModels
             if (todayCount == 0) return 0;
 
             var start = today;
-            var todayCompleted = records.TryGetValue(today.ToString("yyyy-MM-dd"), out var todaySet)
+            var todayKey = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // R39
+            var todayCompleted = records.TryGetValue(todayKey, out var todaySet)
                 ? todaySet.Count : 0;
             if (todayCompleted < todayCount)
                 start = today.AddDays(-1);
+
+            // R38 修复（审查 L9）：一次拉取创建日期、本地聚合"每天时点任务数"，
+            // 取代循环内逐日 GetDailyTaskCountAsOf（最坏 ~365 次加锁查询、UI 线程卡顿）
+            var asOfCounts = BuildAsOfCountSeries(today, 366);
 
             var earliest = today.AddDays(-365);
             int streak = 0;
             var date = start;
             while (date >= earliest)
             {
-                var dateStr = date.ToString("yyyy-MM-dd");
+                var dateStr = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // R39
                 var completed = records.TryGetValue(dateStr, out var set) ? set.Count : 0;
-                var expected = _dbService.GetDailyTaskCountAsOf(dateStr);
+                var expected = asOfCounts.TryGetValue(dateStr, out var n) ? n : 0;
                 if (expected == 0 || completed < expected)
                     break;
 
@@ -231,24 +243,49 @@ namespace TodoSidebar.ViewModels
             return streak;
         }
 
+        /// <summary>
+        /// R38：构建 endDate 起往前 days 天的"每天时点每日任务数"序列（含 endDate 当天）。
+        /// 口径与 GetDailyTaskCountAsOf 一致（CreatedAt 本地日期 ≤ 该天，存活行）。
+        /// </summary>
+        private Dictionary<string, int> BuildAsOfCountSeries(DateTime endDate, int days)
+        {
+            var createdDates = _dbService.GetDailyTaskCreatedDates();
+            var sorted = createdDates.Select(d => d.Date).OrderBy(d => d).ToList();
+
+            var series = new Dictionary<string, int>(days);
+            int idx = 0;
+            for (int i = days - 1; i >= 0; i--)
+            {
+                var day = endDate.AddDays(-i);
+                while (idx < sorted.Count && sorted[idx] <= day) idx++;
+                series[day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)] = idx;
+            }
+            return series;
+        }
+
         private List<DailyStats> CalculateDailyStats(
-            Dictionary<string, HashSet<int>> dailyCompletionRecords, int days, int dailyTaskCount)
+            Dictionary<string, HashSet<int>> dailyCompletionRecords, int days,
+            Dictionary<string, int> asOfTaskCounts)
         {
             var stats = new List<DailyStats>();
 
             for (int i = days - 1; i >= 0; i--)
             {
                 var date = DateTime.Today.AddDays(-i);
-                var dateStr = date.ToString("yyyy-MM-dd");
+                // R39（审查 M3/M12）：InvariantCulture
+                var dateStr = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                 var completedCount = dailyCompletionRecords.TryGetValue(dateStr, out var dateSet)
                     ? dateSet.Count : 0;
+                // R38 修复（审查 L4）：历史分母用"当天时点"的任务数，
+                // 不再用今天的数量回溯历史（本周增删过任务时完成率被系统性抬高/压低）
+                var totalForDay = asOfTaskCounts.TryGetValue(dateStr, out var t) ? t : 0;
 
                 stats.Add(new DailyStats
                 {
                     Date = date,
-                    TotalTasks = dailyTaskCount,
+                    TotalTasks = totalForDay,
                     CompletedTasks = completedCount,
-                    CompletionRate = dailyTaskCount > 0 ? (double)completedCount / dailyTaskCount : 0
+                    CompletionRate = totalForDay > 0 ? (double)completedCount / totalForDay : 0
                 });
             }
 

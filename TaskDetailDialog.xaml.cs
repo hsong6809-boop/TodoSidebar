@@ -166,7 +166,10 @@ namespace TodoSidebar
             // 保存截止日期
             if (_task.Type == TaskType.Deadline)
             {
-                var newDeadline = DeadlinePicker.SelectedDate;
+                // R49 修复（审查 L3）：DatePicker.SelectedDate 恒为当日 00:00，
+                // 统一按 .Date 口径取值与比较——原实现遇到带时间成分的 Deadline
+                // （导入/自然语言解析产生）时每次"打开→保存"都会把时间抹成 00:00 并误标有修改
+                var newDeadline = DeadlinePicker.SelectedDate?.Date;
 
                 // L21 修复：编辑后的截止日期早于今天时二次确认（取消则不保存），
                 // 与新增流程"截止日期不能早于今天"的校验行为对齐
@@ -178,7 +181,7 @@ namespace TodoSidebar
                         return;
                 }
 
-                if (newDeadline != _task.Deadline)
+                if (newDeadline != _task.Deadline?.Date)
                 {
                     _task.Deadline = newDeadline;
                     _hasChanges = true;

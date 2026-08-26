@@ -191,22 +191,26 @@ namespace TodoSidebar.Services
 
             var anyFullClear = false;
             var brokeLast = false;
+            var brokeAny = false; // R36 修复（审查 L5）：补结算跨多天时，断连可能发生在中间某天
             for (var date = start; date <= endDate; date = date.AddDays(1))
             {
                 var result = SettleComboForDate(date);
                 if (result == SettleResult.FullClear) anyFullClear = true;
                 brokeLast = result == SettleResult.Broken;
+                if (brokeLast) brokeAny = true;
             }
 
-            // 聚合触发一次事件（补结算多天时不刷屏）
-            if (brokeLast || anyFullClear)
+            // 聚合触发一次事件（补结算多天时不刷屏）。
+            // R36（审查 L5）：只要发生过断连就触发事件——原实现只看最后一天，
+            // 断连在中间天而末日"无任务"时横幅不出现，用户不知道连击已被清零
+            if (brokeAny || anyFullClear)
             {
                 var final = GetGrowth();
                 if (brokeLast)
                     ComboSettled?.Invoke(this, new ComboSettledEventArgs(final.ComboDays, true));
                 else
                 {
-                    ComboSettled?.Invoke(this, new ComboSettledEventArgs(final.ComboDays, false));
+                    ComboSettled?.Invoke(this, new ComboSettledEventArgs(final.ComboDays, brokeAny));
                     XpChanged?.Invoke(this, EventArgs.Empty);
                 }
             }

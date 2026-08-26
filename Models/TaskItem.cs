@@ -110,13 +110,15 @@ namespace TodoSidebar.Models
         public bool IsDeleted { get; set; } = false;
 
         /// <summary>
-        /// v5.3 回收站：软删除时间（本地时间），30 天保留期起点。
+        /// v5.3 回收站：软删除时间（R9 修复后统一为 UTC 存储），30 天保留期起点。
         /// </summary>
         public DateTime? DeletedAt { get; set; }
 
-        /// <summary>v5.3 回收站：删除于 N 天前（展示用）。</summary>
+        /// <summary>v5.3 回收站：删除于 N 天前（展示用）。
+        /// R9 修复（审查 L5）：DeletedAt 现为 UTC，展示前转本地时区；
+        /// ToLocalTime 对旧数据（本地 Kind）是无操作，天然兼容历史行。</summary>
         public string DeletedAgoText => DeletedAt.HasValue
-            ? (DateTime.Now - DeletedAt.Value).TotalDays switch
+            ? (DateTime.Now - DeletedAt.Value.ToLocalTime()).TotalDays switch
             {
                 < 1 => "今天删除",
                 < 2 => "昨天删除",

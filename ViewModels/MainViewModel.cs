@@ -75,11 +75,15 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private string _todayDoneText = "0 / 0";
 
-        /// <summary>集合变化时重算今日进度（已完成 / 已完成+待办）。</summary>
+        /// <summary>集合变化时重算今日进度（已完成 / 已完成+待办+逾期）。</summary>
         private void RefreshTodayProgress()
         {
             var done = TodayCompletedTasks.Count;
-            var total = done + CurrentTasks.Count;
+            // R60 修复（审查 L10）：分母计入"已逾期未完成"的截止任务——
+            // 原实现数据源过滤了逾期任务，导致它们既不进分子也不进分母，
+            // 存在逾期任务时进度环虚高，且与统计页 OverdueTasks 口径矛盾。
+            // 口径：逾期任务在完成前始终视为待办
+            var total = done + CurrentTasks.Count + _overdueIncompleteCount;
             TodayProgressRate = total == 0 ? 0 : (double)done / total;
             TodayDoneText = $"{done} / {total}";
         }
@@ -119,7 +123,9 @@ namespace TodoSidebar.ViewModels
         public MainViewModel()
         {
             _dbService = DatabaseService.Instance;
-            _taskService = new TaskService(_dbService);
+            // R32 修复（审查 L7）：传入真实的 MessageService——原实现走默认参数拿到
+            // NullMessageService，完成任务写库失败时错误提示被吞、UI 毫无反应
+            _taskService = new TaskService(_dbService, MessageService.Instance);
             _messageService = MessageService.Instance;
 
             // 初始化子 ViewModel
@@ -302,11 +308,21 @@ namespace TodoSidebar.ViewModels
             }
         }
 
+        /// <summary>逾期未完成的截止任务数（R60：今日进度分母用）。</summary>
+        private int _overdueIncompleteCount;
+
         private void LoadDeadlineTasks()
         {
             DeadlineTasks.Clear();
-            foreach (var task in _taskService.GetDeadlineTasks())
+            // R60 修复（审查 L10）：一次取回全部未完成截止任务用于统计——
+            // 逾期部分计入进度环分母；「截止任务」列表的展示口径保持不变（仍只显示未逾期），
+            // 不在本修复中改变界面行为
+            var allUncompleted = _taskService.GetDeadlineTasks(includeOverdue: true);
+            var today = DateTime.Today;
+            _overdueIncompleteCount = allUncompleted.Count(t => t.Deadline.HasValue && t.Deadline.Value.Date < today);
+            foreach (var task in allUncompleted.Where(t => !t.Deadline.HasValue || t.Deadline.Value.Date >= today))
                 DeadlineTasks.Add(task);
+            RefreshTodayProgress();
         }
 
         private void LoadHistoryTasks()
@@ -427,16 +443,20 @@ namespace TodoSidebar.ViewModels
 
             // V5.1：把 "明天下午3点 交周报" 解析出的时间/优先级/标签并入提交
             var parsed = NaturalLanguageParser.Parse(NewTaskTitle);
-            if (parsed.Title.Length > 0) NewTaskTitle = parsed.Title;
-            if (parsed.Tags.Count > 0) PendingTags = parsed.Tags;
             var deadline = NewTaskDeadline ?? parsed.DueDate;
-            var priority = parsed.Priority ?? NewTaskPriority;
 
+            // R33 修复（审查 M2）：先校验、后改状态——原实现提前 return 时
+            // PendingTags/被截断的 NewTaskTitle/NewTaskPriority 全部残留，
+            // 下一次新建任意不相干任务会被残留的 #标签 静默污染
             if (deadline.HasValue && deadline.Value.Date < DateTime.Today)
             {
                 _messageService.ShowWarning("截止日期不能早于今天！", "日期错误");
                 return;
             }
+
+            if (parsed.Title.Length > 0) NewTaskTitle = parsed.Title;
+            if (parsed.Tags.Count > 0) PendingTags = parsed.Tags;
+            var priority = parsed.Priority ?? NewTaskPriority;
 
             var task = _taskService.AddTask(NewTaskTitle, TaskType.Deadline, deadline, priority);
             ApplyPendingTags(task);
@@ -451,6 +471,9 @@ namespace TodoSidebar.ViewModels
         private void CompleteTask(TaskItem? task)
         {
             if (task == null) return;
+            // R34 修复（审查 L6，防御性）：已完成任务不再重复完成——
+            // 否则 CompletedAt 被搬到现在（污染热力图/今日完成），且隔天可再次发经验
+            if (task.IsCompleted || task.IsTodayCompleted) return;
             _taskService.CompleteTask(task);
             LoadData();
         }
@@ -703,6 +726,10 @@ namespace TodoSidebar.ViewModels
             SyncViewModel.OnSyncCompleted = null;
             _midnightTimer?.Stop();
             _midnightTimer = null;
+            // R35 修复（审查 L8）：撤销条计时器一并停止——登出重建 ViewModel 后，
+            // 旧计时器 Tick 仍会把已置空的旧 VM 的 UndoMessage 置 null，多存活一轮
+            _undoTimer?.Stop();
+            _undoTimer = null;
         }
     }
 }

@@ -39,6 +39,7 @@ namespace TodoSidebar.Services
         private readonly string _dbPath;
         private SqliteConnection? _connection;
         private readonly SemaphoreSlim _dbLock = new(1, 1);
+        private int _initGuard; // R17（审查 L3）：Initialize 防重入
 
         private DatabaseService()  // 改为私有构造函数
         {
@@ -61,41 +62,67 @@ namespace TodoSidebar.Services
         // 保留 Initialize 方法供首次调用
         public void Initialize()
         {
-            if (_connection != null) return; // 已初始化
+            // R17 修复（审查 L3）：原 if (_connection != null) 检查非原子，
+            // 并发二次进入会创建两个连接并覆盖字段、泄漏一个打开连接
+            if (Interlocked.CompareExchange(ref _initGuard, 1, 0) != 0) return;
             try
             {
-                _connection = new SqliteConnection($"Data Source={_dbPath}");
-                _connection.Open();
-                // 开启 WAL 模式，提升并发读写性能
-                using (var walCmd = _connection.CreateCommand())
-                {
-                    walCmd.CommandText = "PRAGMA journal_mode=WAL;";
-                    walCmd.ExecuteNonQuery();
-                }
-            }
-            catch (SqliteException ex) when (IsCorruptionError(ex))
-            {
-                // 仅在数据库文件确认损坏时才备份后重建（S1 修复：
-                // 瞬时占用/磁盘满/杀软锁定等可恢复错误不再触发毁坏性删库）
-                System.Diagnostics.Debug.WriteLine($"数据库文件损坏: {ex.Message}，将备份后重建");
-
+                if (_connection != null) return; // 已初始化
                 try
                 {
-                    _connection?.Dispose();
-                    _connection = null;
-                    BackupCorruptedDatabase();
                     _connection = new SqliteConnection($"Data Source={_dbPath}");
                     _connection.Open();
+                    // 开启 WAL 模式，提升并发读写性能
                     using (var walCmd = _connection.CreateCommand())
                     {
                         walCmd.CommandText = "PRAGMA journal_mode=WAL;";
                         walCmd.ExecuteNonQuery();
                     }
                 }
-                catch (Exception ex2)
+                catch (SqliteException ex) when (IsCorruptionError(ex))
                 {
-                    throw new InvalidOperationException($"无法创建数据库: {ex2.Message}", ex2);
+                    // 仅在数据库文件确认损坏时才备份后重建（S1 修复：
+                    // 瞬时占用/磁盘满/杀软锁定等可恢复错误不再触发毁坏性删库）
+                    System.Diagnostics.Debug.WriteLine($"数据库文件损坏: {ex.Message}，将备份后重建");
+
+                    try
+                    {
+                        _connection?.Dispose();
+                        _connection = null;
+                        // R15 修复（审查 H8）：Microsoft.Data.Sqlite 8 起连接池默认开启，
+                        // 上面的 Dispose 只是把会话归还池，文件句柄仍可能被池内会话持有。
+                        // 不清池就删文件/重建：要么删除失败，要么新连接从池里取回同一坏会话，
+                        // "备份后重建"静默失效、后续写入进幽灵文件。ClearAllPools 强制关闭全部池内句柄。
+                        SqliteConnection.ClearAllPools();
+
+                        if (!BackupCorruptedDatabase())
+                        {
+                            // 主库文件无法删除（被占用）：继续"重建"只会写入幽灵文件、退出即丢数据，
+                            // 必须显式失败让用户/上层感知，而不是静默假重建
+                            throw new InvalidOperationException(
+                                "数据库文件已损坏，但备份后仍无法删除旧文件（可能被杀毒软件或其他进程占用）。" +
+                                "为避免新数据写入丢失，已中止重建；请关闭占用程序后重启应用。");
+                        }
+
+                        _connection = new SqliteConnection($"Data Source={_dbPath}");
+                        _connection.Open();
+                        using (var walCmd = _connection.CreateCommand())
+                        {
+                            walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                            walCmd.ExecuteNonQuery();
+                        }
+                    }
+                    catch (Exception ex2)
+                    {
+                        throw new InvalidOperationException($"无法创建数据库: {ex2.Message}", ex2);
+                    }
                 }
+            }
+            catch
+            {
+                // 初始化失败归还守卫，允许上层重试
+                Interlocked.Exchange(ref _initGuard, 0);
+                throw;
             }
 
             using var cmd = _connection!.CreateCommand();
@@ -199,10 +226,11 @@ namespace TodoSidebar.Services
 
         /// <summary>
         /// 备份损坏的数据库文件（含 -wal/-shm），带时间戳保留最近 3 份，然后删除原文件重建。
+        /// R15 修复（审查 H8）：返回是否成功清理旧文件——删除失败时调用方必须中止"假重建"。
         /// </summary>
-        private void BackupCorruptedDatabase()
+        private bool BackupCorruptedDatabase()
         {
-            if (!File.Exists(_dbPath)) return;
+            if (!File.Exists(_dbPath)) return true;
 
             var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             var candidates = new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" };
@@ -221,14 +249,18 @@ namespace TodoSidebar.Services
                 System.Diagnostics.Debug.WriteLine($"备份损坏数据库失败: {backupEx.Message}");
             }
 
+            var allDeleted = true;
             foreach (var src in candidates)
             {
                 try { if (File.Exists(src)) File.Delete(src); }
                 catch (Exception delEx)
                 {
+                    allDeleted = false;
                     System.Diagnostics.Debug.WriteLine($"删除损坏数据库文件失败: {src}: {delEx.Message}");
                 }
             }
+            if (!allDeleted && File.Exists(_dbPath))
+                return false;
 
             // 只保留最近 3 份损坏备份，避免无限膨胀
             try
@@ -245,6 +277,7 @@ namespace TodoSidebar.Services
                 }
             }
             catch { /* 清理失败不影响主流程 */ }
+            return true;
         }
 
         private void CreateGrowthTables()
@@ -402,8 +435,8 @@ namespace TodoSidebar.Services
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @localUpdatedAt);
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
             cmd.Parameters.AddWithValue("@title", task.Title);
@@ -423,6 +456,8 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
             cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+            // R12 修复（审查 M2）：导入路径同样保留软删时间，避免回收站清理守卫永不命中
+            cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
@@ -466,10 +501,12 @@ namespace TodoSidebar.Services
         public void DeleteTask(int id) => ExecuteLocked(() =>
         {
             // 软删除：标记 IsDeleted + IsDirty + DeletedAt（v5.3 回收站 30 天保留期起点），同步时会上传到云端
+            // R9 修复（审查 L5）：DeletedAt 统一写 UTC——原实现写本地时间，是全库唯一非 UTC 时间戳，
+            // 与 LocalUpdatedAt/LastSyncedAt 及云端 deleted_at 混存会让排序/清理比较失真
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "UPDATE Tasks SET IsDeleted = 1, IsDirty = 1, DeletedAt = @deletedAt, LocalUpdatedAt = @localUpdatedAt WHERE Id = @id";
             cmd.Parameters.AddWithValue("@id", id);
-            cmd.Parameters.AddWithValue("@deletedAt", DateTime.Now.ToString("O"));
+            cmd.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow.ToString("O"));
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         });
@@ -536,7 +573,8 @@ namespace TodoSidebar.Services
         /// </summary>
         public int PurgeExpiredDeletedTasks() => ExecuteLocked(() =>
         {
-            var cutoff = DateTime.Now.AddDays(-TrashRetentionDays).ToString("O");
+            // R9 修复（审查 L5）：DeletedAt 已统一 UTC 存储，截线同步改用 UtcNow
+            var cutoff = DateTime.UtcNow.AddDays(-TrashRetentionDays).ToString("O");
             using var transaction = _connection!.BeginTransaction();
             try
             {
@@ -586,15 +624,15 @@ namespace TodoSidebar.Services
                 int imported = 0;
                 foreach (var task in tasks)
                 {
-                    // SyncId 去重：已存在同 SyncId 的存活任务则跳过
-                    if (!string.IsNullOrEmpty(task.SyncId) && GetTaskBySyncIdCore(task.SyncId) != null)
+                    // SyncId 去重：已存在同 SyncId 的"存活"任务则跳过（R13：排除回收站软删行）
+                    if (!string.IsNullOrEmpty(task.SyncId) && GetTaskBySyncIdCore(task.SyncId, includeDeleted: false) != null)
                         continue;
 
                     using var cmd = _connection.CreateCommand();
                     cmd.Transaction = transaction;
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @localUpdatedAt)
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -613,6 +651,8 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
                     cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                    // R12 修复（审查 M2）：导入路径同样保留软删时间
+                    cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                     imported++;
@@ -662,12 +702,29 @@ namespace TodoSidebar.Services
                 }
             }
 
-            foreach (var id in ids)
+            // R14 修复（审查 L1）：多条 DELETE 包进单事务，并在清理后回收子表孤儿记录，
+            // 与 PurgeExpiredDeletedTasks/PurgeTask 同口径；中途失败整体回滚不留半删状态
+            if (ids.Count == 0)
+                return;
+
+            using var transaction = _connection!.BeginTransaction();
+            try
             {
-                using var delCmd = _connection.CreateCommand();
-                delCmd.CommandText = "DELETE FROM Tasks WHERE Id = @id";
-                delCmd.Parameters.AddWithValue("@id", id);
-                delCmd.ExecuteNonQuery();
+                foreach (var id in ids)
+                {
+                    using var delCmd = _connection.CreateCommand();
+                    delCmd.Transaction = transaction;
+                    delCmd.CommandText = "DELETE FROM Tasks WHERE Id = @id";
+                    delCmd.Parameters.AddWithValue("@id", id);
+                    delCmd.ExecuteNonQuery();
+                }
+                CleanupOrphanRecords(transaction);
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch { }
+                throw;
             }
         });
 
@@ -727,12 +784,18 @@ namespace TodoSidebar.Services
 
         private TaskItem ReadTask(SqliteDataReader reader)
         {
+            // R16 修复（审查 L5）：枚举值钳制——库里出现未知枚举值（手改数据/降级版本）
+            // 时不再让整个列表加载抛异常，回退默认值并留痕
+            var typeRaw = reader.GetInt32(reader.GetOrdinal("Type"));
+            var priorityRaw = reader.IsDBNull(reader.GetOrdinal("Priority"))
+                ? (int)TaskPriority.Medium
+                : reader.GetInt32(reader.GetOrdinal("Priority"));
             return new TaskItem
             {
                 Id = reader.GetInt32(reader.GetOrdinal("Id")),
                 Title = reader.GetString(reader.GetOrdinal("Title")),
-                Type = (TaskType)reader.GetInt32(reader.GetOrdinal("Type")),
-                Priority = reader.IsDBNull(reader.GetOrdinal("Priority")) ? TaskPriority.Medium : (TaskPriority)reader.GetInt32(reader.GetOrdinal("Priority")),
+                Type = ClampEnum<TaskType>(typeRaw),
+                Priority = ClampEnum<TaskPriority>(priorityRaw),
                 IsCompleted = reader.GetInt32(reader.GetOrdinal("IsCompleted")) == 1,
                 CreatedAt = ReadDateTime(reader, "CreatedAt") ?? DateTime.Now,
                 Deadline = ReadDateTime(reader, "Deadline"),
@@ -750,6 +813,15 @@ namespace TodoSidebar.Services
                 LocalUpdatedAt = ReadDateTime(reader, "LocalUpdatedAt"),
                 DeletedAt = ReadDateTime(reader, "DeletedAt")
             };
+        }
+
+        /// <summary>R16：未知枚举值钳制到默认值（0），避免脏数据让整页查询崩溃。</summary>
+        private static T ClampEnum<T>(int raw) where T : struct, Enum
+        {
+            if (Enum.IsDefined(typeof(T), raw))
+                return (T)Enum.ToObject(typeof(T), raw);
+            System.Diagnostics.Debug.WriteLine($"[DatabaseService] 未知枚举值 {typeof(T).Name}={raw}，已回退默认值");
+            return default;
         }
 
         /// <summary>
@@ -830,7 +902,7 @@ namespace TodoSidebar.Services
         public HashSet<int> GetTodayCompletedDailyTaskIds() => ExecuteLocked(() =>
         {
             var ids = new HashSet<int>();
-            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             using var cmd = _connection!.CreateCommand();
             // M20 修复：过滤已删任务的孤儿记录
             cmd.CommandText = @"
@@ -850,7 +922,7 @@ namespace TodoSidebar.Services
         /// </summary>
         public List<TaskItem> GetTodayCompletedDailyTasks() => ExecuteLocked(() =>
         {
-            var today = DateTime.Today.ToString("yyyy-MM-dd");
+            var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var tasks = new List<TaskItem>();
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
@@ -897,8 +969,8 @@ namespace TodoSidebar.Services
         public Dictionary<string, int> GetHeatmapCounts(DateTime start, DateTime end) => ExecuteLocked(() =>
         {
             var result = new Dictionary<string, int>();
-            var startStr = start.ToString("yyyy-MM-dd");
-            var endStr = end.ToString("yyyy-MM-dd");
+            var startStr = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var endStr = end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             // 每日任务完成记录
             using (var cmd = _connection!.CreateCommand())
@@ -944,7 +1016,7 @@ namespace TodoSidebar.Services
         public Dictionary<string, HashSet<int>> GetDailyCompletionRecords(int days) => ExecuteLocked(() =>
         {
             var result = new Dictionary<string, HashSet<int>>();
-            var startDate = DateTime.Today.AddDays(-(days - 1)).ToString("yyyy-MM-dd");
+            var startDate = DateTime.Today.AddDays(-(days - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             using var cmd = _connection!.CreateCommand();
             // M20 修复：JOIN 过滤已删任务的孤儿完成记录
             cmd.CommandText = @"
@@ -989,6 +1061,26 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@type", (int)TaskType.Daily);
             cmd.Parameters.AddWithValue("@date", date);
             return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
+        /// <summary>
+        /// R38 修复（审查 L9）：全部存活每日任务的创建时间，一次拉取。
+        /// 供统计侧在本地按日聚合出"每天时点的每日任务数"序列，
+        /// 取代逐日调用 GetDailyTaskCountAsOf（每次完成/删除任务最坏 ~365 次加锁查询且全在 UI 线程）。
+        /// </summary>
+        public List<DateTime> GetDailyTaskCreatedDates() => ExecuteLocked(() =>
+        {
+            var result = new List<DateTime>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT CreatedAt FROM Tasks WHERE Type = @type AND IsDeleted = 0";
+            cmd.Parameters.AddWithValue("@type", (int)TaskType.Daily);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                if (ReadDateTime(reader, "CreatedAt") is { } dt)
+                    result.Add(dt);
+            }
+            return result;
         });
 
         // ==================== 搜索 ====================
@@ -1088,6 +1180,17 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
+        /// R57 修复（审查 M1）：未上云的本地脏数据行数（含新建/修改/软删墓碑）。
+        /// 供切换账号前的"将丢失 N 条未同步数据"确认弹窗使用。
+        /// </summary>
+        public int GetDirtyTaskCount() => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDirty = 1";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
+        /// <summary>
         /// 标记任务已同步。
         /// S7 修复：带乐观守卫——仅当任务的 LocalUpdatedAt 仍等于上传时的快照值时才清除 IsDirty，
         /// 防止"上传期间用户又编辑了任务"导致新修改被误标为已同步而丢失。
@@ -1096,20 +1199,33 @@ namespace TodoSidebar.Services
         {
             ExecuteLocked(() =>
             {
-                using var cmd = _connection!.CreateCommand();
-                cmd.CommandText = @"
-                    UPDATE Tasks SET
-                        SyncId = @syncId,
-                        IsDirty = 0,
-                        LastSyncedAt = @syncedAt
+                // R11 修复（审查 M3）：把"绑定 SyncId"与"清脏"拆成两条语句——
+                // 原实现守卫失败时整条 UPDATE 不生效，上传成功后、标记前用户又编辑了该任务，
+                // SyncId 未落库 => 下轮上传换新 GUID 在云端再造一行 => 本地出现重复任务。
+                // 现在：SyncId 无条件绑定；只有确认本地未再变动时才清脏。
+                using (var bindCmd = _connection!.CreateCommand())
+                {
+                    bindCmd.CommandText = @"
+                        UPDATE Tasks SET
+                            SyncId = @syncId,
+                            LastSyncedAt = @syncedAt
+                        WHERE Id = @id
+                    ";
+                    bindCmd.Parameters.AddWithValue("@id", localId);
+                    bindCmd.Parameters.AddWithValue("@syncId", syncId);
+                    bindCmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
+                    bindCmd.ExecuteNonQuery();
+                }
+
+                using var clearCmd = _connection!.CreateCommand();
+                clearCmd.CommandText = @"
+                    UPDATE Tasks SET IsDirty = 0
                     WHERE Id = @id
                       AND (@expected IS NULL OR LocalUpdatedAt IS NULL OR LocalUpdatedAt = @expected)
                 ";
-                cmd.Parameters.AddWithValue("@id", localId);
-                cmd.Parameters.AddWithValue("@syncId", syncId);
-                cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
-                cmd.Parameters.AddWithValue("@expected", expectedLocalUpdatedAt ?? (object)DBNull.Value);
-                cmd.ExecuteNonQuery();
+                clearCmd.Parameters.AddWithValue("@id", localId);
+                clearCmd.Parameters.AddWithValue("@expected", expectedLocalUpdatedAt ?? (object)DBNull.Value);
+                clearCmd.ExecuteNonQuery();
             });
         }
 
@@ -1118,10 +1234,14 @@ namespace TodoSidebar.Services
         /// </summary>
         public TaskItem? GetTaskBySyncId(string syncId) => ExecuteLocked(() => GetTaskBySyncIdCore(syncId));
 
-        private TaskItem? GetTaskBySyncIdCore(string syncId)
+        private TaskItem? GetTaskBySyncIdCore(string syncId, bool includeDeleted = true)
         {
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT * FROM Tasks WHERE SyncId = @syncId";
+            // R13 修复（审查 M5）：导入去重只应看"存活"任务——
+            // 同 SyncId 的行躺在回收站时不应视为已存在而跳过导入（同步路径仍需含软删行，默认不变）
+            cmd.CommandText = includeDeleted
+                ? "SELECT * FROM Tasks WHERE SyncId = @syncId"
+                : "SELECT * FROM Tasks WHERE SyncId = @syncId AND IsDeleted = 0";
             cmd.Parameters.AddWithValue("@syncId", syncId);
             using var reader = cmd.ExecuteReader();
             if (reader.Read())
@@ -1132,11 +1252,16 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// 通过 SyncId 更新本地任务（来自远程同步）
+        /// 通过 SyncId 更新本地任务（来自远程同步）。
+        /// R8 修复（审查 M4）：expectedLocalUpdatedAt 乐观守卫——判定与写入之间本地若又被编辑，
+        /// 放弃覆盖并返回 false（调用方按冲突处理），不再静默覆盖刚写入的本地修改。
+        /// R12 修复（审查 M2）：UPDATE/INSERT 两分支补写 DeletedAt 列——同步层明明构造了该值
+        /// （远端软删时间），原实现却把它丢掉，导致回收站清理守卫(要求非 NULL)永不命中。
         /// </summary>
-        public void UpsertTaskFromRemote(TaskItem task)
+        /// <returns>是否实际写入了本地库</returns>
+        public bool UpsertTaskFromRemote(TaskItem task, string? expectedLocalUpdatedAt = null)
         {
-            ExecuteLocked(() =>
+            return ExecuteLocked(() =>
             {
                 var existing = GetTaskBySyncIdCore(task.SyncId!);
                 if (existing != null)
@@ -1158,10 +1283,12 @@ namespace TodoSidebar.Services
                             SortOrder = @sortOrder,
                             SubTasksJson = @subTasksJson,
                             IsDeleted = @isDeleted,
+                            DeletedAt = @deletedAt,
                             IsDirty = 0,
                             LastSyncedAt = @syncedAt,
                             LocalUpdatedAt = @localUpdatedAt
                         WHERE SyncId = @syncId
+                          AND (@expected IS NULL OR LocalUpdatedAt IS NULL OR LocalUpdatedAt = @expected)
                     ";
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                     cmd.Parameters.AddWithValue("@title", task.Title);
@@ -1174,17 +1301,19 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
                     cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
-                    cmd.ExecuteNonQuery();
+                    cmd.Parameters.AddWithValue("@expected", expectedLocalUpdatedAt ?? (object)DBNull.Value);
+                    return cmd.ExecuteNonQuery() > 0;
                 }
                 else
                 {
                     // 插入新任务
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted, @localUpdatedAt)
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -1197,9 +1326,11 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
                     cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
+                    return true;
                 }
             });
         }
@@ -1242,8 +1373,8 @@ namespace TodoSidebar.Services
                     using var cmd = _connection!.CreateCommand();
                     cmd.Transaction = transaction;
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Id, Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, LocalUpdatedAt)
-                        VALUES (@id, @title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @localUpdatedAt)
+                        INSERT INTO Tasks (Id, Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@id, @title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@id", task.Id);
                     cmd.Parameters.AddWithValue("@title", task.Title);
@@ -1263,6 +1394,8 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
                     cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                    // R12 修复（审查 M2）：备份恢复路径同样保留软删时间
+                    cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                 }
@@ -1507,7 +1640,7 @@ namespace TodoSidebar.Services
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "SELECT COALESCE(SUM(Amount), 0) FROM XpLog WHERE Date = @date";
-            cmd.Parameters.AddWithValue("@date", DateTime.Today.ToString("yyyy-MM-dd"));
+            cmd.Parameters.AddWithValue("@date", DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
 
@@ -1846,7 +1979,7 @@ namespace TodoSidebar.Services
         public List<(DateTime date, int xp)> GetDailyXpLastDays(int days) => ExecuteLocked(() =>
         {
             var result = new List<(DateTime date, int xp)>();
-            var start = DateTime.Today.AddDays(-(days - 1)).ToString("yyyy-MM-dd");
+            var start = DateTime.Today.AddDays(-(days - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "SELECT Date, SUM(Amount) FROM XpLog WHERE Date >= @start GROUP BY Date";
             cmd.Parameters.AddWithValue("@start", start);
@@ -1870,10 +2003,21 @@ namespace TodoSidebar.Services
         {
             // S2 修复：先释放连接、再释放信号量（后台线程可能仍阻塞在 _dbLock.Wait()，
             // 先释放信号量会使其抛 ObjectDisposedException），最后清除单例引用
-            _connection?.Dispose();
-            _connection = null;
-            _dbLock?.Dispose();
-            _instance = null;
+            // R18 修复（审查 L4）：Dispose 前先短暂等锁，让在途操作退出后再关连接，
+            // 收窄"正执行的命令撞上已释放连接/已释放信号量"的竞态窗口
+            try { _dbLock?.Wait(TimeSpan.FromSeconds(2)); }
+            catch (ObjectDisposedException) { }
+
+            try
+            {
+                _connection?.Dispose();
+                _connection = null;
+            }
+            finally
+            {
+                try { _dbLock?.Dispose(); } catch (ObjectDisposedException) { }
+                _instance = null;
+            }
         }
 
         /// <summary>

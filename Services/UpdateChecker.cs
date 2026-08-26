@@ -100,7 +100,10 @@ namespace TodoSidebar.Services
                 {
                     CurrentVersion = currentShort,
                     RemoteTag = tagName,
-                    RemoteVersion = remoteVer?.ToString(3) ?? tagName,
+                    // R51 修复（审查 M1）：按实际组件数格式化——原实现硬编码 ToString(3)，
+                    // tag 只有 1~2 段（如 "v5.4"、"v6"）时抛 ArgumentException，
+                    // 被外层 catch 吞掉 => 更新检测整体静默失效且无日志指向根因
+                    RemoteVersion = FormatVersion(remoteVer) ?? tagName,
                     Changelog = body.Length > ChangelogMaxChars ? body.Substring(0, ChangelogMaxChars) + "…" : body,
                     PageUrl = string.IsNullOrEmpty(pageUrl) ? ReleasePageUrl : pageUrl
                 };
@@ -120,6 +123,18 @@ namespace TodoSidebar.Services
             if (string.IsNullOrWhiteSpace(tagName)) return null;
             var cleaned = tagName.TrimStart('v', 'V').Trim();
             return Version.TryParse(cleaned, out var v) ? v : null;
+        }
+
+        /// <summary>
+        /// R51：按版本实际组件数格式化。Version.ToString(fieldCount) 在
+        /// fieldCount 大于组件数时抛 ArgumentException，必须先判 Build/Revision 是否有效。
+        /// </summary>
+        private static string? FormatVersion(Version? v)
+        {
+            if (v == null) return null;
+            if (v.Revision >= 0) return v.ToString(4);
+            if (v.Build >= 0) return v.ToString(3);
+            return v.ToString(2);
         }
 
         /// <summary>

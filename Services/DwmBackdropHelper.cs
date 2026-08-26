@@ -84,7 +84,9 @@ namespace TodoSidebar.Services
                 var hwnd = new WindowInteropHelper(window).EnsureHandle();
                 if (hwnd == IntPtr.Zero) return false;
 
-                uint abgr = (uint)(tint.B << 16 | tint.G << 8 | tint.R) | ((uint)alpha << 24);
+                // R50 修复（审查 L1）：GradientColor 惯例为 0xAARRGGBB——
+                // 原实现 R/B 通道写反，开启亚克力后底色红蓝互换（深色主题变暖棕、浅色偏粉）
+                uint abgr = ((uint)alpha << 24) | ((uint)tint.R << 16) | ((uint)tint.G << 8) | tint.B;
                 var accent = new AccentPolicy
                 {
                     AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,

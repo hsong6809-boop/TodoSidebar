@@ -99,7 +99,10 @@ namespace TodoSidebar.Services
                 TaskCompleteCount = _db.GetXpLogCount("task_complete"),
                 PomodoroCompletedTotal = _db.GetCompletedPomodoroTotal(),
                 TodayPomodoro = _db.GetPomodoroCountByDate(today).completed,
-                DailyTaskCount = _db.GetDailyTaskCount(),
+                // R37 修复（审查 L3）：「今日完胜」的分母用"今天零点时的每日任务数"——
+                // 原实现用当前数量：完成后删掉未完成任务会误解锁全清徽章；
+                // 与连击结算的 M19 口径对齐
+                DailyTaskCount = _db.GetDailyTaskCountAsOf(today),
                 TodayCompletedDaily = _db.GetCompletedDailyTaskCountByDate(today),
                 BestComboDays = growth.BestComboDays,
                 ComboDays = growth.ComboDays,

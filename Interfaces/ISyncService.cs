@@ -28,8 +28,12 @@ namespace TodoSidebar.Services
         /// <summary>仅上传本地变更</summary>
         Task<int> UploadLocalChangesAsync();
 
-        /// <summary>仅下载远程变更</summary>
-        Task<(int downloaded, int conflicts)> DownloadRemoteChangesAsync();
+        /// <summary>
+        /// 仅下载远程变更。
+        /// R3 修复（审查 H2/M1/M6）：返回值附带本轮成功处理行的最大 updated_at，
+        /// 供调用方推进增量游标（不再用本机墙钟）；fullReconcile=true 忽略游标全量拉取。
+        /// </summary>
+        Task<(int downloaded, int conflicts, DateTime? maxObservedUpdatedAt)> DownloadRemoteChangesAsync(bool fullReconcile = false);
 
         /// <summary>手动同步（不检查 FeatureFlag）</summary>
         Task<SyncResult> ManualSyncAsync();

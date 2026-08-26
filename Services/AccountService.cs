@@ -252,9 +252,12 @@ namespace TodoSidebar.Services
             await UploadBestEffortAsync();
         }
 
-        public Task SetCustomAvatarAsync(string imageFilePath)
+        public async Task SetCustomAvatarAsync(string imageFilePath)
         {
-            var base64 = ProcessImageToBase64(imageFilePath);
+            // R23 修复（审查 M4/v5.x-M18）：解码/裁剪/编码是重 CPU 操作（最大 20MB 图片），
+            // 原实现虽名为 Async 却全程跑在调用线程（UI 线程）上，大图会冻结整个界面。
+            // 移入线程池执行；结果为纯字符串可安全跨线程回传。
+            var base64 = await Task.Run(() => ProcessImageToBase64(imageFilePath)).ConfigureAwait(true);
             if (base64 == null) throw new InvalidOperationException("图片读取或解码失败，请更换图片文件");
 
             _customAvatarBase64 = base64;
@@ -262,7 +265,7 @@ namespace TodoSidebar.Services
             WriteAvatarFile(base64);
             PersistLocal();
             RaiseProfileChanged();
-            return UploadBestEffortAsync();
+            await UploadBestEffortAsync();
         }
 
         public string? GetCustomAvatarPath()

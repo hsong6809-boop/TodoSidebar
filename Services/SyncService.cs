@@ -31,6 +31,17 @@ namespace TodoSidebar.Services
         
         // 防重入：使用 Interlocked 作为轻量级同步锁
         private int _syncInProgress = 0;
+
+        // R7 修复（审查 sync-L7）：初始化防重入改用 Interlocked，原 if (_cts != null) 检查非原子
+        private int _initGuard = 0;
+
+        // R3 修复（审查 H2/M1）：增量游标回退重叠窗——游标取"本轮观测到的最大 updated_at"
+        // 再回退该窗口，消化页界/时钟域边缘的行；重复拉取由既有回声跳过(TaskContentEquals)消化
+        private static readonly TimeSpan CursorOverlapWindow = TimeSpan.FromSeconds(60);
+
+        // R4 修复（审查 H1 配套）：周期性全量对账间隔。上传改为携带真实编辑时间后，
+        // 长期离线编辑的时间戳可能早于其他设备的增量游标；全量对账保证这类行最迟每天收敛一次。
+        private static readonly TimeSpan FullReconcileInterval = TimeSpan.FromHours(24);
         
         // 网络恢复事件处理器（保存引用以便取消订阅）
         private EventHandler<bool>? _networkHandler;
@@ -90,9 +101,22 @@ namespace TodoSidebar.Services
         /// </summary>
         public async Task InitializeAsync()
         {
-            // 防止重复初始化
-            if (_cts != null) return;
+            // R7 修复（审查 sync-L7）：原子防重入，防止并发双调用启动两个同步循环
+            if (Interlocked.CompareExchange(ref _initGuard, 1, 0) != 0) return;
+            try
+            {
+                await InitializeCoreAsync();
+            }
+            catch
+            {
+                // 初始化失败要归还守卫，允许下次重试
+                Interlocked.Exchange(ref _initGuard, 0);
+                throw;
+            }
+        }
 
+        private async Task InitializeCoreAsync()
+        {
             // M39 修复：先清空内存游标再读取——切换账号后若新账号无保存游标，
             // 原实现会残留上一个账号的同步时间，导致新账号首次增量下载漏数据
             _lastSyncTimeUtc = null;
@@ -135,6 +159,21 @@ namespace TodoSidebar.Services
 
         /// <summary>同步游标的设置键（按用户隔离）</summary>
         private static string CursorKey(string userId) => $"LastSyncTimeUtc:{userId}";
+
+        /// <summary>全量对账时间戳的设置键（按用户隔离，R4）</summary>
+        private static string FullReconcileKey(string userId) => $"LastFullReconcileAt:{userId}";
+
+        /// <summary>
+        /// R4：判断本轮是否应做全量对账（从未做过或距上次超过 24h）。
+        /// </summary>
+        private bool IsFullReconcileDue(string? userId)
+        {
+            if (string.IsNullOrEmpty(userId)) return true;
+            var saved = _dbService.GetSetting(FullReconcileKey(userId));
+            if (!DateTime.TryParse(saved, null, System.Globalization.DateTimeStyles.RoundtripKind, out var last))
+                return true;
+            return DateTime.UtcNow - last.ToUniversalTime() >= FullReconcileInterval;
+        }
         
         /// <summary>
         /// 同步循环 — 用 PeriodicTimer 正确处理 async + 异常
@@ -165,6 +204,11 @@ namespace TodoSidebar.Services
             catch (OperationCanceledException)
             {
                 // 正常退出，忽略
+            }
+            catch (ObjectDisposedException)
+            {
+                // R6 修复（审查 sync-L3）：Stop 先 Dispose PeriodicTimer 时，
+                // 循环可能恰好阻塞在 WaitForNextTickAsync 上抛 ODE——属正常退出路径
             }
         }
         
@@ -198,12 +242,16 @@ namespace TodoSidebar.Services
             try
             {
                 var result = new SyncResult();
-                
+                var syncUserId = AuthService.Instance.CurrentUser?.Id;
+
+                // R4：本轮是否需要全量对账（从未做过或距上次超过 24h）
+                bool fullReconcile = IsFullReconcileDue(syncUserId);
+
                 // 1. 上传本地更改（批量）
                 result.Uploaded = await UploadLocalChangesAsync();
-                
+
                 // 2. 下载远程更改（增量 + 冲突解决）
-                var downloadResult = await DownloadRemoteChangesAsync();
+                var downloadResult = await DownloadRemoteChangesAsync(fullReconcile);
                 result.Downloaded = downloadResult.downloaded;
                 result.Conflicts = downloadResult.conflicts;
                 
@@ -231,11 +279,31 @@ namespace TodoSidebar.Services
                 result.Success = true;
                 LastSyncTime = DateTime.Now;
                 
-                // 保存同步时间到数据库（S8 修复：按用户隔离的游标键）
-                _lastSyncTimeUtc = DateTime.UtcNow;
+                // R3 修复（审查 H2/M1/M6）：游标不再用本机墙钟——
+                // 改取"本轮成功处理的远端最大 updated_at"回退重叠窗口。
+                // 本机时钟偏快不再造成漏下载；单行处理失败时其时间戳不计入，
+                // 下一轮增量仍会覆盖到它，不再永久漏同步。
+                if (downloadResult.maxObservedUpdatedAt.HasValue)
+                {
+                    _lastSyncTimeUtc = downloadResult.maxObservedUpdatedAt.Value.ToUniversalTime() - CursorOverlapWindow;
+                }
+                else if (fullReconcile)
+                {
+                    // 全量对账且云端无任何行：可安全推进到当前时刻
+                    _lastSyncTimeUtc = DateTime.UtcNow;
+                }
+                // 其余情况（增量且无变更）保持原游标不动，不会丢数据
+
                 var currentUserId = AuthService.Instance.CurrentUser?.Id;
                 if (!string.IsNullOrEmpty(currentUserId))
-                    _dbService.SetSetting(CursorKey(currentUserId), _lastSyncTimeUtc.Value.ToString("O"));
+                {
+                    if (_lastSyncTimeUtc.HasValue)
+                        _dbService.SetSetting(CursorKey(currentUserId), _lastSyncTimeUtc.Value.ToString("O"));
+
+                    // R4：全量对账成功完成后记录时间，进入下一个 24h 周期
+                    if (fullReconcile)
+                        _dbService.SetSetting(FullReconcileKey(currentUserId), DateTime.UtcNow.ToString("O"));
+                }
                 
                 SetStatus(SyncStatus.Idle);
                 SyncCompleted?.Invoke(this, result);
@@ -318,7 +386,12 @@ namespace TodoSidebar.Services
                         Tags = task.Tags,
                         SortOrder = task.SortOrder,
                         SubtasksJson = task.SubTasksJson,
-                        UpdatedAt = DateTime.UtcNow,
+                        // R1 修复（审查 H1）：上传携带真实编辑时间而非"上传时刻"。
+                        // 原实现每次上传都取 UtcNow，离线编辑 2 小时后上线会被当成"最新修改"，
+                        // LWW 比较变成"谁最后联网谁赢"，静默覆盖其他设备更晚的真实编辑。
+                        // 配套安全网：游标取观测最大值+重叠窗（R3）、周期性全量对账（R4），
+                        // 保证旧时间戳的行最终仍会被其他设备拉到而不会永久漏同步。
+                        UpdatedAt = task.LocalUpdatedAt.HasValue ? ToUtc(task.LocalUpdatedAt.Value) : DateTime.UtcNow,
                         IsDeleted = task.IsDeleted,
                         DeletedAt = task.DeletedAt?.ToString("O")
                     };
@@ -382,16 +455,20 @@ namespace TodoSidebar.Services
         }
         
         /// <summary>
-        /// 下载远程更改（增量 + LWW 冲突解决）
+        /// 下载远程更改（增量 + LWW 冲突解决）。
+        /// R2/R3/R4 修复（审查 H1/H2/M1/M6）：
+        /// - 分页增加稳定排序（updated_at ASC），无序 offset 分页在远端并发写入时会页界漂移跳行；
+        /// - 返回本轮成功处理行的最大 updated_at，供游标推进使用（不再用本机墙钟）；
+        /// - fullReconcile=true 时忽略游标全量拉取（周期性对账，保证旧时间戳行最终收敛）。
         /// </summary>
-        public async Task<(int downloaded, int conflicts)> DownloadRemoteChangesAsync()
+        public async Task<(int downloaded, int conflicts, DateTime? maxObservedUpdatedAt)> DownloadRemoteChangesAsync(bool fullReconcile = false)
         {
             try
             {
                 var client = SupabaseClientService.Client;
                 var userId = _authService.CurrentUser?.Id;
                 if (string.IsNullOrEmpty(userId))
-                    return (0, 0);
+                    return (0, 0, null);
                 
                 // 增量同步：只拉取上次同步后有更新的任务。
                 // M12 修复：分页拉取——服务端 PostgREST 有单页行数上限（托管版默认 1000），
@@ -402,11 +479,18 @@ namespace TodoSidebar.Services
                 while (true)
                 {
                     var query = client.From<SyncTask>().Where(x => x.UserId == userId);
-                    if (_lastSyncTimeUtc.HasValue)
+                    if (!fullReconcile && _lastSyncTimeUtc.HasValue)
                     {
                         // 拉取上次同步后更新的任务（包括新创建的和已删除的）
                         query = query.Where(x => x.UpdatedAt >= _lastSyncTimeUtc.Value);
                     }
+
+                    // R2 修复（审查 H2）：稳定排序是 offset 分页正确性的前提。
+                    // 无 ORDER BY 时 PostgREST 行序未定义，两页之间远端有写入会导致页界漂移，
+                    // 被跳过的行此后增量过滤永远不再覆盖 => 静默永久缺失。
+                    query = query.Order("updated_at",
+                        Supabase.Postgrest.Constants.Ordering.Ascending,
+                        Supabase.Postgrest.Constants.NullPosition.Last);
 
                     var response = await query.Range(offset, offset + PageSize - 1).Get();
                     var page = response.Models ?? new List<SyncTask>();
@@ -420,10 +504,19 @@ namespace TodoSidebar.Services
                 }
 
                 if (remoteTasks.Count == 0)
-                    return (0, 0);
+                    return (0, 0, null);
                 
                 int downloaded = 0;
                 int conflicts = 0;
+                DateTime? maxObserved = null;
+
+                // R3 修复（审查 M6）：只把"成功处理"的行计入游标推进；
+                // 失败行的时间戳不记录，下一轮增量过滤仍会覆盖到它
+                void RecordObserved(SyncTask t)
+                {
+                    if (!maxObserved.HasValue || t.UpdatedAt > maxObserved.Value)
+                        maxObserved = t.UpdatedAt;
+                }
                 
                 foreach (var remoteTask in remoteTasks)
                 {
@@ -460,22 +553,34 @@ namespace TodoSidebar.Services
                             var localEditTime = existing.LocalUpdatedAt ?? existing.LastSyncedAt ?? DateTime.MinValue;
                             if (remoteTask.UpdatedAt > localEditTime)
                             {
-                                // 远程更新，覆盖本地
-                                _dbService.UpsertTaskFromRemote(localTask);
-                                downloaded++;
-                                
-                                _syncLog.Log(new SyncLogEntry
+                                // 远程更新，覆盖本地。
+                                // R8 修复（审查 M4）：带乐观守卫写入——判定与写入之间本地若又被编辑
+                                // （LocalUpdatedAt 变化），守卫失败放弃覆盖，保留本地脏行下轮再裁决，
+                                // 不再出现"远程旧值整体覆盖刚写入的本地修改且清脏导致永久丢失"。
+                                var applied = _dbService.UpsertTaskFromRemote(localTask, existing.LocalUpdatedAt?.ToString("O"));
+                                if (applied)
                                 {
-                                    Action = "conflict",
-                                    Success = true,
-                                    // L30 修复：标题脱敏，防 sync_log.json 泄露隐私
-                                    Details = $"冲突解决(LWW-远程胜): \"{SanitizeTitle(existing.Title)}\" → 远程覆盖本地"
-                                });
+                                    downloaded++;
+                                    RecordObserved(remoteTask);
+
+                                    _syncLog.Log(new SyncLogEntry
+                                    {
+                                        Action = "conflict",
+                                        Success = true,
+                                        // L30 修复：标题脱敏，防 sync_log.json 泄露隐私
+                                        Details = $"冲突解决(LWW-远程胜): \"{SanitizeTitle(existing.Title)}\" → 远程覆盖本地"
+                                    });
+                                }
+                                else
+                                {
+                                    conflicts++;
+                                }
                             }
                             else
                             {
                                 // 本地更新，保留本地
                                 conflicts++;
+                                RecordObserved(remoteTask);
                                 
                                 _syncLog.Log(new SyncLogEntry
                                 {
@@ -493,10 +598,21 @@ namespace TodoSidebar.Services
                             // 原实现每次都整行重写，downloaded 统计虚高且产生写放大）
                             if (existing != null && !existing.IsDirty && TaskContentEquals(existing, remoteTask))
                             {
+                                RecordObserved(remoteTask);
                                 continue;
                             }
-                            _dbService.UpsertTaskFromRemote(localTask);
+                            if (existing != null)
+                            {
+                                // R8（审查 M4）：非冲突路径同样带守卫，防止并发编辑被静默覆盖清脏
+                                var applied = _dbService.UpsertTaskFromRemote(localTask, existing.LocalUpdatedAt?.ToString("O"));
+                                if (!applied) { conflicts++; continue; }
+                            }
+                            else
+                            {
+                                _dbService.UpsertTaskFromRemote(localTask);
+                            }
                             downloaded++;
+                            RecordObserved(remoteTask);
                         }
                     }
                     catch (Exception ex)
@@ -505,7 +621,7 @@ namespace TodoSidebar.Services
                     }
                 }
                 
-                return (downloaded, conflicts);
+                return (downloaded, conflicts, maxObserved);
             }
             catch (Exception ex)
             {
@@ -526,14 +642,16 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// v5.3：解析云端 deleted_at（ISO 文本）为本地时间；
+        /// v5.3：解析云端 deleted_at（ISO 文本）。
+        /// R9 修复（审查 L5/时间混用）：统一归一化为 UTC 存储——本地 DeleteTask 也改为写 UTC，
+        /// 同列混存本地偏移与 UTC 文本会让 ORDER BY / 范围比较失真；展示端负责转本地时区。
         /// 空值/解析失败返回 null（老客户端或未执行 SQL 时云端无该列值）。
         /// </summary>
         private static DateTime? ParseRemoteDeletedAt(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return null;
             return DateTime.TryParse(raw, null, System.Globalization.DateTimeStyles.RoundtripKind, out var t)
-                ? t.ToLocalTime()
+                ? t.ToUniversalTime()
                 : null;
         }
 
@@ -596,6 +714,9 @@ namespace TodoSidebar.Services
             {
                 var batch = dirtyXp.Select(x => new SyncXpLog
                 {
+                    // R10 修复（审查 M6/M17）：确定性主键——按本地行身份推导 GUID，
+                    // "上传成功但标记前中断"后重传仍是同一云端主键 => upsert 幂等，不再重复插行
+                    Id = DeterministicGuid(userId, "xp", x.Id, x.CreatedAt),
                     UserId = userId,
                     Source = x.Source,
                     Amount = x.Amount,
@@ -614,6 +735,8 @@ namespace TodoSidebar.Services
             {
                 var batch = dirtyPomo.Select(p => new SyncPomodoroSession
                 {
+                    // R10：同上，番茄会话上传幂等化
+                    Id = DeterministicGuid(userId, "pomo", p.Id, p.StartTime),
                     UserId = userId,
                     TaskId = p.TaskId,
                     StartTime = p.StartTime,
@@ -669,7 +792,13 @@ namespace TodoSidebar.Services
             }
             else if (local.TotalXp > remote.TotalXp)
             {
-                // 本地更大：覆盖云端
+                // R5 修复（审查 M16）：本地胜分支对行为统计同样对称取大者再上传，
+                // 并把合并结果落回本地。原实现整行覆盖云端，低 TotalXp 但连击 30 天的设备
+                // 会被高 TotalXp 但连击 2 天的设备覆盖，行为统计静默回退。
+                local.ComboDays = Math.Max(local.ComboDays, remote.ComboDays);
+                local.BestComboDays = Math.Max(local.BestComboDays, remote.BestComboDays);
+                _dbService.SaveUserGrowth(local);
+
                 await client.From<SyncUserProfile>().Upsert(new SyncUserProfile
                 {
                     Id = profileId,
@@ -682,6 +811,18 @@ namespace TodoSidebar.Services
                     Title = local.Title
                 });
             }
+        }
+
+        /// <summary>
+        /// R10（审查 M17）：由本地行身份推导确定性 GUID（MD5 前 16 字节）。
+        /// 同一本地行无论重传多少次，云端主键不变 => upsert 天然幂等。
+        /// </summary>
+        private static Guid DeterministicGuid(string userId, string kind, int localId, DateTime createdAt)
+        {
+            var raw = $"{userId}|{kind}|{localId}|{ToUtc(createdAt).Ticks}";
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
+            return new Guid(hash);
         }
 
         /// <summary>

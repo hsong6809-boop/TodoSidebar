@@ -320,6 +320,19 @@ namespace TodoSidebar.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Login error: {ex.Message}");
                 LogAuthDiag($"[auth] SignIn 异常: {ex.GetType().Name}: {ex.Message}");
+
+                // R20 修复（审查 sync-L1）：整体超时只是"放弃等待"，底层 SignIn 可能仍会
+                // 迟到完成并在 Gotrue 内部写入会话（自动刷新 token 的幽灵会话）。
+                // 尽力清掉，避免应用层认为登录失败而底层持有有效会话的状态不一致。
+                if (ex is TaskCanceledException or TimeoutException)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try { await SupabaseClientService.Client.Auth.SignOut(); }
+                        catch { /* 尽力清理 */ }
+                    });
+                }
+
                 return new AuthResult { Success = false, Error = FriendlyAuthError(ex) };
             }
         }
@@ -354,23 +367,34 @@ namespace TodoSidebar.Services
         }
         
         /// <summary>
-        /// 退出登录
+        /// 退出登录。
+        /// R19 修复（审查 H3）：本地清理（清用户态/删 session 文件）与服务端吊销解耦。
+        /// 原实现把整个流程包进一个 try/catch，SignOut 网络失败时静默返回——
+        /// 凭据残留、CurrentUser 未清、session 文件未删，下次启动自动恢复登录（"假登出"）。
+        /// 现在：无论服务端是否成功都完成本地清理；返回值指示服务端登出是否成功，供 UI 如实提示。
         /// </summary>
-        public async Task LogoutAsync()
+        /// <returns>服务端会话是否成功吊销</returns>
+        public async Task<bool> LogoutAsync()
         {
+            bool serverOk;
             try
             {
                 await WithAuthTimeout(() => SupabaseClientService.Client.Auth.SignOut());
-                CurrentUser = null;
-                FireLoginStateChanged(false);
-
-                // 删除本地 session 文件
-                DeleteSessionFile();
+                serverOk = true;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Logout error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Logout server sign-out error: {ex.Message}");
+                serverOk = false;
             }
+
+            // 本地清理不依赖网络结果：即使服务端吊销失败，也必须保证本机已退出登录
+            CurrentUser = null;
+            FireLoginStateChanged(false);
+
+            // 删除本地 session 文件
+            DeleteSessionFile();
+            return serverOk;
         }
         
         /// <summary>

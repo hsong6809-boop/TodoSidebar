@@ -164,6 +164,10 @@ namespace TodoSidebar
                 _dateTimeTimer.Stop();
                 _mouseCheckTimer.Stop();
                 StopFailSafeTimer(); // M31：兜底定时器一并清理
+                // R43 修复（审查 M1）：置顶保持计时器一并停止——原实现漏停，
+                // Tick 闭包捕获 this 导致每次关闭（如切换完整模式）泄漏整个窗口可视树，
+                // 且每 3 秒对已销毁 HWND 调一次无效 SetWindowPos
+                _topmostTimer?.Stop();
             };
         }
 
@@ -407,8 +411,10 @@ namespace TodoSidebar
         {
             if (PomodoroService.Instance.State is PomodoroState.Focus or PomodoroState.Paused)
             {
-                // 确认中断（避免误点丢 XP）
-                var result = MessageBox.Show("停止当前番茄将视为中断，不获得经验。确定停止吗？",
+                // 确认中断（避免误点丢 XP）。
+                // R45 修复（审查 L2）：设置 owner=this——Win32 MessageBox 不在 WPF 窗口树内，
+                // 无 owner 时弹出瞬间主窗口 Deactivated 会触发失焦自动收起，确认框背后动画消失
+                var result = MessageBox.Show(this, "停止当前番茄将视为中断，不获得经验。确定停止吗？",
                     "停止专注", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (result == MessageBoxResult.Yes)
                     PomodoroService.Instance.Stop(complete: false);
@@ -522,7 +528,8 @@ namespace TodoSidebar
         {
             try
             {
-                if (_isCollapsed) return;
+                // R44 修复（审查 M1 附带缺口）：收起态不再跳过重申——3px 触发条在收起态仍然可见、
+                // 是"贴边悬停展开"的唯一入口，若被其他置顶/全屏应用盖住，用户将永远无法唤出侧边栏。
                 var hwnd = new WindowInteropHelper(this).Handle;
                 if (hwnd == IntPtr.Zero) return;
                 SetWindowPos(hwnd, HwndTopmost, 0, 0, 0, 0,
@@ -559,7 +566,13 @@ namespace TodoSidebar
                 GetCursorPos(out var cursorPos);
                 var hwnd = new WindowInteropHelper(this).Handle;
                 GetWindowRect(hwnd, out var windowRect);
-                var triggerRight = windowRect.Left + TriggerHitWidth;
+                // R46 修复（审查 L4）：命中宽度按 DPI 缩放——TriggerHitWidth 是 DIP 设计值，
+                // GetCursorPos/GetWindowRect 返回物理像素，150% 缩放下 30px 只剩约 20 DIP 手感
+                double dpiScale = 1.0;
+                try { dpiScale = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX; }
+                catch { /* 取不到 DPI 时按 100% 处理 */ }
+                var hitWidthPx = (int)Math.Round(TriggerHitWidth * dpiScale);
+                var triggerRight = windowRect.Left + hitWidthPx;
 
                 if (cursorPos.X >= windowRect.Left && cursorPos.X <= triggerRight
                     && cursorPos.Y >= windowRect.Top && cursorPos.Y <= windowRect.Bottom)
@@ -669,8 +682,9 @@ namespace TodoSidebar
                 
                 if (result == MessageBoxResult.Yes)
                 {
-                    // 退出登录
-                    await AuthService.Instance.LogoutAsync();
+                    // R19 修复（审查 H3）：LogoutAsync 现在保证本地清理必定完成，
+                    // 返回值仅表示服务端吊销是否成功——失败也要继续登出流程，但如实提示
+                    var serverSignOutOk = await AuthService.Instance.LogoutAsync();
 
                     // 释放共享 ViewModel 并停止后台服务（通知/同步/定时器），避免登出后空转
                     App.StopBackgroundServices();
@@ -679,6 +693,12 @@ namespace TodoSidebar
                     var loginWindow = new LoginWindow();
                     loginWindow.Show();
                     Close();
+
+                    if (!serverSignOutOk)
+                    {
+                        MessageBox.Show("本机已退出登录，但服务器会话注销失败（网络原因）。\n如需确保其他设备安全，请稍后重新登录或修改密码。",
+                            "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1209,12 +1229,8 @@ namespace TodoSidebar
         #endregion
 
         // Win32 API
-        private const int HWND_TOPMOST = -1;
-        private const uint SWP_SHOWWINDOW = 0x0040;
-
-        [DllImport("user32.dll")]
-        private static extern bool SetWindowPos(IntPtr hWnd, int hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-
+        // R47 修复（审查 L5）：删除未被调用的 int 版 SetWindowPos P/Invoke 及其常量——
+        // 与上方 IntPtr 版并存属易误用死代码，后续维护者易拿 int 版配 SWP_SHOWWINDOW 造出抢焦点闪烁
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT lpPoint);
 

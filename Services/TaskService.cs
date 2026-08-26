@@ -29,14 +29,16 @@ namespace TodoSidebar.Services
             return _db.GetTodayCompletedDailyTasks();
         }
 
-        // 获取截止任务（未完成且未过期）
-        public List<TaskItem> GetDeadlineTasks()
+        // 获取截止任务（未完成且未过期）。
+        // R24 修复（审查 H6）：新增 includeOverdue 参数——通知服务需要包含已逾期任务，
+        // 否则「任务已过期」分支的数据源永远不含过期任务、成为死代码
+        public List<TaskItem> GetDeadlineTasks(bool includeOverdue = false)
         {
             var today = DateTime.Today;
-            return _db.GetTasks(TaskType.Deadline, completed: false)
-                .Where(t => t.Deadline == null || t.Deadline.Value.Date >= today)
-                .OrderBy(t => t.Deadline)
-                .ToList();
+            IEnumerable<TaskItem> query = _db.GetTasks(TaskType.Deadline, completed: false);
+            if (!includeOverdue)
+                query = query.Where(t => t.Deadline == null || t.Deadline.Value.Date >= today);
+            return query.OrderBy(t => t.Deadline).ToList();
         }
 
         // 获取当前任务：每日 + 未过期截止任务

@@ -19,6 +19,8 @@ order by c.relname;
 -- ========== 2. tasks 表兜底：建表（幂等）+ 开启 RLS + 策略 ==========
 -- M13 修复：tasks 表的建表语句此前不在仓库中，全新环境执行到 alter table 会报错中断，
 -- 后续 4 条策略全部不创建。此处按 SyncTask 模型补齐幂等建表语句。
+-- R52 修复（审查 M15）：补 deleted_at 列（v5.3 回收站）——客户端每次 upsert 都会序列化
+-- 该键，云端缺列时含软删除任务的批量上传会被 PostgREST 拒绝，删除永远无法跨设备同步。
 create table if not exists public.tasks (
     id            uuid primary key default gen_random_uuid(),
     user_id       text,
@@ -34,8 +36,13 @@ create table if not exists public.tasks (
     sort_order    integer not null default 0,
     subtasks_json text,
     updated_at    timestamptz not null default now(),
-    is_deleted    boolean not null default false
+    is_deleted    boolean not null default false,
+    -- 与 tasks_deleted_at_setup.sql 保持同类型（text，客户端发送 ISO 格式文本）
+    deleted_at    text
 );
+
+-- 存量环境补列（幂等；新环境建表已含该列时此句为无操作）
+alter table public.tasks add column if not exists deleted_at text;
 
 create index if not exists tasks_user_updated_idx on public.tasks (user_id, updated_at);
 

@@ -148,5 +148,53 @@ namespace TodoSidebar.Tests
             Assert.Equal(0, p.DueDate!.Value.Hour); // 未写时间 → 当天 0 点
             Assert.Null(p.Priority);
         }
+
+        // ===== R25/R27/R28/R30 回归测试（v5.3 审查修复）=====
+
+        [Fact]
+        public void Parse_InvalidDate_DoesNotFallBackToToday()
+        {
+            // R25（审查 H7）：不存在的日期不再静默回落到「今天」，DueDate 保持为空
+            var p = NaturalLanguageParser.Parse("4月31日 交房租");
+            Assert.False(p.HasDue);
+        }
+
+        [Fact]
+        public void Parse_LeapDayInvalidYear_DoesNotFallBackToToday()
+        {
+            // 平年 2月29日：解析目标年可能为闰年也可能不是——
+            // 只断言"要么正确解析、要么为空"，绝不允许回落到今天
+            var p = NaturalLanguageParser.Parse("2月30日 开会");
+            Assert.False(p.HasDue);
+        }
+
+        [Fact]
+        public void Parse_OneAndHalfHoursLater_Is90Minutes()
+        {
+            // R30（审查 L1）：「一个半小时后」= 1.5 小时，此前被算成 0.5 小时
+            var before = DateTime.Now.AddMinutes(88);
+            var after = DateTime.Now.AddMinutes(92);
+            var p = NaturalLanguageParser.Parse("一个半小时后 取快递");
+            Assert.Equal("取快递", p.Title);
+            Assert.True(p.HasDue);
+            Assert.InRange(p.DueDate!.Value, before, after);
+        }
+
+        [Fact]
+        public void Parse_InvalidTime_KeepsOriginalText()
+        {
+            // R28（审查 M4）：非法时间「25点」解析失败时保留原文、不从标题剥离
+            var p = NaturalLanguageParser.Parse("25点开会");
+            Assert.Contains("25点", p.Title);
+            Assert.False(p.HasDue);
+        }
+
+        [Fact]
+        public void Parse_ColonWithoutMinutes_NotATime()
+        {
+            // R29（审查 v5.x-L8）：裸冒号无分钟不当作时间，避免"版本15:新特性"被误剥离
+            var p = NaturalLanguageParser.Parse("版本15:新特性 说明");
+            Assert.Contains("15:新特性", p.Title);
+        }
     }
 }
