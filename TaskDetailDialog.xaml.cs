@@ -61,6 +61,14 @@ namespace TodoSidebar
             {
                 DeadlinePanel.Visibility = Visibility.Collapsed;
             }
+            else
+            {
+                // v5.4 重复规则编辑器（仅截止任务）
+                RecurrenceCombo.ItemsSource = RecurrenceRule.Options
+                    .Select(o => new KeyValuePair<string, string>(o.Value, o.Label))
+                    .ToList();
+                RecurrenceCombo.SelectedValue = RecurrenceRule.Normalize(task.Recurrence) ?? "";
+            }
 
             SubTasksItemsControl.ItemsSource = _subTasks;
             UpdateProgress();
@@ -186,6 +194,14 @@ namespace TodoSidebar
                     _task.Deadline = newDeadline;
                     _hasChanges = true;
                 }
+
+                // v5.4 保存重复规则（空串归一化为 null）
+                var selectedRecurrence = RecurrenceRule.Normalize(RecurrenceCombo.SelectedValue as string);
+                if (selectedRecurrence != _task.Recurrence)
+                {
+                    _task.Recurrence = selectedRecurrence;
+                    _hasChanges = true;
+                }
             }
 
             // 保存子任务
@@ -203,6 +219,12 @@ namespace TodoSidebar
         {
             DialogResult = false;
             Close();
+        }
+
+        /// <summary>v5.4：重复规则变化计入未保存状态。</summary>
+        private void RecurrenceCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_initialized) _hasChanges = true;
         }
 
         private void Header_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)

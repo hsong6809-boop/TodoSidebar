@@ -126,6 +126,15 @@ namespace TodoSidebar.Models
             }
             : "已删除";
 
+        /// <summary>v5.4 重复规则（仅截止任务）：daily/weekdays/weekly:N/monthly；null=不重复。</summary>
+        public string? Recurrence { get; set; }
+
+        /// <summary>是否设置了重复规则。</summary>
+        public bool HasRecurrence => !string.IsNullOrEmpty(Recurrence);
+
+        /// <summary>重复规则的中文标签（卡片展示用）。</summary>
+        public string RecurrenceLabel => RecurrenceRule.LabelOf(Recurrence);
+
         private string? _subTasksJson;
         public string? SubTasksJson
         {

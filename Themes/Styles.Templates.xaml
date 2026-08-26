@@ -185,6 +185,18 @@
                                    Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"
                                    Margin="8,0,0,0" TextTrimming="CharacterEllipsis"
                                    Visibility="{Binding TagsDisplay, Converter={StaticResource EmptyToVis}}"/>
+                        <!-- v5.4：重复任务标识，无规则时隐藏 -->
+                        <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+                                    ToolTip="{Binding RecurrenceLabel}">
+                            <controls:AppIcon Glyph="{x:Static controls:Icons.Sync}" FontSize="8.5"
+                                              Foreground="{DynamicResource ComboBrush}"
+                                              VerticalAlignment="Center"
+                                              Visibility="{Binding HasRecurrence, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="{Binding RecurrenceLabel}" FontSize="9" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource ComboBrush}" VerticalAlignment="Center"
+                                       Margin="3,0,0,0"
+                                       Visibility="{Binding HasRecurrence, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
 

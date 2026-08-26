@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
+using TodoSidebar.Models;
 
 namespace TodoSidebar.Services
 {
@@ -92,6 +93,9 @@ namespace TodoSidebar.Services
                     {
                         if (_notifiedTasks.Contains(task.Id))
                             continue;
+                        // v5.6：稍后提醒的静默期未到则跳过
+                        if (_snoozedUntil.TryGetValue(task.Id, out var until) && DateTime.Now < until)
+                            continue;
                     }
 
                     // V2：到期时刻 = 截止日 24 点（而非当日 0 点）
@@ -100,19 +104,19 @@ namespace TodoSidebar.Services
                     // 已过期
                     if (timeLeft.TotalMinutes <= 0)
                     {
-                        ShowNotification($"🔴 任务已过期", $"「{task.Title}」已经过期");
+                        ShowTaskNotification(task, $"🔴 任务已过期", $"「{task.Title}」已经过期");
                         lock (_notifiedLock) { _notifiedTasks.Add(task.Id); }
                     }
                     // 即将到期（1小时内）
                     else if (timeLeft.TotalHours <= 1)
                     {
-                        ShowNotification($"⏰ 任务即将到期", $"「{task.Title}」将在 {(int)timeLeft.TotalMinutes} 分钟后到期");
+                        ShowTaskNotification(task, $"⏰ 任务即将到期", $"「{task.Title}」将在 {(int)timeLeft.TotalMinutes} 分钟后到期");
                         lock (_notifiedLock) { _notifiedTasks.Add(task.Id); }
                     }
                     // 今天到期
                     else if (task.Deadline.Value.Date == DateTime.Today && timeLeft.TotalHours > 1)
                     {
-                        ShowNotification($"📅 今日到期任务", $"「{task.Title}」今天到期");
+                        ShowTaskNotification(task, $"📅 今日到期任务", $"「{task.Title}」今天到期");
                         lock (_notifiedLock) { _notifiedTasks.Add(task.Id); }
                     }
                 }
@@ -127,11 +131,44 @@ namespace TodoSidebar.Services
         {
             NotificationRequested?.Invoke(this, $"{title}\n{message}");
 
+            // v5.6：非任务类通知仍走应用内窗口
             Application.Current?.Dispatcher.Invoke(() =>
             {
                 var window = new NotificationWindow(title, message);
                 window.Show();
             });
+        }
+
+        /// <summary>
+        /// v5.6：任务类通知优先走交互式原生 Toast（完成/稍后按钮），
+        /// 失败（如 Win10 以下或通知服务异常）回退应用内窗口。
+        /// </summary>
+        public void ShowTaskNotification(TaskItem task, string title, string message)
+        {
+            NotificationRequested?.Invoke(this, $"{title}\n{message}");
+
+            if (ToastService.TrySendTaskToast(task.Id, title, message))
+                return;
+
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                var window = new NotificationWindow(title, message);
+                window.Show();
+            });
+        }
+
+        private readonly Dictionary<int, DateTime> _snoozedUntil = new();
+
+        /// <summary>
+        /// v5.6：稍后提醒——静默指定时长后允许再次通知（Toast 按钮触发）。
+        /// </summary>
+        public void Snooze(int taskId, TimeSpan duration)
+        {
+            lock (_notifiedLock)
+            {
+                _snoozedUntil[taskId] = DateTime.Now + duration;
+                _notifiedTasks.Remove(taskId);
+            }
         }
 
         public void ClearNotifiedTask(int taskId)

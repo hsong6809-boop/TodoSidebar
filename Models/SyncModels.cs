@@ -58,6 +58,10 @@ namespace TodoSidebar.Models
         /// <summary>v5.3 回收站：软删除时间（ISO 文本，展示参考；老客户端忽略）。</summary>
         [Column("deleted_at")]
         public string? DeletedAt { get; set; }
+
+        /// <summary>v5.4 重复规则：daily/weekdays/weekly:N/monthly；null=不重复（老客户端忽略）。</summary>
+        [Column("recurrence")]
+        public string? Recurrence { get; set; }
     }
 
     /// <summary>

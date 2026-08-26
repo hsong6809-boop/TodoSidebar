@@ -672,7 +672,25 @@ namespace TodoSidebar
                 MessageBox.Show($"打开统计失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-        
+
+        // ==================== v5.6 白噪音（侧边栏快捷开关） ====================
+
+        /// <summary>点击循环切换：停止 → 上次音源播放 → 停止；长按无操作。图标亮度指示播放态。</summary>
+        private void NoiseDock_Click(object sender, RoutedEventArgs e)
+        {
+            var sound = SoundService.Instance;
+            if (sound.IsPlaying)
+            {
+                sound.Stop();
+            }
+            else
+            {
+                var kind = sound.CurrentKind.Length > 0 ? sound.CurrentKind : "rain";
+                sound.Play(kind);
+            }
+            NoiseDockButton.Opacity = sound.IsPlaying ? 1.0 : 0.55;
+        }
+
         private async void LogoutButton_Click(object sender, RoutedEventArgs e)
         {
             try

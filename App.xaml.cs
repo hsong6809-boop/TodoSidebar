@@ -78,6 +78,11 @@ namespace TodoSidebar
         {
             base.OnStartup(e);
 
+            // v5.6：Toast 激活事件必须在最早期接管——从通知按钮冷启动时，
+            // Toolkit 会在订阅瞬间同步派发排队中的激活（完成/稍后提醒），
+            // 之后才进入单实例互斥；若放在互斥之后，激活会被第二实例退出吞掉
+            TodoSidebar.Services.ToastService.EnsureActivatedHandler();
+
             // R40 修复（审查 H5）：单实例保护。已有实例在运行时提示后退出，
             // 避免双开共享同一 SQLite 库/热键冲突
             _singleInstanceMutex = new Mutex(true, "Local\\TodoSidebar.SingleInstance", out var createdNew);
@@ -204,6 +209,13 @@ namespace TodoSidebar
                 };
                 _hotkeyService.NewTaskRequested += activateHandler;
                 _hotkeyService.SearchRequested += activateHandler;
+
+                // v5.4：Ctrl+Alt+Space 全局快速添加浮窗（Spotlight 式，重复按切换开关）
+                _hotkeyService.QuickAddRequested += (s, args) =>
+                {
+                    try { QuickAddWindow.Toggle(); }
+                    catch (Exception ex) { LogError("QuickAdd toggle error", ex); }
+                };
             }
             catch (Exception ex)
             {

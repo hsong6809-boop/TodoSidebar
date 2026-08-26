@@ -102,14 +102,19 @@ namespace TodoSidebar
             {
                 bool selected = string.Equals(_account.AvatarKind, item.Kind, StringComparison.OrdinalIgnoreCase);
 
+                // v5.5 等级解锁判定（当前使用中的不回收，仅锁"更换"动作）
+                bool unlocked = Services.UnlockService.IsAvatarUnlocked(item.Kind, _account.AvatarKind);
+                int required = Services.UnlockService.AvatarRequiredLevel(item.Kind);
+
                 var avatar = new Controls.AvatarView
                 {
                     Width = 40,
                     Height = 40,
                     Kind = item.Kind,
+                    Opacity = unlocked ? 1 : 0.4,
                     Margin = new Thickness(0, 0, 7, 7),
                     Cursor = Cursors.Hand,
-                    ToolTip = $"{item.Name} 头像"
+                    ToolTip = unlocked ? $"{item.Name} 头像" : $"{item.Name} · Lv.{required} 解锁"
                 };
 
                 var swatch = new Border
@@ -134,7 +139,16 @@ namespace TodoSidebar
         {
             if (_suppressSwatchRebuild) return;
             if (sender is FrameworkElement { Tag: string kind })
+            {
+                if (!Services.UnlockService.IsAvatarUnlocked(kind, _account.AvatarKind))
+                {
+                    MessageBox.Show(this,
+                        $"该头像需要等级达到 Lv.{Services.UnlockService.AvatarRequiredLevel(kind)} 后解锁。\n完成任务和番茄即可升级！",
+                        "尚未解锁", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 await _account.SetBuiltInAvatarAsync(kind);
+            }
         }
 
         // ==================== 自定义头像 ====================

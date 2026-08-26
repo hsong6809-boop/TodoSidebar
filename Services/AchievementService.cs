@@ -94,6 +94,10 @@ namespace TodoSidebar.Services
             if (_nightOwlCache != true)
                 _nightOwlCache = _db.HasXpLogMatchingTime("task_complete", t => t.Hour >= 23);
 
+            // v5.5 成就扩充：行为型统计（计数类，成本可控）
+            var lateNightCount = _db.GetXpLogCountMatchingTime("task_complete", t => t.Hour >= 23);
+            var earlyMorningCount = _db.GetXpLogCountMatchingTime("task_complete", t => t.Hour < 6);
+
             return new AchievementStats
             {
                 TaskCompleteCount = _db.GetXpLogCount("task_complete"),
@@ -108,8 +112,25 @@ namespace TodoSidebar.Services
                 ComboDays = growth.ComboDays,
                 Level = growth.Level,
                 HasEarlyBird = _earlyBirdCache == true,
-                HasNightOwl = _nightOwlCache == true
+                HasNightOwl = _nightOwlCache == true,
+                // v5.5 扩充指标
+                NlpUseCount = ReadCounter("NlpUsedCount"),
+                QuickAddUseCount = ReadCounter("QuickAddUsedCount"),
+                LateNightCompleteCount = lateNightCount,
+                EarlyMorningCompleteCount = earlyMorningCount,
+                WeekendCompleteCount = _db.GetXpLogWeekendCount("task_complete"),
+                ActiveDays = _db.GetDistinctDailyCompletionDays(),
+                TaggedTaskCount = _db.GetTaggedTaskCount(),
+                RecurringCompletedCount = _db.GetRecurringCompletedCount(),
+                TrashLifetimeCount = ReadCounter("TrashLifetimeCount"),
             };
+        }
+
+        /// <summary>v5.5：读取行为计数字段（Settings 键，缺省 0）。</summary>
+        private int ReadCounter(string key)
+        {
+            try { return int.TryParse(_db.GetSetting(key), out var v) ? v : 0; }
+            catch { return 0; }
         }
 
         // ==================== 徽章清单（首批 20 枚） ====================
@@ -144,7 +165,34 @@ namespace TodoSidebar.Services
 
             // 彩蛋
             new("early_bird", "早起鸟", "在早上 6 点前完成任务", s => s.HasEarlyBird, "🌅"),
-            new("night_owl", "夜猫子", "在深夜 23 点后完成任务", s => s.HasNightOwl, "🌙")
+            new("night_owl", "夜猫子", "在深夜 23 点后完成任务", s => s.HasNightOwl, "🌙"),
+
+            // ==================== v5.5 扩充（第二批 15 枚） ====================
+
+            // 任务量进阶
+            new("task_1000", "千锤百炼", "累计完成 1000 个任务", s => s.TaskCompleteCount >= 1000, "🎯"),
+            new("trash_10", "断舍离", "删除过 10 个任务（回收站见）", s => s.TrashLifetimeCount >= 10, "🗑️"),
+
+            // 录入行为
+            new("nlp_1", "一言即中", "首次使用自然语言快速录入", s => s.NlpUseCount >= 1, "✍️"),
+            new("nlp_50", "出口成章", "自然语言录入 50 次", s => s.NlpUseCount >= 50, "✍️"),
+            new("quickadd_25", "键步如飞", "全局浮窗快速添加 25 次", s => s.QuickAddUseCount >= 25, "⚡"),
+
+            // 连击与番茄进阶
+            new("combo_14", "双周坚持", "达成 14 天连击", s => s.BestComboDays >= 14, "🔥"),
+            new("pomo_200", "意志如钢", "累计完成 200 个番茄", s => s.PomodoroCompletedTotal >= 200, "🍅"),
+            new("pomo_5_day", "五连专注", "单日完成 5 个番茄", s => s.TodayPomodoro >= 5, "🍅"),
+
+            // 时段/日期行为
+            new("late_10", "星夜兼程", "深夜 23 点后完成 10 次", s => s.LateNightCompleteCount >= 10, "🌙"),
+            new("dawn_5", "破晓行者", "凌晨 6 点前完成 5 次", s => s.EarlyMorningCompleteCount >= 5, "🌅"),
+            new("weekend_8", "周末战士", "周末完成 8 个任务", s => s.WeekendCompleteCount >= 8, "🏖️"),
+            new("active_30", "月满则盈", "完成记录覆盖 30 个不同日子", s => s.ActiveDays >= 30, "📅"),
+
+            // 玩法探索
+            new("level_20", "登峰造极", "等级达到 Lv.20", s => s.Level >= 20, "⭐"),
+            new("tag_20", "标签控", "20 个任务打上了标签", s => s.TaggedTaskCount >= 20, "🏷️"),
+            new("recur_5", "循环启程", "完成 5 个重复任务实例", s => s.RecurringCompletedCount >= 5, "🔁"),
         };
     }
 
@@ -163,6 +211,17 @@ namespace TodoSidebar.Services
         public int Level;
         public bool HasEarlyBird;
         public bool HasNightOwl;
+
+        // v5.5 扩充指标
+        public int NlpUseCount;
+        public int QuickAddUseCount;
+        public int LateNightCompleteCount;
+        public int EarlyMorningCompleteCount;
+        public int WeekendCompleteCount;
+        public int ActiveDays;
+        public int TaggedTaskCount;
+        public int RecurringCompletedCount;
+        public int TrashLifetimeCount;
 
         public bool TodayFullClear => DailyTaskCount > 0 && TodayCompletedDaily >= DailyTaskCount;
     }

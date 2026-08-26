@@ -110,6 +110,19 @@
                                         SelectedDateFormat="Short"/>
                         </StackPanel>
                     </Grid>
+
+                    <!-- v5.4 重复规则（仅截止任务显示） -->
+                    <StackPanel x:Name="RecurrencePanel" Margin="0,0,0,4">
+                        <TextBlock Text="重复"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Margin="0,0,0,4"/>
+                        <ComboBox x:Name="RecurrenceCombo"
+                                  FontSize="12" Width="220" HorizontalAlignment="Left"
+                                  DisplayMemberPath="Value"
+                                  SelectedValuePath="Key"
+                                  SelectionChanged="RecurrenceCombo_SelectionChanged"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

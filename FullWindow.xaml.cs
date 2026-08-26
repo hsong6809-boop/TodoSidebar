@@ -306,6 +306,11 @@ namespace TodoSidebar
             // 会话完成（含中断）会改变今日统计，先失效缓存再刷新
             InvalidateTodayStatsCache();
             UpdateFocusPanel();
+
+            // v5.6：会话结束自动淡出白噪音
+            if (SoundService.Instance.IsPlaying)
+                SoundService.Instance.Stop();
+
             if (!e.Completed) return;
 
             var msg = e.TaskId.HasValue ? "专注完成 +10 XP" : "专注完成 +5 XP";
@@ -739,6 +744,7 @@ namespace TodoSidebar
             {
                 UpdateFocusPanel();
                 LoadFocusTasks();
+                InitNoiseControls();
             }
             if (page == "Stats")
             {
@@ -885,6 +891,16 @@ namespace TodoSidebar
 
         // ==================== v5.3 年度热力图 ====================
 
+        /// <summary>v5.5：打开年度报告窗口（默认展示热力图当前年份）。</summary>
+        private void YearReport_Click(object sender, RoutedEventArgs e)
+        {
+            var year = DataContext is MainViewModel vm
+                ? vm.StatisticsViewModel.HeatmapYear
+                : DateTime.Today.Year;
+            var win = new YearReportWindow(year) { Owner = this };
+            win.ShowDialog();
+        }
+
         private void HeatmapPrevYear_Click(object sender, RoutedEventArgs e)
         {
             if (DataContext is MainViewModel vm)
@@ -898,7 +914,45 @@ namespace TodoSidebar
                 vm.StatisticsViewModel.LoadHeatmap(vm.StatisticsViewModel.HeatmapYear + 1);
         }
 
-        /// <summary>热力图横向滚动区：滚轮纵向输入转为横向翻页（不劫持页面滚动）。</summary>
+        // ==================== v5.6 番茄白噪音 ====================
+
+        /// <summary>专注页加载时同步白噪音按钮态与音量滑杆。</summary>
+        private void InitNoiseControls()
+        {
+            var sound = SoundService.Instance;
+            NoiseVolumeSlider.Value = sound.Volume * 100;
+            UpdateNoiseChipStates();
+        }
+
+        private void NoiseKind_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not System.Windows.Controls.Button { Tag: string kind }) return;
+            SoundService.Instance.Toggle(kind);
+            UpdateNoiseChipStates();
+        }
+
+        private void NoiseVolume_ValueChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (NoiseVolumeSlider == null) return; // XAML 初始化期间触发
+            SoundService.Instance.SetVolume(NoiseVolumeSlider.Value / 100.0);
+        }
+
+        private void UpdateNoiseChipStates()
+        {
+            var sound = SoundService.Instance;
+            foreach (var (btn, kind) in new[]
+            {
+                (NoiseRainBtn, "rain"), (NoiseStreamBtn, "stream"),
+                (NoiseFireBtn, "fire"), (NoiseWhiteBtn, "white"),
+            })
+            {
+                btn.Opacity = sound.IsPlaying && sound.CurrentKind == kind ? 1.0 : 0.55;
+            }
+        }
+
+        /// <summary>
+        /// v5.3 年度热力图：滚轮纵向输入转为横向翻页（不劫持页面滚动）。
+        /// </summary>
         private void HeatmapScroll_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
         {
             if (sender is System.Windows.Controls.ScrollViewer sv && sv.ScrollableWidth > 0)

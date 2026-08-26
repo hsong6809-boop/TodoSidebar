@@ -415,6 +415,17 @@ namespace TodoSidebar.ViewModels
             PendingTags = null;
         }
 
+        /// <summary>v5.5：自然语言解析确实贡献了内容时计入成就统计。</summary>
+        private void TrackNlpUsage(ParsedTask parsed, string raw)
+        {
+            bool contributed = parsed.Title.Length > 0 && parsed.Title != raw.Trim()
+                || parsed.DueDate.HasValue
+                || parsed.Priority.HasValue
+                || parsed.Tags.Count > 0;
+            if (!contributed) return;
+            try { _dbService.IncrementSettingCounter("NlpUsedCount"); } catch { /* 统计失败不影响主流程 */ }
+        }
+
         // ========== 任务 CRUD 命令 ==========
 
         [RelayCommand]
@@ -423,6 +434,7 @@ namespace TodoSidebar.ViewModels
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
 
             // V5.1：解析出的干净标题/标签/优先级在落库时生效（每日任务不含截止时间）
+            var raw = NewTaskTitle;
             var parsed = NaturalLanguageParser.Parse(NewTaskTitle);
             if (parsed.Title.Length > 0) NewTaskTitle = parsed.Title;
             if (parsed.Tags.Count > 0) PendingTags = parsed.Tags;
@@ -430,6 +442,7 @@ namespace TodoSidebar.ViewModels
 
             var task = _taskService.AddTask(NewTaskTitle, TaskType.Daily, null, priority);
             ApplyPendingTags(task);
+            TrackNlpUsage(parsed, raw);
             NewTaskTitle = string.Empty;
             NewTaskPriority = TaskPriority.Medium;
             LoadDailyTasks();
@@ -442,6 +455,7 @@ namespace TodoSidebar.ViewModels
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
 
             // V5.1：把 "明天下午3点 交周报" 解析出的时间/优先级/标签并入提交
+            var raw = NewTaskTitle;
             var parsed = NaturalLanguageParser.Parse(NewTaskTitle);
             var deadline = NewTaskDeadline ?? parsed.DueDate;
 
@@ -460,6 +474,7 @@ namespace TodoSidebar.ViewModels
 
             var task = _taskService.AddTask(NewTaskTitle, TaskType.Deadline, deadline, priority);
             ApplyPendingTags(task);
+            TrackNlpUsage(parsed, raw);
             NewTaskTitle = string.Empty;
             NewTaskDeadline = null;
             NewTaskPriority = TaskPriority.Medium;
@@ -484,6 +499,7 @@ namespace TodoSidebar.ViewModels
             if (task == null) return;
             var title = task.Title;
             _taskService.DeleteTask(task.Id);
+            try { _dbService.IncrementSettingCounter("TrashLifetimeCount"); } catch { /* 统计失败不影响主流程 */ }
             LoadData();
             ShowUndoBar(task.Id, title);
         }

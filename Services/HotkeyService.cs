@@ -26,6 +26,7 @@ namespace TodoSidebar.Services
         private const int HOTKEY_TOGGLE_SIDEBAR = 1;
         private const int HOTKEY_NEW_TASK = 2;
         private const int HOTKEY_SEARCH = 3;
+        private const int HOTKEY_QUICK_ADD = 4;
 
         private IntPtr _windowHandle;
         private HwndSource? _source;
@@ -44,6 +45,7 @@ namespace TodoSidebar.Services
         public event EventHandler? ToggleSidebarRequested;
         public event EventHandler? NewTaskRequested;
         public event EventHandler? SearchRequested;
+        public event EventHandler? QuickAddRequested;
 
         public void RegisterHotkeys(Window window)
         {
@@ -80,6 +82,13 @@ namespace TodoSidebar.Services
                 allSuccess = false;
             }
 
+            // v5.4: Ctrl+Alt+Space 快速添加浮窗（Spotlight 式全局录入）
+            if (!RegisterHotKey(_windowHandle, HOTKEY_QUICK_ADD, MOD_CONTROL | MOD_ALT, 0x20))
+            {
+                System.Diagnostics.Debug.WriteLine("[HotkeyService] Failed to register Ctrl+Alt+Space");
+                allSuccess = false;
+            }
+
             // M29：按实际注册结果置位，全部成功才视为已注册；失败情况记录到 LastRegistrationFailed
             _isRegistered = allSuccess;
             LastRegistrationFailed = !allSuccess;
@@ -97,6 +106,7 @@ namespace TodoSidebar.Services
             UnregisterHotKey(_windowHandle, HOTKEY_TOGGLE_SIDEBAR);
             UnregisterHotKey(_windowHandle, HOTKEY_NEW_TASK);
             UnregisterHotKey(_windowHandle, HOTKEY_SEARCH);
+            UnregisterHotKey(_windowHandle, HOTKEY_QUICK_ADD);
 
             _source?.RemoveHook(HwndHook);
             _isRegistered = false;
@@ -129,6 +139,11 @@ namespace TodoSidebar.Services
 
                     case HOTKEY_SEARCH:
                         SearchRequested?.Invoke(this, EventArgs.Empty);
+                        handled = true;
+                        break;
+
+                    case HOTKEY_QUICK_ADD:
+                        QuickAddRequested?.Invoke(this, EventArgs.Empty);
                         handled = true;
                         break;
                 }

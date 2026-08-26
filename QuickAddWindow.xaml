@@ -1,0 +1,64 @@
+<Window x:Class="TodoSidebar.QuickAddWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:TodoSidebar.Controls"
+        Title="快速添加"
+        Width="580"
+        SizeToContent="Height"
+        MaxWidth="720"
+        WindowStartupLocation="Manual"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Deactivated="Window_Deactivated">
+
+    <Border Background="{DynamicResource GlassBrush}"
+            CornerRadius="16"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28" ShadowDepth="5" Opacity="0.3"/>
+        </Border.Effect>
+
+        <StackPanel Margin="18,16,18,12">
+            <!-- 输入行 -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Width="36" Height="36" CornerRadius="10"
+                        Background="{DynamicResource AccentSoftBrush}" VerticalAlignment="Center">
+                    <controls:AppIcon x:Name="LeadIcon" Glyph="{x:Static controls:Icons.Add}"
+                                      FontSize="15" Foreground="{DynamicResource AccentBrush}"/>
+                </Border>
+                <TextBox x:Name="InputBox" Grid.Column="1"
+                         Style="{StaticResource GlassTextBox}"
+                         Margin="11,0,0,0" FontSize="16" Padding="4,7"
+                         controls:Placeholder.Text="记一件事… 支持「明天下午3点 交周报 #工作 紧急」"
+                         TextChanged="InputBox_TextChanged"
+                         KeyDown="InputBox_KeyDown"/>
+            </Grid>
+
+            <!-- 解析预览 -->
+            <TextBlock x:Name="PreviewText"
+                       FontSize="11.5" FontWeight="SemiBold"
+                       Foreground="{DynamicResource AccentBrush}"
+                       TextTrimming="CharacterEllipsis"
+                       Margin="47,9,0,0"
+                       Visibility="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource EmptyToVis}}"/>
+
+            <!-- 底部提示 -->
+            <Grid Margin="47,10,0,0">
+                <TextBlock FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}"
+                           VerticalAlignment="Center">
+                    <Run Text="Enter"/><Run Text=" 落库　·　"/><Run Text="Esc"/><Run Text=" 关闭"/>
+                </TextBlock>
+                <TextBlock x:Name="StatusText" HorizontalAlignment="Right" FontSize="11"
+                           FontWeight="SemiBold" Foreground="{DynamicResource SuccessBrush}"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</Window>

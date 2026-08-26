@@ -62,7 +62,7 @@ namespace TodoSidebar
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 ReduceMotion 失败: {ex.Message}"); }
         }
 
-        /// <summary>构建强调色色板（选中项带主色描边环）。</summary>
+        /// <summary>构建强调色色板（选中项带主色描边环；v5.5 未解锁项置灰+锁标识）。</summary>
         private void BuildAccentSwatches()
         {
             if (AccentSwatchPanel == null) return;
@@ -73,12 +73,22 @@ namespace TodoSidebar
                 var color = Services.ThemeManager.GetAccentBase(palette.Name);
                 bool selected = string.Equals(_themeManager.CurrentAccent, palette.Name, StringComparison.OrdinalIgnoreCase);
 
+                // v5.5 等级解锁判定（当前已选中的不回收，仅锁"更换"动作）
+                bool unlocked = Services.UnlockService.IsAccentUnlocked(palette.Name, _themeManager.CurrentAccent);
+                int required = Services.UnlockService.AccentRequiredLevel(palette.Name);
+
                 var dot = new System.Windows.Shapes.Ellipse
                 {
                     Width = 20,
                     Height = 20,
-                    Fill = new System.Windows.Media.SolidColorBrush(color)
+                    Fill = new System.Windows.Media.SolidColorBrush(color),
+                    Opacity = unlocked ? 1 : 0.35
                 };
+
+                string tooltip = unlocked
+                    ? $"{palette.Name} 强调色"
+                    : $"{palette.Name} · Lv.{required} 解锁";
+                if (selected) tooltip += "（使用中）";
 
                 var swatch = new Border
                 {
@@ -92,11 +102,19 @@ namespace TodoSidebar
                     Child = dot,
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Margin = new Thickness(0, 0, 8, 4),
-                    ToolTip = $"{palette.Name} 强调色"
+                    ToolTip = tooltip,
+                    Opacity = unlocked ? 1 : 0.75
                 };
                 var name = palette.Name;
                 swatch.MouseLeftButtonDown += (s, e) =>
                 {
+                    if (!Services.UnlockService.IsAccentUnlocked(name, _themeManager.CurrentAccent))
+                    {
+                        MessageBox.Show(this,
+                            $"「{name}」强调色需要等级达到 Lv.{Services.UnlockService.AccentRequiredLevel(name)} 后解锁。\n完成任务和番茄即可升级！",
+                            "尚未解锁", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
                     _themeManager.CurrentAccent = name;
                     BuildAccentSwatches();
                 };

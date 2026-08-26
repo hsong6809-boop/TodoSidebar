@@ -90,11 +90,48 @@ namespace TodoSidebar.Services
                     task.CompletedAt = DateTime.Now;
                     _db.UpdateTask(task);
                     RewardTaskComplete(task);
+
+                    // v5.4 重复任务：按规则生成下一期实例（新 Id，独立统计历史）
+                    SpawnNextRecurrence(task);
                 }
             }
             catch (Exception ex)
             {
                 _messageService.ShowError($"完成任务失败: {ex.Message}", "错误");
+            }
+        }
+
+        /// <summary>
+        /// v5.4 重复任务：截止任务完成后按规则派生下一期。
+        /// 失败仅记日志——下一期没生成不应让"本次完成"的奖励/状态回滚。
+        /// </summary>
+        private void SpawnNextRecurrence(TaskItem completedTask)
+        {
+            try
+            {
+                if (!completedTask.HasRecurrence) return;
+
+                var baseDate = completedTask.Deadline ?? DateTime.Today;
+                var next = RecurrenceRule.NextDeadline(completedTask.Recurrence, baseDate);
+                if (next == null) return;
+
+                var nextTask = new TaskItem
+                {
+                    Title = completedTask.Title,
+                    Type = TaskType.Deadline,
+                    Priority = completedTask.Priority,
+                    Deadline = next,
+                    Description = completedTask.Description,
+                    Tags = completedTask.Tags,
+                    SortOrder = completedTask.SortOrder,
+                    EstimatedMinutes = completedTask.EstimatedMinutes,
+                    Recurrence = completedTask.Recurrence
+                };
+                nextTask.Id = _db.InsertTask(nextTask);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SpawnNextRecurrence error: {ex.Message}");
             }
         }
 

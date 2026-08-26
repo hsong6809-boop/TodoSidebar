@@ -370,7 +370,9 @@ namespace TodoSidebar.Services
                 // S7 修复：本地编辑时间戳（UTC），用于同步冲突时与云端 UpdatedAt 做真正的 LWW 比较
                 { "LocalUpdatedAt", "TEXT" },
                 // v5.3 回收站：软删除时间戳（本地时间 O 格式），30 天自动清除依据
-                { "DeletedAt", "TEXT" }
+                { "DeletedAt", "TEXT" },
+                // v5.4 重复任务：重复规则编码（仅截止任务语义）
+                { "Recurrence", "TEXT" }
             };
 
             foreach (var column in columnsToCheck)
@@ -407,8 +409,8 @@ namespace TodoSidebar.Services
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, IsDirty, LocalUpdatedAt)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, 1, @localUpdatedAt);
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, IsDirty, LocalUpdatedAt)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, 1, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
             cmd.Parameters.AddWithValue("@title", task.Title);
@@ -423,6 +425,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -435,8 +438,8 @@ namespace TodoSidebar.Services
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt);
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, Recurrence, LocalUpdatedAt)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @recurrence, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
             cmd.Parameters.AddWithValue("@title", task.Title);
@@ -458,6 +461,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
             // R12 修复（审查 M2）：导入路径同样保留软删时间，避免回收站清理守卫永不命中
             cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
@@ -478,6 +482,7 @@ namespace TodoSidebar.Services
                     EstimatedMinutes = @estimatedMinutes,
                     ActualMinutes = @actualMinutes,
                     SubTasksJson = @subTasksJson,
+                    Recurrence = @recurrence,
                     IsDirty = 1,
                     LocalUpdatedAt = @localUpdatedAt
                 WHERE Id = @id
@@ -494,6 +499,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         });
@@ -811,7 +817,8 @@ namespace TodoSidebar.Services
                 LastSyncedAt = ReadDateTime(reader, "LastSyncedAt"),
                 IsDeleted = reader.IsDBNull(reader.GetOrdinal("IsDeleted")) ? false : reader.GetInt32(reader.GetOrdinal("IsDeleted")) == 1,
                 LocalUpdatedAt = ReadDateTime(reader, "LocalUpdatedAt"),
-                DeletedAt = ReadDateTime(reader, "DeletedAt")
+                DeletedAt = ReadDateTime(reader, "DeletedAt"),
+                Recurrence = reader.IsDBNull(reader.GetOrdinal("Recurrence")) ? null : reader.GetString(reader.GetOrdinal("Recurrence"))
             };
         }
 
@@ -843,6 +850,18 @@ namespace TodoSidebar.Services
         // ==================== 设置 ====================
 
         public string? GetSetting(string key) => ExecuteLocked(() => GetSettingCore(key));
+
+        /// <summary>
+        /// v5.5：原子递增 Settings 中的整数计数器（成就行为统计用）。
+        /// 键不存在视为 0；原值非整数时重置为 1。
+        /// </summary>
+        public int IncrementSettingCounter(string key) => ExecuteLocked(() =>
+        {
+            var current = int.TryParse(GetSettingCore(key), out var v) ? v : 0;
+            var next = current + 1;
+            SetSettingCore(key, next.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return next;
+        });
 
         /// <summary>无锁版设置读取（供已持有 _dbLock 的内部方法复用）</summary>
         private string? GetSettingCore(string key)
@@ -1282,6 +1301,7 @@ namespace TodoSidebar.Services
                             Tags = @tags,
                             SortOrder = @sortOrder,
                             SubTasksJson = @subTasksJson,
+                            Recurrence = @recurrence,
                             IsDeleted = @isDeleted,
                             DeletedAt = @deletedAt,
                             IsDirty = 0,
@@ -1300,6 +1320,7 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
@@ -1312,8 +1333,8 @@ namespace TodoSidebar.Services
                     // 插入新任务
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @syncId, 0, @syncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @recurrence, @syncId, 0, @syncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -1324,6 +1345,7 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
@@ -1373,8 +1395,8 @@ namespace TodoSidebar.Services
                     using var cmd = _connection!.CreateCommand();
                     cmd.Transaction = transaction;
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Id, Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                        VALUES (@id, @title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
+                        INSERT INTO Tasks (Id, Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@id, @title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@id", task.Id);
                     cmd.Parameters.AddWithValue("@title", task.Title);
@@ -1396,6 +1418,7 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     // R12 修复（审查 M2）：备份恢复路径同样保留软删时间
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                 }
@@ -1661,6 +1684,24 @@ namespace TodoSidebar.Services
         });
 
         /// <summary>
+        /// v5.5 年度报告：指定年份（按 Date 前缀）完成的番茄数与专注总分钟数。
+        /// </summary>
+        public (int completed, int minutes) GetPomodoroYearSummary(int year) => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                SELECT COALESCE(SUM(CASE WHEN Completed = 1 THEN 1 ELSE 0 END), 0),
+                       COALESCE(SUM(CASE WHEN Completed = 1 THEN DurationMinutes ELSE 0 END), 0)
+                FROM PomodoroSession WHERE substr(Date, 1, 4) = @yearPrefix
+            ";
+            cmd.Parameters.AddWithValue("@yearPrefix", year.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            using var reader = cmd.ExecuteReader();
+            if (reader.Read())
+                return (Convert.ToInt32(reader.GetInt64(0)), Convert.ToInt32(reader.GetInt64(1)));
+            return (0, 0);
+        });
+
+        /// <summary>
         /// 获取指定日期专注总分钟数（仅计完成的会话）。
         /// </summary>
         public int GetFocusMinutesByDate(string date) => ExecuteLocked(() =>
@@ -1751,6 +1792,67 @@ namespace TodoSidebar.Services
                 }
             }
             return false;
+        });
+
+        // ==================== v5.5 成就扩充统计 ====================
+
+        /// <summary>v5.5：指定来源且本地时间满足条件的 XP 流水条数（如深夜完成 10 次）。</summary>
+        public int GetXpLogCountMatchingTime(string source, Func<DateTime, bool> predicate) => ExecuteLocked(() =>
+        {
+            int count = 0;
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT CreatedAt FROM XpLog WHERE Source = @source";
+            cmd.Parameters.AddWithValue("@source", source);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var raw = reader.GetString(0);
+                if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var utc))
+                {
+                    if (predicate(utc.ToLocalTime())) count++;
+                }
+            }
+            return count;
+        });
+
+        /// <summary>v5.5：指定来源在周末（周六/周日，本地时区）完成的条数。</summary>
+        public int GetXpLogWeekendCount(string source)
+            => GetXpLogCountMatchingTime(source, t => t.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday);
+
+        /// <summary>v5.5：有完成记录的不同日期天数（热力图活跃天数口径）。</summary>
+        public int GetDistinctDailyCompletionDays() => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                SELECT COUNT(DISTINCT d.Date) FROM DailyTaskCompletion d
+                INNER JOIN Tasks t ON t.Id = d.TaskId AND t.IsDeleted = 0
+            ";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
+        /// <summary>v5.4/v5.5：带标签的存活任务数。</summary>
+        public int GetTaggedTaskCount() => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDeleted = 0 AND Tags IS NOT NULL AND Tags != ''";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
+        /// <summary>v5.4/v5.5：已完成过至少一次的重复任务实例数。</summary>
+        public int GetRecurringCompletedCount() => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDeleted = 0 AND Recurrence IS NOT NULL AND Recurrence != '' AND IsCompleted = 1";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
+        /// <summary>v5.3/v5.5：回收站中的任务数（含未过期）。</summary>
+        public int GetSoftDeletedTaskCount() => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDeleted = 1";
+            return Convert.ToInt32(cmd.ExecuteScalar());
         });
 
         /// <summary>

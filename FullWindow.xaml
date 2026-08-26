@@ -731,7 +731,9 @@
                                     <Grid>
                                         <TextBlock Text="年度热力图" FontSize="{DynamicResource FontSizeBody}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Content="‹" Style="{StaticResource SecondaryButton}" Padding="8,2"
+                                            <Button Content="年度报告" Style="{StaticResource SecondaryButton}" Padding="9,2"
+                                                    Click="YearReport_Click" ToolTip="生成可保存分享的年度报告卡"/>
+                                            <Button Content="‹" Style="{StaticResource SecondaryButton}" Padding="8,2" Margin="7,0,0,0"
                                                     Click="HeatmapPrevYear_Click" ToolTip="上一年"/>
                                             <TextBlock Text="{Binding StatisticsViewModel.HeatmapYear}"
                                                        FontSize="12.5" FontWeight="Bold"
@@ -1018,6 +1020,23 @@
                                 </StackPanel>
                                 <TextBlock Text="Space 开始 / 暂停 · Esc 停止 · 中断不计经验"
                                            FontSize="9.5" Foreground="#33415E" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+
+                                <!-- v5.6 白噪音 -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
+                                    <TextBlock Text="白噪音" FontSize="10.5" Foreground="#64748B"
+                                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <Button x:Name="NoiseRainBtn" Content="雨声" Click="NoiseKind_Click" Tag="rain"
+                                            Style="{StaticResource SecondaryButton}" Padding="10,4"/>
+                                    <Button x:Name="NoiseStreamBtn" Content="溪流" Click="NoiseKind_Click" Tag="stream"
+                                            Style="{StaticResource SecondaryButton}" Padding="10,4" Margin="6,0,0,0"/>
+                                    <Button x:Name="NoiseFireBtn" Content="篝火" Click="NoiseKind_Click" Tag="fire"
+                                            Style="{StaticResource SecondaryButton}" Padding="10,4" Margin="6,0,0,0"/>
+                                    <Button x:Name="NoiseWhiteBtn" Content="白噪" Click="NoiseKind_Click" Tag="white"
+                                            Style="{StaticResource SecondaryButton}" Padding="10,4" Margin="6,0,0,0"/>
+                                    <Slider x:Name="NoiseVolumeSlider" Width="90" Minimum="5" Maximum="100"
+                                            ValueChanged="NoiseVolume_ValueChanged"
+                                            VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- 底部统计条 -->

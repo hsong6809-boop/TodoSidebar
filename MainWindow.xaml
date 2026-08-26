@@ -707,6 +707,10 @@
                                     Command="{Binding SyncViewModel.UploadCommand}" ToolTip="上传到云端" Margin="2,0,0,0">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.Upload}" FontSize="12"/>
                             </Button>
+                            <Button x:Name="NoiseDockButton" Style="{StaticResource DockIconButton}"
+                                    Click="NoiseDock_Click" ToolTip="白噪音" Margin="2,0,0,0" Opacity="0.55">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.PlayCircle}" FontSize="12"/>
+                            </Button>
                             <Button Style="{StaticResource DockIconButton}" Click="LogoutButton_Click" ToolTip="退出登录" Margin="2,0,0,0">
                                 <controls:AppIcon Glyph="{x:Static controls:Icons.SignOut}" FontSize="12"/>
                             </Button>

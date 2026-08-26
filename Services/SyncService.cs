@@ -393,7 +393,8 @@ namespace TodoSidebar.Services
                         // 保证旧时间戳的行最终仍会被其他设备拉到而不会永久漏同步。
                         UpdatedAt = task.LocalUpdatedAt.HasValue ? ToUtc(task.LocalUpdatedAt.Value) : DateTime.UtcNow,
                         IsDeleted = task.IsDeleted,
-                        DeletedAt = task.DeletedAt?.ToString("O")
+                        DeletedAt = task.DeletedAt?.ToString("O"),
+                        Recurrence = RecurrenceRule.Normalize(task.Recurrence)
                     };
 
                     syncTasks.Add(syncTask);
@@ -538,6 +539,7 @@ namespace TodoSidebar.Services
                             SubTasksJson = remoteTask.SubtasksJson,
                             IsDeleted = remoteTask.IsDeleted,
                             DeletedAt = ParseRemoteDeletedAt(remoteTask.DeletedAt),
+                            Recurrence = RecurrenceRule.Normalize(remoteTask.Recurrence),
                             IsDirty = false,
                             LastSyncedAt = DateTime.UtcNow  // 与数据库 LastSyncedAt 存储格式（UTC）一致
                         };

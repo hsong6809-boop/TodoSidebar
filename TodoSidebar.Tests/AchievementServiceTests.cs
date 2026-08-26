@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using FluentAssertions;
 using Xunit;
 using TodoSidebar.Services;
@@ -41,9 +42,17 @@ namespace TodoSidebar.Tests
         }
 
         [Fact]
-        public void Definitions_ShouldContainTwentyBadges()
+        public void Definitions_ShouldContainThirtyFiveBadges()
         {
-            AchievementService.Instance.GetDefinitions().Count.Should().Be(20);
+            // v5.5 扩充：首批 20 枚 + 第二批 15 枚
+            AchievementService.Instance.GetDefinitions().Count.Should().Be(35);
+        }
+
+        [Fact]
+        public void Definitions_ShouldHaveUniqueIds()
+        {
+            var ids = AchievementService.Instance.GetDefinitions().Select(d => d.Id).ToList();
+            ids.Count.Should().Be(ids.Distinct().Count(), "徽章 Id 必须唯一");
         }
     }
 }
