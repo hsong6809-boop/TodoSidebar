@@ -6,7 +6,17 @@ const int SampleRate = 22050;
 const int Seconds = 12;
 const double CrossfadeSeconds = 0.8;
 
-string outDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "Assets", "Audio");
+// 锚定仓库根：从输出目录逐级向上找到包含主工程文件的目录
+static string FindRepoRoot()
+{
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    while (dir != null && !File.Exists(Path.Combine(dir.FullName, "TodoSidebar.csproj")))
+        dir = dir.Parent;
+    if (dir == null) throw new InvalidOperationException("未找到 TodoSidebar.csproj，无法定位仓库根");
+    return dir.FullName;
+}
+
+string outDir = Path.Combine(FindRepoRoot(), "Assets", "Audio");
 Directory.CreateDirectory(outDir);
 
 WriteWav(Path.GetFullPath(Path.Combine(outDir, "rain.wav")), GenerateRain());
@@ -156,7 +166,11 @@ static void WriteWav(string path, double[] samples)
     bw.Write(byteCount);
 
     foreach (var s in samples)
-        bw.Write((short)Math.Clamp(s, -1, 1) is var clamped ? (short)(clamped * short.MaxValue) : (short)0);
+    {
+        // 先钳位再放大到 PCM16 满量程（原写法先截断成 short 会把 (-1,1) 变成全零静音）
+        var clamped = Math.Clamp(s, -1.0, 1.0);
+        bw.Write((short)Math.Round(clamped * short.MaxValue));
+    }
 
     bw.Flush();
     Console.WriteLine($"{Path.GetFileName(path)}: {samples.Length} samples, {fs.Length / 1024}KB");

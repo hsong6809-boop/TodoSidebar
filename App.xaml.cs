@@ -58,6 +58,65 @@ namespace TodoSidebar
             {
                 LogError("AttachHotkeys error", ex);
             }
+
+            // v5.6 审查修复：热键事件处理器必须在首次 Attach 时接线——
+            // 原实现只在 OnStartup 的"已登录"分支订阅；未登录启动的用户经登录窗
+            // 进入后热键已注册却没有任何监听者，Ctrl+Alt+Space/T/N/F 全部静默失效
+            WireHotkeyHandlers();
+        }
+
+        private static bool _hotkeyHandlersWired;
+
+        /// <summary>幂等接线全部热键事件处理器（仅订阅一次，重复 Attach 不叠加）。</summary>
+        private static void WireHotkeyHandlers()
+        {
+            if (_hotkeyHandlersWired || _hotkeyService == null) return;
+            _hotkeyHandlersWired = true;
+
+            _hotkeyService.ToggleSidebarRequested += (s, args) =>
+            {
+                try
+                {
+                    // R41 修复（审查 H4）：读取静态"当前主窗口"引用而非闭包捕获的启动窗口——
+                    // 登出重登后旧闭包引用指向已销毁窗口，会误判模式并可能开出第二个主窗口
+                    var currentMain = _currentMainWindow;
+                    if (currentMain is MainWindow sidebar)
+                    {
+                        var fullWindow = new FullWindow();
+                        fullWindow.Show();
+                        sidebar.Close();
+                        _currentMainWindow = fullWindow;
+                        _hotkeyService.ReRegisterHotkeys(fullWindow);
+                    }
+                    else if (currentMain is FullWindow full)
+                    {
+                        var sidebarWindow = new MainWindow();
+                        sidebarWindow.Show();
+                        full.Close();
+                        _currentMainWindow = sidebarWindow;
+                        _hotkeyService.ReRegisterHotkeys(sidebarWindow);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogError("ToggleSidebar error", ex);
+                }
+            };
+
+            // 新建任务/搜索热键：统一激活当前主窗口
+            EventHandler activateHandler = (s, args) =>
+            {
+                try { _currentMainWindow?.Activate(); } catch (Exception ex) { LogError("Hotkey activate error", ex); }
+            };
+            _hotkeyService.NewTaskRequested += activateHandler;
+            _hotkeyService.SearchRequested += activateHandler;
+
+            // v5.4：Ctrl+Alt+Space 全局快速添加浮窗（Spotlight 式，重复按切换开关）
+            _hotkeyService.QuickAddRequested += (s, args) =>
+            {
+                try { QuickAddWindow.Toggle(); }
+                catch (Exception ex) { LogError("QuickAdd toggle error", ex); }
+            };
         }
 
         /// <summary>R41：登出时注销全局热键（旧窗口即将销毁，注册其上的热键随之失效）。</summary>
@@ -169,53 +228,8 @@ namespace TodoSidebar
 
                 mainWindow.Show();
 
-                // R41：注册全局快捷键并登记当前主窗口
+                // R41：注册全局快捷键并登记当前主窗口（内部幂等接线全部热键处理器）
                 AttachHotkeysTo(mainWindow);
-
-                _hotkeyService!.ToggleSidebarRequested += (s, args) =>
-                {
-                    try
-                    {
-                        // R41 修复（审查 H4）：读取静态"当前主窗口"引用而非闭包捕获的启动窗口——
-                        // 登出重登后旧闭包引用指向已销毁窗口，会误判模式并可能开出第二个主窗口
-                        var currentMain = _currentMainWindow;
-                        if (currentMain is MainWindow sidebar)
-                        {
-                            var fullWindow = new FullWindow();
-                            fullWindow.Show();
-                            sidebar.Close();
-                            _currentMainWindow = fullWindow;
-                            _hotkeyService.ReRegisterHotkeys(fullWindow);
-                        }
-                        else if (currentMain is FullWindow full)
-                        {
-                            var sidebarWindow = new MainWindow();
-                            sidebarWindow.Show();
-                            full.Close();
-                            _currentMainWindow = sidebarWindow;
-                            _hotkeyService.ReRegisterHotkeys(sidebarWindow);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError("ToggleSidebar error", ex);
-                    }
-                };
-                
-                // 新建任务/搜索热键：统一激活当前主窗口
-                EventHandler activateHandler = (s, args) =>
-                {
-                    try { _currentMainWindow?.Activate(); } catch (Exception ex) { LogError("Hotkey activate error", ex); }
-                };
-                _hotkeyService.NewTaskRequested += activateHandler;
-                _hotkeyService.SearchRequested += activateHandler;
-
-                // v5.4：Ctrl+Alt+Space 全局快速添加浮窗（Spotlight 式，重复按切换开关）
-                _hotkeyService.QuickAddRequested += (s, args) =>
-                {
-                    try { QuickAddWindow.Toggle(); }
-                    catch (Exception ex) { LogError("QuickAdd toggle error", ex); }
-                };
             }
             catch (Exception ex)
             {
