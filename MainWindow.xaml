@@ -130,8 +130,19 @@
                             <Grid Grid.Column="0" Width="58" Height="58" VerticalAlignment="Center">
                                 <controls:CircularProgress Size="58" StrokeThickness="6"
                                                            Progress="{Binding TodayProgressRate}"
-                                                           ProgressBrush="{DynamicResource AccentGradientBrush}"
-                                                           BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
+                                                           BackgroundBrush="{DynamicResource SurfacePressedBrush}">
+                                    <controls:CircularProgress.Style>
+                                        <Style TargetType="controls:CircularProgress">
+                                            <Setter Property="ProgressBrush" Value="{DynamicResource AccentGradientBrush}"/>
+                                            <Style.Triggers>
+                                                <!-- R64 彩蛋：超额完成转金色 -->
+                                                <DataTrigger Binding="{Binding IsOverachieving}" Value="True">
+                                                    <Setter Property="ProgressBrush" Value="{DynamicResource WarningBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </controls:CircularProgress.Style>
+                                </controls:CircularProgress>
                                 <TextBlock Text="{Binding TodayProgressRate, Converter={StaticResource FractionToPercent}}"
                                            FontSize="11.5" FontWeight="Bold"
                                            Foreground="{DynamicResource AccentBrush}"
@@ -555,6 +566,7 @@
                                Foreground="{DynamicResource TextBrush}" Margin="0,0,0,7"/>
                     <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="10,9"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                        <StackPanel>
                         <ItemsControl ItemsSource="{Binding StatisticsViewModel.DailyStats}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -610,6 +622,16 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <!-- R61：今日输入紧凑计数（默认关闭时显示引导文案） -->
+                        <StackPanel Orientation="Horizontal" Margin="2,7,0,0">
+                            <TextBlock Text="⌨️" FontSize="11" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding StatisticsViewModel.TodayTypingText}"
+                                       FontSize="10.5"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="5,0,0,0"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        </StackPanel>
                     </Border>
 
                     <!-- 今日已完成（可折叠）-->

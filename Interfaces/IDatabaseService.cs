@@ -43,6 +43,13 @@ namespace TodoSidebar.Services
 
         /// <summary>R57（审查 M1）：未上云的本地脏数据行数，供切号确认弹窗使用</summary>
         int GetDirtyTaskCount();
+
+        /// <summary>R61（输入统计）：UPSERT 累加当日打字量（仅数量；dateKey=yyyy-MM-dd InvariantCulture）</summary>
+        void AddTypingStat(string dateKey, int keyDelta, int wordDelta);
+
+        /// <summary>R61：读取某日打字量；无记录返回 (0, 0)</summary>
+        (int KeyStrokes, int WordChars) GetTypingStat(string dateKey);
+
         void MarkTaskSynced(int localId, string syncId, string? expectedLocalUpdatedAt = null);
         TaskItem? GetTaskBySyncId(string syncId);
 
