@@ -349,6 +349,18 @@ namespace TodoSidebar.Services
                 );
             ";
             challengeCmd.ExecuteNonQuery();
+
+            // R61「输入统计」：每日打字量（仅数量，无任何按键/文本内容；不参与云同步）
+            using var typingCmd = connection.CreateCommand();
+            typingCmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS DailyTypingStat (
+                    Date       TEXT PRIMARY KEY,
+                    KeyStrokes INTEGER NOT NULL DEFAULT 0,
+                    WordChars  INTEGER NOT NULL DEFAULT 0,
+                    UpdatedAt  TEXT NOT NULL
+                );
+            ";
+            typingCmd.ExecuteNonQuery();
         }
 
         private void MigrateDatabase()
@@ -1188,6 +1200,41 @@ namespace TodoSidebar.Services
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDirty = 1";
             return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+
+        // ========== 输入统计（R61） ==========
+
+        /// <summary>
+        /// 累加当日打字量（UPSERT 增量合并）。dateKey 为 yyyy-MM-dd（InvariantCulture），
+        /// 跨天由日期键天然分桶。仅存数量，无任何内容。
+        /// </summary>
+        public void AddTypingStat(string dateKey, int keyDelta, int wordDelta) => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO DailyTypingStat (Date, KeyStrokes, WordChars, UpdatedAt)
+                VALUES (@d, @k, @w, @u)
+                ON CONFLICT(Date) DO UPDATE SET
+                    KeyStrokes = KeyStrokes + @k,
+                    WordChars  = WordChars + @w,
+                    UpdatedAt  = @u";
+            cmd.Parameters.AddWithValue("@d", dateKey);
+            cmd.Parameters.AddWithValue("@k", keyDelta);
+            cmd.Parameters.AddWithValue("@w", wordDelta);
+            cmd.Parameters.AddWithValue("@u", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            cmd.ExecuteNonQuery();
+            return true;
+        });
+
+        /// <summary>读取某日打字量；无记录返回 (0, 0)。</summary>
+        public (int KeyStrokes, int WordChars) GetTypingStat(string dateKey) => ExecuteLocked(() =>
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT KeyStrokes, WordChars FROM DailyTypingStat WHERE Date = @d";
+            cmd.Parameters.AddWithValue("@d", dateKey);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read()) return (0, 0);
+            return (Convert.ToInt32(reader.GetValue(0)), Convert.ToInt32(reader.GetValue(1)));
         });
 
         /// <summary>

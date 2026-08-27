@@ -273,7 +273,7 @@
                                         Visibility="{Binding IsChecked, ElementName=TabDeadline, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
 
-                        <!-- KPI 行 -->
+                        <!-- KPI 行（保持 3 卡；今日输入为下方通栏细条，不挤占网格） -->
                         <UniformGrid Grid.Row="3" Columns="3" Margin="0,0,0,12">
                             <!-- 进度环卡 -->
                             <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12"
@@ -281,20 +281,29 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Grid Width="62" Height="62" VerticalAlignment="Center">
                                         <controls:CircularProgress Size="62" StrokeThickness="7"
-                                                                   Progress="{Binding StatisticsViewModel.TodayCompletionRate}"
-                                                                   ProgressBrush="{DynamicResource AccentGradientBrush}"
-                                                                   BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
-                                        <TextBlock Text="{Binding StatisticsViewModel.TodayCompletionRate, Converter={StaticResource FractionToPercent}}"
+                                                                   Progress="{Binding TodayProgressRate}"
+                                                                   BackgroundBrush="{DynamicResource SurfacePressedBrush}">
+                                            <controls:CircularProgress.Style>
+                                                <Style TargetType="controls:CircularProgress">
+                                                    <Setter Property="ProgressBrush" Value="{DynamicResource AccentGradientBrush}"/>
+                                                    <Style.Triggers>
+                                                        <!-- R64 彩蛋：超额完成转金色 -->
+                                                        <DataTrigger Binding="{Binding IsOverachieving}" Value="True">
+                                                            <Setter Property="ProgressBrush" Value="{DynamicResource WarningBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </controls:CircularProgress.Style>
+                                        </controls:CircularProgress>
+                                        <TextBlock Text="{Binding TodayProgressRate, Converter={StaticResource FractionToPercent}}"
                                                    FontSize="11.5" FontWeight="Bold"
                                                    Foreground="{DynamicResource AccentBrush}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
                                         <TextBlock Text="今日完成" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding StatisticsViewModel.TodayCompleted}" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="{Binding StatisticsViewModel.TodayTotal, StringFormat=' / {0}'}" FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" VerticalAlignment="Bottom" Margin="2,0,0,3"/>
-                                        </StackPanel>
+                                        <!-- R62：与侧边栏同源（MainViewModel），消除双公式漂移 -->
+                                        <TextBlock Text="{Binding TodayDoneText}" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
                                         <TextBlock Text="较昨日" FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}"/>
                                         <TextBlock x:Name="TodayDeltaText" Text="—" FontSize="10" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"
@@ -357,6 +366,22 @@
                                 </StackPanel>
                             </Border>
                         </UniformGrid>
+
+                        <!-- R61 今日输入通栏条：单行 20px 高，不参与 KPI 网格分栏 -->
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12"
+                                Padding="12,7" Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⌨️" FontSize="13" VerticalAlignment="Center"/>
+                                <TextBlock Text="今日输入"
+                                           FontSize="{DynamicResource FontSizeCaption}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="6,0,10,0"/>
+                                <TextBlock Text="{Binding StatisticsViewModel.TodayTypingText}"
+                                           FontSize="11.5" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
 
                         <!-- 双列：任务流 + 右栏 -->
                         <Grid Grid.Row="4">
@@ -801,22 +826,30 @@
                                         </Grid.ColumnDefinitions>
                                         <Grid Width="84" Height="84">
                                             <controls:CircularProgress Size="84" StrokeThickness="9"
-                                                                       Progress="{Binding StatisticsViewModel.TodayCompletionRate}"
-                                                                       ProgressBrush="{DynamicResource AccentGradientBrush}"
-                                                                       BackgroundBrush="{DynamicResource SurfacePressedBrush}"/>
-                                            <TextBlock Text="{Binding StatisticsViewModel.TodayCompletionRate, Converter={StaticResource FractionToPercent}}"
+                                                                       Progress="{Binding TodayProgressRate}"
+                                                                       BackgroundBrush="{DynamicResource SurfacePressedBrush}">
+                                                <controls:CircularProgress.Style>
+                                                    <Style TargetType="controls:CircularProgress">
+                                                        <Setter Property="ProgressBrush" Value="{DynamicResource AccentGradientBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsOverachieving}" Value="True">
+                                                                <Setter Property="ProgressBrush" Value="{DynamicResource WarningBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </controls:CircularProgress.Style>
+                                            </controls:CircularProgress>
+                                            <TextBlock Text="{Binding TodayProgressRate, Converter={StaticResource FractionToPercent}}"
                                                        FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Grid>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="18,0,0,0">
                                             <StackPanel Orientation="Horizontal" Margin="0,3">
-                                                <TextBlock Text="{Binding StatisticsViewModel.TodayCompleted}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}"/>
-                                                <TextBlock Text=" 已完成" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding TodayDoneText}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}"/>
+                                                <TextBlock Text=" 今日完成" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                                             </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="0,3">
-                                                <TextBlock Text="{Binding StatisticsViewModel.TodayTotal}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
-                                                <TextBlock Text=" 今日任务" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                                            </StackPanel>
+                                            <!-- R62：与侧边栏/仪表卡同源，旧双公式分母已废弃；顺带展示今日输入 -->
+                                            <TextBlock Text="{Binding TodayTypingText}" FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,3"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>

@@ -43,6 +43,64 @@ namespace TodoSidebar
             // V2 收尾：减少动效开关初始态
             try { ReduceMotionCheck.IsChecked = DatabaseService.Instance.GetSetting("ReduceMotion") == "true"; }
             catch { ReduceMotionCheck.IsChecked = false; }
+
+            // R61「输入统计」开关初始态（注意在事件挂接前赋值会触发 Checked——
+            // 构造期 TypingStats_Changed 内部以 _suppressTypingEvents 防重入）
+            bool suppressBak = _suppressTypingEvents;
+            _suppressTypingEvents = true;
+            try { TypingStatsCheck.IsChecked = DatabaseService.Instance.GetSetting("TypingStatsEnabled") == "true"; }
+            catch { TypingStatsCheck.IsChecked = false; }
+            finally { _suppressTypingEvents = suppressBak; }
+        }
+
+        /// <summary>构造期初始化复选框状态时防止误触发首启说明弹窗。</summary>
+        private bool _suppressTypingEvents;
+
+        /// <summary>
+        /// R61 输入统计开关：即时生效并持久化。首次开启时弹一次性隐私说明确认框。
+        /// </summary>
+        private void TypingStats_Changed(object sender, RoutedEventArgs e)
+        {
+            if (TypingStatsCheck == null || _suppressTypingEvents) return;
+            bool wantEnabled = TypingStatsCheck.IsChecked == true;
+            var db = DatabaseService.Instance;
+
+            try
+            {
+                if (wantEnabled && db.GetSetting("TypingStatsEnabled") != "true")
+                {
+                    // 首启说明：三条承诺 + 精度预期，用户拒绝则回弹开关
+                    var answer = MessageBox.Show(this,
+                        "开启后将在系统层面统计你每天的打字量，请先了解以下事实：\n\n" +
+                        "① 只记录数量（击键数与估算字数），任何情况下都不存储按键序列或文本内容；\n" +
+                        "② 数据仅保存在本机数据库中，不参与云同步、不上传到任何服务器；\n" +
+                        "③ 可随时回到此处关闭，关闭立即停止计数并卸载内部钩子。\n\n" +
+                        "精度说明：英文按单词规则估算较准；中文经输入法上屏无法被系统精确感知，" +
+                        "按拼音音节估算（±15% 内偏差）。\n\n是否开启？",
+                        "开启输入统计", MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+                    if (answer != MessageBoxResult.Yes)
+                    {
+                        _suppressTypingEvents = true;
+                        TypingStatsCheck.IsChecked = false;
+                        _suppressTypingEvents = false;
+                        return;
+                    }
+                }
+
+                Services.TypingStatsService.Instance.SetEnabled(wantEnabled);
+                db.SetSetting("TypingStatsEnabled", wantEnabled ? "true" : "false");
+
+                // 立即联动主界面显示（卡片/侧边栏一行），不必等下一轮数据加载
+                if (App.SharedViewModel?.StatisticsViewModel is ViewModels.StatisticsViewModel svm)
+                    svm.RefreshTyping();
+
+                // 关闭时立即冲刷，保证已产生的数据完整落库后再停
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"保存 TypingStatsEnabled 失败: {ex.Message}");
+            }
         }
 
         /// <summary>v5.2：昵称/头像编辑已迁移至账号中心，此处仅提供入口。</summary>

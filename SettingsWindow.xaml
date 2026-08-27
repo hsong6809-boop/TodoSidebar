@@ -175,6 +175,36 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- 输入统计（R61，默认关闭） -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="14,12"
+                            Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Trending}"
+                                                  FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,6,0"/>
+                                <TextBlock Text="输入统计"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <CheckBox x:Name="TypingStatsCheck"
+                                      Content="记录我的每日打字量（击键数 + Word 口径估算字数）"
+                                      FontSize="12.5"
+                                      Checked="TypingStats_Changed"
+                                      Unchecked="TypingStats_Changed"/>
+                            <TextBlock Text="只统计数量、不存储任何按键或文本内容；数据仅保存在本机。中文按拼音音节估算，存在 ±15% 内偏差。"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- 数据 -->
                     <Border Background="{DynamicResource CardBrush}"
                             CornerRadius="12"

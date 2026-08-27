@@ -43,6 +43,70 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private int _streakDays;
 
+        /// <summary>今日打字量展示文本（R61 输入统计；未开启时为引导文案）。</summary>
+        [ObservableProperty]
+        private string _todayTypingText = "—";
+
+        // ===== R61 秒级实时刷新 =====
+        private System.Windows.Threading.DispatcherTimer? _typingTimer;
+        private string? _lastTypingText;
+
+        /// <summary>
+        /// 从服务内存读今日实时总数（基线+当前计数，不落库），数字有变化才通知 UI。
+        /// 未开启功能时显示引导文案并停表。
+        /// </summary>
+        private void UpdateTypingText()
+        {
+            try
+            {
+                if (_dbService.GetSetting("TypingStatsEnabled") != "true")
+                {
+                    StopTypingTimer();
+                    SetTypingText("未开启 · 可在设置中打开");
+                    return;
+                }
+
+                StartTypingTimer();
+                var (k, w) = TypingStatsService.Instance.GetLiveTotals();
+                SetTypingText(k == 0 && w == 0
+                    ? "今天还没有输入"
+                    : $"约 {w.ToString("N0", CultureInfo.InvariantCulture)} 字 · {k.ToString("N0", CultureInfo.InvariantCulture)} 键");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateTypingText error: {ex.Message}");
+            }
+        }
+
+        private void SetTypingText(string text)
+        {
+            if (_lastTypingText == text) return;   // 无变化不打扰绑定
+            _lastTypingText = text;
+            TodayTypingText = text;
+        }
+
+        private void StartTypingTimer()
+        {
+            if (_typingTimer != null) return;
+            _typingTimer = new System.Windows.Threading.DispatcherTimer(
+                System.Windows.Threading.DispatcherPriority.Background)
+            { Interval = TimeSpan.FromSeconds(1) };
+            _typingTimer.Tick += (_, _) => UpdateTypingText();
+            _typingTimer.Start();
+        }
+
+        private void StopTypingTimer()
+        {
+            _typingTimer?.Stop();
+            _typingTimer = null;
+        }
+
+        /// <summary>外部触发立即刷新（设置页开关切换后调用）；按当前开关联动启停。</summary>
+        public void RefreshTyping() => UpdateTypingText();
+
+        /// <summary>登出重建 ViewModel 时释放定时器（进程退出场景由调度器随线程销毁兜底）。</summary>
+        public void ShutdownTypingTimer() => StopTypingTimer();
+
         [ObservableProperty]
         private List<DailyStats> _dailyStats = new();
 
@@ -130,6 +194,9 @@ namespace TodoSidebar.ViewModels
             var allTasks = _dbService.GetTasks();
             var today = DateTime.Today;
             var dailyCompletionRecords = _dbService.GetDailyCompletionRecords(7);
+
+            // R61「输入统计」：今日打字量（秒级实时，见 UpdateTypingText）
+            UpdateTypingText();
 
             // 单次遍历计算多个统计指标
             int total = 0, completed = 0, overdue = 0, highPrio = 0;

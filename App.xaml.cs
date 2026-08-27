@@ -101,6 +101,15 @@ namespace TodoSidebar
             try { AnimationService.ReduceMotion = DatabaseService.Instance.GetSetting("ReduceMotion") == "true"; }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"读取 ReduceMotion 设置失败: {ex.Message}"); }
 
+            // R61「输入统计」：仅当用户此前显式开启过才恢复计数（默认关闭、不开钩子）。
+            // 与登录状态无关——这是本机终身数据，登出/切换账号不中断统计
+            try
+            {
+                if (DatabaseService.Instance.GetSetting("TypingStatsEnabled") == "true")
+                    TypingStatsService.Instance.SetEnabled(true);
+            }
+            catch (Exception ex) { LogError("输入统计服务启动失败", ex); }
+
             // V2：加载昵称
             try { Nickname = DatabaseService.Instance.GetSetting("Nickname") ?? string.Empty; }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"读取昵称失败: {ex.Message}"); }
@@ -388,6 +397,8 @@ namespace TodoSidebar
                 _currentMainWindow = null;
                 NotificationService.Instance.Stop();
                 SyncService.Instance.Stop();
+                // R61：退出前冲刷残余打字增量并卸载键盘钩子（必须在 DatabaseService.Dispose 之前）
+                TypingStatsService.Instance.Dispose();
                 SharedViewModel?.Dispose();
                 if (_loginStateHandler != null)
                     AuthService.Instance.LoginStateChanged -= _loginStateHandler;

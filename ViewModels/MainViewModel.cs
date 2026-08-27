@@ -75,18 +75,33 @@ namespace TodoSidebar.ViewModels
         [ObservableProperty]
         private string _todayDoneText = "0 / 0";
 
-        /// <summary>集合变化时重算今日进度（已完成 / 已完成+待办+逾期）。</summary>
+        /// <summary>集合变化时重算今日进度。
+        /// R63 用户定义口径：「今日完成 N / M」中
+        ///   M = 当日计划量（未完成每日任务 + 已完成的每日任务 + 计划内完成的截止任务），
+        ///   即"今天本来该做的事"，不随额外完成而增长；
+        ///   N = 今日全部完成数（含补做逾期、提前完成的截止任务）。
+        /// R64 彩蛋：N 超出 M（✨ 超额完成），进度环转金色。
+        /// 实现要点：extraCount 是"不算进今日计划的完成"（截止日 ≠ 今天），
+        /// 必须从分母中扣除，否则补做会把分母同步抬高、永远看不到溢出。</summary>
         private void RefreshTodayProgress()
         {
             var done = TodayCompletedTasks.Count;
-            // R60 修复（审查 L10）：分母计入"已逾期未完成"的截止任务——
-            // 原实现数据源过滤了逾期任务，导致它们既不进分子也不进分母，
-            // 存在逾期任务时进度环虚高，且与统计页 OverdueTasks 口径矛盾。
-            // 口径：逾期任务在完成前始终视为待办
-            var total = done + CurrentTasks.Count + _overdueIncompleteCount;
-            TodayProgressRate = total == 0 ? 0 : (double)done / total;
-            TodayDoneText = $"{done} / {total}";
+            var today = DateTime.Today;
+            // 截止日不是今天的完成项 = 补做逾期 或 提前完成：只涨分子不占分母
+            var extraDone = TodayCompletedTasks.Count(t =>
+                t.Type == TaskType.Deadline && t.Deadline.HasValue && t.Deadline.Value.Date != today);
+
+            var plannedTotal = DailyTasks.Count + _dueTodayRemainingCount + (done - extraDone);
+            TodayProgressRate = plannedTotal == 0 ? 0 : Math.Min((double)done / plannedTotal, 1);
+            IsOverachieving = done > plannedTotal;
+            TodayDoneText = IsOverachieving
+                ? $"{done} / {plannedTotal} ✨"
+                : $"{done} / {plannedTotal}";
         }
+
+        /// <summary>今日完成数已溢出当日计划量（补做逾期/提前完成），供进度环转金色彩蛋。</summary>
+        [ObservableProperty]
+        private bool _isOverachieving;
 
         // ===== V2 侧边栏「接下来」行动卡 =====
         [ObservableProperty]
@@ -268,10 +283,15 @@ namespace TodoSidebar.ViewModels
             else if (sender == HistoryTasks) OnPropertyChanged(nameof(HistoryTasksCount));
             else if (sender == CurrentTasks) OnPropertyChanged(nameof(CurrentTasksCount));
 
-            // V2 侧边栏驾驶舱：今日进度环与计数联动
-            if (sender == TodayCompletedTasks || sender == CurrentTasks)
+            // V2 侧边栏驾驶舱：今日进度环与计数联动。
+            // R62：五个集合的变化都会影响"今日完成"分子或分母，统一重算
+            if (sender == TodayCompletedTasks || sender == CurrentTasks ||
+                sender == DailyTasks || sender == DeadlineTasks)
             {
                 RefreshTodayProgress();
+            }
+            if (sender == TodayCompletedTasks || sender == CurrentTasks)
+            {
                 RefreshNextTask();
             }
         }
@@ -308,18 +328,17 @@ namespace TodoSidebar.ViewModels
             }
         }
 
-        /// <summary>逾期未完成的截止任务数（R60：今日进度分母用）。</summary>
-        private int _overdueIncompleteCount;
+        /// <summary>今日到期、尚未完成的截止任务数（R62/R63 统一口径分母用）。</summary>
+        private int _dueTodayRemainingCount;
 
         private void LoadDeadlineTasks()
         {
             DeadlineTasks.Clear();
-            // R60 修复（审查 L10）：一次取回全部未完成截止任务用于统计——
-            // 逾期部分计入进度环分母；「截止任务」列表的展示口径保持不变（仍只显示未逾期），
-            // 不在本修复中改变界面行为
+            // R63 口径：只统计"今日到期且未完成"计入今日进度分母。
+            // 列表展示仍含未来任务（≤今天起），逾期任务仅供通知/统计页另行呈现
             var allUncompleted = _taskService.GetDeadlineTasks(includeOverdue: true);
             var today = DateTime.Today;
-            _overdueIncompleteCount = allUncompleted.Count(t => t.Deadline.HasValue && t.Deadline.Value.Date < today);
+            _dueTodayRemainingCount = allUncompleted.Count(t => t.Deadline.HasValue && t.Deadline.Value.Date == today);
             foreach (var task in allUncompleted.Where(t => !t.Deadline.HasValue || t.Deadline.Value.Date >= today))
                 DeadlineTasks.Add(task);
             RefreshTodayProgress();
@@ -730,6 +749,8 @@ namespace TodoSidebar.ViewModels
             // 旧计时器 Tick 仍会把已置空的旧 VM 的 UndoMessage 置 null，多存活一轮
             _undoTimer?.Stop();
             _undoTimer = null;
+            // R61：打字量秒级刷新定时器随 VM 释放，防止登出重建后旧定时器空转
+            StatisticsViewModel.ShutdownTypingTimer();
         }
     }
 }
