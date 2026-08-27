@@ -24,7 +24,6 @@ namespace TodoSidebar.Services
         };
 
         private System.Windows.Media.MediaPlayer? _player;
-        private readonly DispatcherTimer? _uiTimer; // 预留：可视化用
         private DispatcherTimer? _fadeTimer;
         private double _targetVolume = 0.6;
 
@@ -54,6 +53,19 @@ namespace TodoSidebar.Services
             _targetVolume = Math.Clamp(volume, 0.05, 1.0);
             try { DatabaseService.Instance.SetSetting("NoiseVolume", _targetVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
             catch { }
+            ResumeVolume();
+        }
+
+        /// <summary>v5.6 审查修复：拖动期间只调内存音量不写库（配合 LostMouseCapture 落盘）。</summary>
+        public void SetVolumeLive(double volume)
+        {
+            _targetVolume = Math.Clamp(volume, 0.05, 1.0);
+            ResumeVolume();
+        }
+
+        /// <summary>恢复目标音量（消除淡出残留的极低音量/竞态）。</summary>
+        private void ResumeVolume()
+        {
             if (_player != null && IsPlaying) _player.Volume = _targetVolume;
         }
 
@@ -64,6 +76,12 @@ namespace TodoSidebar.Services
             if (sound.Kind == null) return;
             try
             {
+                // v5.6 审查修复：必须先取消进行中的淡出计时器——
+                // 否则旧计时器会在新播放开始约 400ms 后把音量拉到 0 并 Stop，
+                // 造成"重播被上一轮淡出误杀"
+                _fadeTimer?.Stop();
+                _fadeTimer = null;
+
                 StopInternal(fade: false);
                 EnsurePlayer();
                 var uri = new Uri(packUri(sound.ResourcePath), UriKind.Absolute);
@@ -123,7 +141,11 @@ namespace TodoSidebar.Services
 
             if (!fade)
             {
+                // v5.6 审查修复：非淡出停止同样要取消进行中的淡出计时器
+                _fadeTimer?.Stop();
+                _fadeTimer = null;
                 _player.Stop();
+                _player.Volume = _targetVolume;
                 IsPlaying = false;
                 PlaybackChanged?.Invoke(this, EventArgs.Empty);
                 return;
@@ -143,10 +165,13 @@ namespace TodoSidebar.Services
                 if (tick >= ticks)
                 {
                     _fadeTimer.Stop();
+                    _fadeTimer = null;
                     _player.Stop();
                     _player.Volume = _targetVolume;
                     IsPlaying = false;
-                    CurrentKind = "";
+                    // CurrentKind 有残留保留：侧边栏"停止→上次音源"依赖它，
+                    // 持久化 NoiseKind 在淡出结束前已写入（StopInternal 不写入，
+                    // 由最初 Play 时的 SaveKind 保证上次音源不丢失）
                     PlaybackChanged?.Invoke(this, EventArgs.Empty);
                 }
             };

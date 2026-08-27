@@ -31,7 +31,6 @@ namespace TodoSidebar
             _year = year;
             YearText.Text = year.ToString();
             CardTitle.Text = $"{year} · 年度报告";
-            var nextYear = year == DateTime.Today.Year;
 
             try
             {
@@ -79,8 +78,6 @@ namespace TodoSidebar
                                        .Sum(kv => (double)kv.Value));
                 }
                 MonthChart.Values = monthly;
-
-                NextYearButtonState(nextYear);
             }
             catch (Exception ex)
             {
@@ -88,9 +85,12 @@ namespace TodoSidebar
             }
         }
 
-        private void NextYearButtonState(bool enabled) { /* 按钮自身按年份判断 */ }
+        private static readonly int MinYear = 2020; // v5.5 审查修复：历史下界，防止导航到 0/负数年
 
-        private void PrevYear_Click(object sender, RoutedEventArgs e) => LoadReport(_year - 1);
+        private void PrevYear_Click(object sender, RoutedEventArgs e)
+        {
+            if (_year > MinYear) LoadReport(_year - 1);
+        }
 
         private void NextYear_Click(object sender, RoutedEventArgs e)
         {
@@ -118,7 +118,23 @@ namespace TodoSidebar
                 var rtb = new RenderTargetBitmap(
                     (int)Math.Round(w * scale), (int)Math.Round(h * scale),
                     96 * scale, 96 * scale, System.Windows.Media.PixelFormats.Pbgra32);
-                rtb.Render(ReportCard);
+
+                // v5.5 审查修复：Light 主题 CardBrush 为半透明白（α≈96%），
+                // 直出 PNG 贴深色背景会透出灰底 —— 临时替换为不透明同色再渲染，然后还原
+                var originalBg = ReportCard.Background;
+                if (originalBg is System.Windows.Media.SolidColorBrush sc && sc.Color.A < 255)
+                {
+                    ReportCard.Background = new System.Windows.Media.SolidColorBrush(
+                        System.Windows.Media.Color.FromArgb(255, sc.Color.R, sc.Color.G, sc.Color.B));
+                }
+                try
+                {
+                    rtb.Render(ReportCard);
+                }
+                finally
+                {
+                    ReportCard.Background = originalBg;
+                }
 
                 var encoder = new PngBitmapEncoder();
                 encoder.Frames.Add(BitmapFrame.Create(rtb));

@@ -25,6 +25,7 @@ namespace TodoSidebar.Tests
         [InlineData("weekly:8")]
         [InlineData("weekly:12")]
         [InlineData("weekly")]
+        [InlineData("weekly: 3")]   // 内部空格 → 非法
         [InlineData("yearly")]
         [InlineData("DAILY_X")]
         public void IsValid_InvalidRules_False(string? rule)
@@ -40,14 +41,16 @@ namespace TodoSidebar.Tests
         }
 
         // ========== 下一期计算 ==========
-        // 基准日：2026-08-26 为周三
+        // 基准日：2026-08-26 为周三；显式固定 today=8/20 早于基准，
+        // 避免真实时钟越过基准日触发防逾期钳制导致用例随日期漂移
 
         private static readonly DateTime Wed = new(2026, 8, 26);
+        private static readonly DateTime BeforeWed = new(2026, 8, 20);
 
         [Fact]
         public void NextDeadline_Daily_NextDay()
         {
-            Assert.Equal(new DateTime(2026, 8, 27), RecurrenceRule.NextDeadline("daily", Wed));
+            Assert.Equal(new DateTime(2026, 8, 27), RecurrenceRule.NextDeadline("daily", Wed, today: BeforeWed));
         }
 
         [Fact]
@@ -55,19 +58,22 @@ namespace TodoSidebar.Tests
         {
             // 周五 8/28 完成后 → 下一个是周一 8/31
             var friday = new DateTime(2026, 8, 28);
-            Assert.Equal(new DateTime(2026, 8, 31), RecurrenceRule.NextDeadline("weekdays", friday));
+            Assert.Equal(new DateTime(2026, 8, 31), RecurrenceRule.NextDeadline("weekdays", friday, today: BeforeWed));
         }
 
         [Fact]
         public void NextDeadline_WeeklyN_NextOccurrenceStrictlyAfter()
         {
             // 周三完成"每周一"→ 下一个周一是 8/31（严格晚于基准）
-            Assert.Equal(new DateTime(2026, 8, 31), RecurrenceRule.NextDeadline("weekly:1", Wed));
+            Assert.Equal(new DateTime(2026, 8, 31), RecurrenceRule.NextDeadline("weekly:1", Wed, today: BeforeWed));
             // 周三完成"每周三"→ 不允许同日，顺延到下周三 9/2
-            Assert.Equal(new DateTime(2026, 9, 2), RecurrenceRule.NextDeadline("weekly:3", Wed));
+            Assert.Equal(new DateTime(2026, 9, 2), RecurrenceRule.NextDeadline("weekly:3", Wed, today: BeforeWed));
             // 编码 7=周日：周日 8/30 完成 → 下个周日 9/6
             var sunday = new DateTime(2026, 8, 30);
-            Assert.Equal(new DateTime(2026, 9, 6), RecurrenceRule.NextDeadline("weekly:7", sunday));
+            Assert.Equal(new DateTime(2026, 9, 6), RecurrenceRule.NextDeadline("weekly:7", sunday, today: BeforeWed));
+            // 编码 6=周六（边界）：周五 8/28 完成"每周六" → 周六 8/29
+            Assert.Equal(new DateTime(2026, 8, 29),
+                RecurrenceRule.NextDeadline("weekly:6", new DateTime(2026, 8, 28), today: BeforeWed));
         }
 
         [Fact]
@@ -90,6 +96,25 @@ namespace TodoSidebar.Tests
             var stale = new DateTime(2026, 8, 10);
             var next = RecurrenceRule.NextDeadline("daily", stale, today: Wed);
             Assert.Equal(new DateTime(2026, 8, 27), next);
+        }
+
+        [Fact]
+        public void NextDeadline_EarlyCompletion_BaseNotClamped()
+        {
+            // 提前完成（基准晚于今天）：不钳制，按基准直接推下一期
+            var futureBase = new DateTime(2026, 9, 15);
+            Assert.Equal(new DateTime(2026, 9, 16),
+                RecurrenceRule.NextDeadline("daily", futureBase, today: BeforeWed));
+        }
+
+        [Fact]
+        public void NextDeadline_Monthly_ChainAnchorDriftsAfterClamp()
+        {
+            // 文档化行为：1/31 → 2/28 后锚点收敛为 28 日，下一期 3/28（不再回 31 日）
+            var beforeJan = new DateTime(2026, 1, 10);
+            var feb28 = RecurrenceRule.NextDeadline("monthly", new DateTime(2026, 1, 31), today: beforeJan);
+            var mar28 = RecurrenceRule.NextDeadline("monthly", feb28!.Value, today: beforeJan);
+            Assert.Equal(new DateTime(2026, 3, 28), mar28);
         }
 
         [Fact]

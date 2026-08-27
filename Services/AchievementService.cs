@@ -15,11 +15,6 @@ namespace TodoSidebar.Services
 
         private readonly DatabaseService _db;
 
-        // L11 修复：彩蛋判定进程内缓存（bool?，null=未判定）。
-        // 判定为 true 后永久缓存不再重复扫描；false 不缓存——同会话稍后才首次满足条件时仍能正常解锁
-        private bool? _earlyBirdCache;
-        private bool? _nightOwlCache;
-
         /// <summary>徽章解锁事件（UI 弹窗/横幅用）</summary>
         public event EventHandler<AchievementUnlockedEventArgs>? AchievementUnlocked;
 
@@ -88,15 +83,9 @@ namespace TodoSidebar.Services
             // L7 修复：InvariantCulture 防区域差异
             var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
-            // L11 修复：未命中缓存才做全表扫描逐行解析时间，避免每次检查都重复扫描
-            if (_earlyBirdCache != true)
-                _earlyBirdCache = _db.HasXpLogMatchingTime("task_complete", t => t.Hour < 6);
-            if (_nightOwlCache != true)
-                _nightOwlCache = _db.HasXpLogMatchingTime("task_complete", t => t.Hour >= 23);
-
-            // v5.5 成就扩充：行为型统计（计数类，成本可控）
-            var lateNightCount = _db.GetXpLogCountMatchingTime("task_complete", t => t.Hour >= 23);
-            var earlyMorningCount = _db.GetXpLogCountMatchingTime("task_complete", t => t.Hour < 6);
+            // v5.5 审查修复：三类时段行为合并为单次全表扫描（早/晚/周末），
+            // 早鸟/夜猫 bool 由计数直接推导，移除冗余且会永久缓存的 Has* 缓存
+            var (earlyCount, lateCount, weekendCount) = _db.GetXpLogTimeBehaviorCounts("task_complete");
 
             return new AchievementStats
             {
@@ -111,14 +100,14 @@ namespace TodoSidebar.Services
                 BestComboDays = growth.BestComboDays,
                 ComboDays = growth.ComboDays,
                 Level = growth.Level,
-                HasEarlyBird = _earlyBirdCache == true,
-                HasNightOwl = _nightOwlCache == true,
+                HasEarlyBird = earlyCount > 0,
+                HasNightOwl = lateCount > 0,
                 // v5.5 扩充指标
                 NlpUseCount = ReadCounter("NlpUsedCount"),
                 QuickAddUseCount = ReadCounter("QuickAddUsedCount"),
-                LateNightCompleteCount = lateNightCount,
-                EarlyMorningCompleteCount = earlyMorningCount,
-                WeekendCompleteCount = _db.GetXpLogWeekendCount("task_complete"),
+                LateNightCompleteCount = lateCount,
+                EarlyMorningCompleteCount = earlyCount,
+                WeekendCompleteCount = weekendCount,
                 ActiveDays = _db.GetDistinctDailyCompletionDays(),
                 TaggedTaskCount = _db.GetTaggedTaskCount(),
                 RecurringCompletedCount = _db.GetRecurringCompletedCount(),

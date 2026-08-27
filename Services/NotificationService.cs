@@ -47,6 +47,10 @@ namespace TodoSidebar.Services
                     lock (_notifiedLock)
                     {
                         _notifiedTasks.Clear();
+                        // v5.6 审查修复：顺带清理已过期的稍后提醒条目，防字典无限增长
+                        var now = DateTime.Now;
+                        foreach (var key in _snoozedUntil.Where(kv => now >= kv.Value).Select(kv => kv.Key).ToList())
+                            _snoozedUntil.Remove(key);
                     }
                     _lastClearDate = today;
                 }
@@ -78,6 +82,9 @@ namespace TodoSidebar.Services
         {
             try
             {
+                // v5.6 审查修复：先消化第二实例转发的挂起激活（Toast 按钮在应用运行时点击）
+                ToastService.ProcessPendingActivations();
+
                 // R24 修复（审查 H6）：通知检查必须包含已逾期任务——
                 // 原实现复用 GetDeadlineTasks() 的"过滤过期"口径，
                 // 导致下方「🔴 任务已过期」分支永远不可达，整个过期提醒功能静默失效。

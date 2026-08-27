@@ -147,7 +147,16 @@ namespace TodoSidebar
                         "尚未解锁", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
-                await _account.SetBuiltInAvatarAsync(kind);
+                try
+                {
+                    await _account.SetBuiltInAvatarAsync(kind);
+                }
+                catch (Exception ex)
+                {
+                    // v5.5 审查修复：与 Upload 路径对齐——Set* 内部落库失败沿 async void 会直接崩进程
+                    MessageBox.Show(this, $"设置头像失败: {ex.Message}", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             }
         }
 

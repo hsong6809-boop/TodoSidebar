@@ -85,7 +85,7 @@ namespace TodoSidebar.Services
         internal static string NormalizeKind(string? kind)
         {
             var k = (kind ?? "").Trim().ToLowerInvariant();
-            return k.Length == 2 && k[0] == 'd' && char.IsDigit(k[1]) ? k : k;
+            return k.Length == 2 && k[0] == 'd' && char.IsDigit(k[1]) ? k : "";
         }
     }
 }

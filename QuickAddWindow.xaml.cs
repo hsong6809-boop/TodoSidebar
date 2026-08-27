@@ -30,11 +30,22 @@ namespace TodoSidebar
             }
 
             var win = new QuickAddWindow();
+            // v5.6 审查修复：Show 成功后再登记静态引用——
+            // 原实现先赋值 _current，若 Show/Activate 抛异常（被 App 层吞掉），
+            // 静态引用会一直指向从未显示的窗口，此后热键永远走"关闭已死实例"分支
+            try
+            {
+                win.Show();
+                win.Activate();
+                win.InputBox.Focus();
+            }
+            catch
+            {
+                try { win.Close(); } catch { }
+                return;
+            }
             _current = win;
             win.Closed += (_, _) => _current = null;
-            win.Show();
-            win.Activate();
-            win.InputBox.Focus();
         }
 
         private QuickAddWindow()
@@ -52,8 +63,20 @@ namespace TodoSidebar
 
         private void Window_Deactivated(object sender, EventArgs e)
         {
-            // 错误提示展示期间不因失焦关闭，给用户阅读时间
-            if (_errorUntil > DateTime.Now) return;
+            // 错误提示展示期间不因失焦关闭，给用户阅读时间；
+            // v5.6 审查修复：同步挂一个一次性计时器，到期仍失焦则强制关闭——
+            // 否则"出事提示期失焦"后窗口已非激活态，不会再触发 Deactivated，会永久滞留
+            if (_errorUntil > DateTime.Now)
+            {
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = _errorUntil - DateTime.Now + TimeSpan.FromMilliseconds(100) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    Close();
+                };
+                timer.Start();
+                return;
+            }
             Close();
         }
 

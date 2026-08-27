@@ -934,6 +934,13 @@ namespace TodoSidebar
         private void NoiseVolume_ValueChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e)
         {
             if (NoiseVolumeSlider == null) return; // XAML 初始化期间触发
+            // v5.6 审查修复：拖动期间只调内存音量（ValueChanged 高频），松开鼠标才落库
+            SoundService.Instance.SetVolumeLive(NoiseVolumeSlider.Value / 100.0);
+        }
+
+        private void NoiseVolume_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (NoiseVolumeSlider == null) return;
             SoundService.Instance.SetVolume(NoiseVolumeSlider.Value / 100.0);
         }
 

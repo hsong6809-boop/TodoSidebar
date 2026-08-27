@@ -147,6 +147,13 @@ namespace TodoSidebar
             _singleInstanceMutex = new Mutex(true, "Local\\TodoSidebar.SingleInstance", out var createdNew);
             if (!createdNew)
             {
+                // v5.6 审查修复：本进程若由 Toast 按钮冷启动拉起且互斥被主实例持有，
+                // 把激活参数转发给主实例（写盘待处理）后静默退出，不弹"已在运行"提示框
+                if (TodoSidebar.Services.ToastService.TryForwardPending(e.Args))
+                {
+                    Shutdown();
+                    return;
+                }
                 MessageBox.Show("TodoSidebar 已经在运行中。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 Shutdown();
                 return;

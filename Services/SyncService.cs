@@ -677,7 +677,10 @@ namespace TodoSidebar.Services
                 && local.IsDeleted == remote.IsDeleted
                 && NullableDateEquals(local.Deadline, remote.Deadline)
                 && NullableDateEquals(local.CompletedAt, remote.CompletedAt)
-                && NullableDateEquals(local.CreatedAt, remote.CreatedAt);
+                && NullableDateEquals(local.CreatedAt, remote.CreatedAt)
+                // v5.4 审查修复：远端仅改重复规则时必须回写——
+                // 否则 A 改 daily→weekly:1 后 B 因其余字段全同被误判"内容一致"而永远收不到
+                && RecurrenceRule.Normalize(local.Recurrence) == RecurrenceRule.Normalize(remote.Recurrence);
         }
 
         /// <summary>M39：时间比较前归一化到 UTC（本地值可能是 Unspecified/Local 种类）。</summary>

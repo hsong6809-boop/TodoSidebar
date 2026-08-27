@@ -94,7 +94,9 @@ namespace TodoSidebar.Models
                     return wd;
 
                 case Monthly:
-                    // 下一个月的同一天；超出月末天数时收敛到月末（1/31 → 2/28）
+                    // 下一个月的同一天；超出月末天数时收敛到月末（1/31 → 2/28）。
+                    // 注意：收敛是永久性的——2/28 完成后下一期按 28 日推（3/28、4/28…），
+                    // 不会"补回"31 日。有意简化：不跨月记住原始锚点日，避免状态外置。
                     var month = current.Month == 12 ? new DateTime(current.Year + 1, 1, 1)
                                                     : new DateTime(current.Year, current.Month + 1, 1);
                     var day = Math.Min(current.Day, DateTime.DaysInMonth(month.Year, month.Month));

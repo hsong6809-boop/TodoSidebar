@@ -125,6 +125,7 @@ namespace TodoSidebar.Services
                     Tags = completedTask.Tags,
                     SortOrder = completedTask.SortOrder,
                     EstimatedMinutes = completedTask.EstimatedMinutes,
+                    // SubTasksJson 有意不复制：每期从空清单重新勾选；ActualMinutes 同理不复制
                     Recurrence = completedTask.Recurrence
                 };
                 nextTask.Id = _db.InsertTask(nextTask);

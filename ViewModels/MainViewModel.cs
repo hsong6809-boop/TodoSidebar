@@ -219,6 +219,11 @@ namespace TodoSidebar.ViewModels
             LevelProgress = 0;
             LevelProgressText = $"0/{LevelService.XpForNextLevel(e.NewLevel)} XP";
             LevelDisplay = LevelService.FormatLevelDisplay(e.NewLevel, e.NewTitle);
+
+            // v5.5 审查修复：升级即刻失效解锁判定缓存——否则强调色/头像门槛
+            // 整个进程生命周期都停留在首次查询的旧等级，直到重启才恢复
+            Services.UnlockService.RefreshLevel();
+
             LevelUpOccurred?.Invoke(this, e);
         }
 
@@ -434,11 +439,11 @@ namespace TodoSidebar.ViewModels
             PendingTags = null;
         }
 
-        /// <summary>v5.5：自然语言解析确实贡献了内容时计入成就统计。</summary>
+        /// <summary>v5.5：NLP 确有语义贡献（时间/优先级/标签）时才计入成就统计——
+        /// 纯标题清洗（折叠空格/去标点）不算，避免 nlp_50 虚高。</summary>
         private void TrackNlpUsage(ParsedTask parsed, string raw)
         {
-            bool contributed = parsed.Title.Length > 0 && parsed.Title != raw.Trim()
-                || parsed.DueDate.HasValue
+            bool contributed = parsed.DueDate.HasValue
                 || parsed.Priority.HasValue
                 || parsed.Tags.Count > 0;
             if (!contributed) return;
@@ -556,10 +561,26 @@ namespace TodoSidebar.ViewModels
         {
             _undoTimer?.Stop();
             if (_lastDeletedTaskId > 0)
+            {
                 _taskService.RestoreTask(_lastDeletedTaskId);
+                DecrementTrashCounter();
+            }
             _lastDeletedTaskId = 0;
             UndoMessage = null;
             LoadData();
+        }
+
+        /// <summary>v5.5 审查修复：撤销/恢复删除时回退"断舍离"计数（clamp ≥0），
+        /// 防止反复删除-撤销刷成就。</summary>
+        private void DecrementTrashCounter()
+        {
+            try
+            {
+                var current = int.TryParse(_dbService.GetSetting("TrashLifetimeCount"), out var v)
+                    ? v : 0;
+                if (current > 0) _dbService.SetSetting("TrashLifetimeCount", (current - 1).ToString());
+            }
+            catch { /* 统计失败不影响主流程 */ }
         }
 
         // ===== v5.3 回收站 =====
@@ -579,6 +600,7 @@ namespace TodoSidebar.ViewModels
         {
             if (task == null) return;
             _taskService.RestoreTask(task.Id);
+            DecrementTrashCounter();
             LoadDeletedTasks();
             LoadData();
         }

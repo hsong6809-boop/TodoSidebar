@@ -66,6 +66,77 @@ namespace TodoSidebar.Services
             }
         }
 
+        // ==================== v5.6 审查修复：第二实例激活转发 ====================
+        // 场景：应用已在运行，用户点 Toast 按钮 → Windows 拉起第二进程 → 单实例互斥命中。
+        // 此时让第二进程把激活参数写盘后静默退出，主进程的 1 分钟检查器读取并执行，
+        // 避免"在将死的进程里直连 SQLite / 操作丢失"。
+
+        private static readonly string PendingFilePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TodoSidebar", "toast_pending.json");
+
+        /// <summary>
+        /// 从命令行参数中提取 Toast 激活段并写入待处理文件。
+        /// 命中有效动作返回 true（调用方据此跳过"已运行"提示框静默退出）。
+        /// </summary>
+        public static bool TryForwardPending(string[] launchArgs)
+        {
+            try
+            {
+                var joined = string.Join(" ", launchArgs ?? Array.Empty<string>());
+                var m = System.Text.RegularExpressions.Regex.Match(joined,
+                    @"action=(complete|snooze).{0,40}?taskId=(\d+)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!m.Success) return false;
+
+                var payload = System.Text.Json.JsonSerializer.Serialize(new PendingToast
+                {
+                    Action = m.Groups[1].Value.ToLowerInvariant(),
+                    TaskId = int.Parse(m.Groups[2].Value),
+                    StampUtc = DateTime.UtcNow.ToString("O")
+                });
+                var dir = System.IO.Path.GetDirectoryName(PendingFilePath)!;
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(PendingFilePath, payload);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Toast] 转发挂起失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>主进程检查器调用：读取并执行挂起激活（UI 线程），随后删除文件。</summary>
+        public static void ProcessPendingActivations()
+        {
+            try
+            {
+                if (!System.IO.File.Exists(PendingFilePath)) return;
+                var payload = System.Text.Json.JsonSerializer.Deserialize<PendingToast>(
+                    System.IO.File.ReadAllText(PendingFilePath));
+                System.IO.File.Delete(PendingFilePath);
+                if (payload == null || payload.TaskId <= 0) return;
+
+                switch (payload.Action)
+                {
+                    case ActionComplete: CompleteFromActivation(payload.TaskId); break;
+                    case ActionSnooze: SnoozeFromActivation(payload.TaskId); break;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Toast] 处理挂起激活失败: {ex.Message}");
+            }
+        }
+
+        private sealed class PendingToast
+        {
+            public string Action { get; set; } = "";
+            public int TaskId { get; set; }
+            public string StampUtc { get; set; } = "";
+        }
+
         private static void CompleteFromActivation(int taskId)
         {
             // 可能在非 UI 线程触发：DB 层自带锁安全；奖励/UI 刷新统一投递到 UI 线程

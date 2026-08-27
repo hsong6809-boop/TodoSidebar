@@ -1817,36 +1817,15 @@ namespace TodoSidebar.Services
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
 
-        /// <summary>
-        /// 是否存在指定来源且本地时间满足时段条件的 XP 流水（彩蛋徽章用）。
-        /// </summary>
-        /// <param name="source">来源</param>
-        /// <param name="predicate">对本地时间（DateTime）的判断</param>
-        public bool HasXpLogMatchingTime(string source, Func<DateTime, bool> predicate) => ExecuteLocked(() =>
-        {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT CreatedAt FROM XpLog WHERE Source = @source";
-            cmd.Parameters.AddWithValue("@source", source);
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                var raw = reader.GetString(0);
-                if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.RoundtripKind, out var utc))
-                {
-                    if (predicate(utc.ToLocalTime()))
-                        return true;
-                }
-            }
-            return false;
-        });
-
         // ==================== v5.5 成就扩充统计 ====================
 
-        /// <summary>v5.5：指定来源且本地时间满足条件的 XP 流水条数（如深夜完成 10 次）。</summary>
-        public int GetXpLogCountMatchingTime(string source, Func<DateTime, bool> predicate) => ExecuteLocked(() =>
+        /// <summary>
+        /// v5.5 审查修复：一次扫描 XpLog 统计三类时段行为计数（早于6点 / 23点后 / 周末）。
+        /// 替代原先 HasXpLogMatchingTime×2 + Count×2 + Weekend 至多 5 次全表逐行 TryParse 扫描。
+        /// </summary>
+        public (int Early, int Late, int Weekend) GetXpLogTimeBehaviorCounts(string source) => ExecuteLocked(() =>
         {
-            int count = 0;
+            int early = 0, late = 0, weekend = 0;
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "SELECT CreatedAt FROM XpLog WHERE Source = @source";
             cmd.Parameters.AddWithValue("@source", source);
@@ -1854,18 +1833,16 @@ namespace TodoSidebar.Services
             while (reader.Read())
             {
                 var raw = reader.GetString(0);
-                if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                if (!DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
                         System.Globalization.DateTimeStyles.RoundtripKind, out var utc))
-                {
-                    if (predicate(utc.ToLocalTime())) count++;
-                }
+                    continue;
+                var local = utc.ToLocalTime();
+                if (local.Hour < 6) early++;
+                if (local.Hour >= 23) late++;
+                if (local.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) weekend++;
             }
-            return count;
+            return (early, late, weekend);
         });
-
-        /// <summary>v5.5：指定来源在周末（周六/周日，本地时区）完成的条数。</summary>
-        public int GetXpLogWeekendCount(string source)
-            => GetXpLogCountMatchingTime(source, t => t.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday);
 
         /// <summary>v5.5：有完成记录的不同日期天数（热力图活跃天数口径）。</summary>
         public int GetDistinctDailyCompletionDays() => ExecuteLocked(() =>

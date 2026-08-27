@@ -225,8 +225,11 @@ namespace TodoSidebar.Services
             {
                 try
                 {
-                    var kb = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+                    var kbStruct = Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+                if (kbStruct is KBDLLHOOKSTRUCT kb)
+                {
                     HandleKey(kb.vkCode);
+                }
                 }
                 catch
                 {
