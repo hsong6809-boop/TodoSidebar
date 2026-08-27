@@ -110,7 +110,7 @@ namespace TodoSidebar.Services
                 WeekendCompleteCount = weekendCount,
                 ActiveDays = _db.GetDistinctDailyCompletionDays(),
                 TaggedTaskCount = _db.GetTaggedTaskCount(),
-                RecurringCompletedCount = _db.GetRecurringCompletedCount(),
+                RecurringCompletedCount = ReadCounter("RecurringCompletedLifetime"),
                 TrashLifetimeCount = ReadCounter("TrashLifetimeCount"),
             };
         }

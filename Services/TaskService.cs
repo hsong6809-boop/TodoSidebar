@@ -91,6 +91,13 @@ namespace TodoSidebar.Services
                     _db.UpdateTask(task);
                     RewardTaskComplete(task);
 
+                    // v5.5 审查修复：重复任务完成终身计数（成就"循环启程"口径，
+                    // 替代快照式 SQL 统计，不受已完成实例删除/清理影响）
+                    if (task.HasRecurrence)
+                    {
+                        try { _db.IncrementSettingCounter("RecurringCompletedLifetime"); } catch { }
+                    }
+
                     // v5.4 重复任务：按规则生成下一期实例（新 Id，独立统计历史）
                     SpawnNextRecurrence(task);
                 }

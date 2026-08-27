@@ -1863,22 +1863,6 @@ namespace TodoSidebar.Services
             return Convert.ToInt32(cmd.ExecuteScalar());
         });
 
-        /// <summary>v5.4/v5.5：已完成过至少一次的重复任务实例数。</summary>
-        public int GetRecurringCompletedCount() => ExecuteLocked(() =>
-        {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDeleted = 0 AND Recurrence IS NOT NULL AND Recurrence != '' AND IsCompleted = 1";
-            return Convert.ToInt32(cmd.ExecuteScalar());
-        });
-
-        /// <summary>v5.3/v5.5：回收站中的任务数（含未过期）。</summary>
-        public int GetSoftDeletedTaskCount() => ExecuteLocked(() =>
-        {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Tasks WHERE IsDeleted = 1";
-            return Convert.ToInt32(cmd.ExecuteScalar());
-        });
-
         /// <summary>
         /// 已解锁成就 ID 集合。
         /// </summary>
