@@ -609,15 +609,31 @@ namespace TodoSidebar.ViewModels
         private void PurgeFromTrash(TaskItem? task)
         {
             if (task == null) return;
-            _taskService.PurgeTask(task.Id);
+            // R(review 修复 v5.6)：未同步到云端的删除记录先拒绝硬删，避免"已彻底删除的任务又复活"
+            var purged = _taskService.PurgeTask(task.Id);
+            if (!purged)
+            {
+                _messageService.ShowWarning(
+                    "该任务尚未同步到云端，无法彻底删除。\n\n请先同步（或联网等待自动同步）后再试，避免删除记录丢失后任务在云端复活。",
+                    "无法彻底删除");
+            }
             LoadDeletedTasks();
         }
 
         [RelayCommand]
         private void PurgeAllTrash()
         {
+            int failed = 0;
             foreach (var t in DeletedTasks.ToList())
-                _taskService.PurgeTask(t.Id);
+            {
+                if (!_taskService.PurgeTask(t.Id)) failed++;
+            }
+            if (failed > 0)
+            {
+                _messageService.ShowWarning(
+                    $"{failed} 条删除记录尚未同步到云端，本次未彻底删除。\n\n请先同步（或联网等待自动同步）后再试，避免删除记录丢失后任务在云端复活。",
+                    "部分无法彻底删除");
+            }
             LoadDeletedTasks();
         }
 

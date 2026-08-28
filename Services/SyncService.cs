@@ -73,6 +73,12 @@ namespace TodoSidebar.Services
         /// 最后同步时间
         /// </summary>
         public DateTime? LastSyncTime { get; private set; }
+
+        /// <summary>
+        /// R(review 修复 v5.6)：最近一次同步失败原因（供 UI 展示，失败不再完全静默）。
+        /// 成功/离线不算失败但保留提示文案；同步成功时清空。
+        /// </summary>
+        public string? LastError { get; private set; }
         
         /// <summary>
         /// 同步状态变化事件
@@ -151,7 +157,12 @@ namespace TodoSidebar.Services
                 if (online && _authService.IsLoggedIn)
                 {
                     System.Diagnostics.Debug.WriteLine("[SyncService] Network restored, triggering sync");
-                    try { await SyncAsync(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[SyncService] Network restore sync failed: {ex.Message}"); }
+                    try { await SyncAsync(); }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[SyncService] Network restore sync failed: {ex.Message}");
+                        LastError = ex.Message;
+                    }
                 }
             };
             _network.ConnectivityChanged += _networkHandler;
@@ -185,7 +196,11 @@ namespace TodoSidebar.Services
                 // M39：启动后立即同步一次，不再干等第一个 30 秒 tick
                 // （登录/切号后用户很快会查看数据，首次同步应尽快完成）
                 try { await SyncAsync(); }
-                catch (Exception firstEx) { System.Diagnostics.Debug.WriteLine($"Initial sync failed: {firstEx.Message}"); }
+                catch (Exception firstEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Initial sync failed: {firstEx.Message}");
+                    LastError = firstEx.Message;
+                }
 
                 while (await _syncTimer!.WaitForNextTickAsync(ct))
                 {
@@ -197,6 +212,7 @@ namespace TodoSidebar.Services
                     {
                         // 单次同步失败不影响循环
                         System.Diagnostics.Debug.WriteLine($"Sync tick error: {ex.Message}");
+                        LastError = ex.Message;
                         SetStatus(SyncStatus.Error);
                     }
                 }
@@ -233,6 +249,9 @@ namespace TodoSidebar.Services
                     Success = false,
                     Details = "已离线，跳过同步"
                 });
+                // R(review 修复 v5.6)：离线状态显式上报，UI 得以显示"离线，未同步"而非误显示已同步
+                LastError = "已离线，未同步";
+                SetStatus(SyncStatus.Offline);
                 return new SyncResult { Success = false, Error = "已离线" };
             }
             
@@ -304,7 +323,9 @@ namespace TodoSidebar.Services
                     if (fullReconcile)
                         _dbService.SetSetting(FullReconcileKey(currentUserId), DateTime.UtcNow.ToString("O"));
                 }
-                
+
+                // R(review 修复 v5.6)：同步成功清空失败提示
+                LastError = null;
                 SetStatus(SyncStatus.Idle);
                 SyncCompleted?.Invoke(this, result);
                 
@@ -325,6 +346,7 @@ namespace TodoSidebar.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Sync error: {ex.Message}");
+                LastError = ex.Message;
                 SetStatus(SyncStatus.Error);
                 
                 sw.Stop();
@@ -363,13 +385,46 @@ namespace TodoSidebar.Services
                 // 构建批量同步列表
                 var syncTasks = new List<SyncTask>();
                 var taskMapping = new List<(int localId, SyncTask syncTask, string? expectedLocalUpdatedAt)>();
+                int skipped = 0;
 
                 foreach (var task in dirtyTasks)
                 {
-                    // M11 修复：SyncId 损坏时不再让整个上传流程卡死，视为无 SyncId 重新生成
+                    // R(review 修复 v5.6)：上传前按 SyncId 单查远端版本，防止"盲推覆盖"——
+                    // 原实现直接 whole-row upsert：A 机离线编辑任务 tL（旧）、B 机随后编辑 tR（新）并同步，
+                    // A 机恢复联网自动同步时会把服务端从 tR 回退成 tL，下载侧 LWW 已无还手之力
+                    // （它拿到的"远端"正是本机刚覆盖的版本），B 的较新编辑在两端都被永久抹掉。
+                    // 现在：远端 updated_at 更新于本地编辑时间时跳过本次推送，交由下载侧 LWW 以较新者胜收敛。
                     Guid syncId;
-                    if (string.IsNullOrEmpty(task.SyncId) || !Guid.TryParse(task.SyncId, out syncId))
+                    if (!string.IsNullOrEmpty(task.SyncId) && Guid.TryParse(task.SyncId, out syncId))
+                    {
+                        var localEditUtc = task.LocalUpdatedAt.HasValue ? ToUtc(task.LocalUpdatedAt.Value) : DateTime.UtcNow;
+                        try
+                        {
+                            var remoteResp = await client.From<SyncTask>().Where(x => x.Id == syncId).Get();
+                            var remoteRow = remoteResp.Models?.FirstOrDefault();
+                            if (remoteRow != null && remoteRow.UpdatedAt > localEditUtc)
+                            {
+                                skipped++;
+                                _syncLog.Log(new SyncLogEntry
+                                {
+                                    Action = "upload",
+                                    Success = true,
+                                    Details = $"跳过本地任务#{task.Id}：远端较新（LWW 交由下载侧收敛）"
+                                });
+                                continue;
+                            }
+                        }
+                        catch (Exception checkEx)
+                        {
+                            // 预检失败不阻断上传（保持原语义），下一轮自动重试
+                            System.Diagnostics.Debug.WriteLine($"Upload pre-check error for task {task.Id}: {checkEx.Message}");
+                        }
+                    }
+                    else
+                    {
+                        // M11 修复：SyncId 损坏时不再让整个上传流程卡死，视为无 SyncId 重新生成
                         syncId = Guid.NewGuid();
+                    }
 
                     var syncTask = new SyncTask
                     {
@@ -401,6 +456,21 @@ namespace TodoSidebar.Services
                     // S7 修复：记录上传时的 LocalUpdatedAt 快照，标记已同步时做乐观校验
                     taskMapping.Add((task.Id, syncTask, task.LocalUpdatedAt?.ToString("O")));
                 }
+
+                if (skipped > 0)
+                {
+                    // 摘要留痕，便于诊断"本地明明改了却一直传不上去"的 LWW 场景
+                    _syncLog.Log(new SyncLogEntry
+                    {
+                        Action = "upload",
+                        Success = true,
+                        Details = $"本轮跳过 {skipped} 条（远端较新，LWW 由下载侧收敛），{syncTasks.Count} 条正常上传"
+                    });
+                }
+
+                // 全部被"远端较新"跳过时无需发请求（下载侧会在本轮收敛）
+                if (syncTasks.Count == 0)
+                    return 0;
 
                 // 批量 upsert（一次 HTTP 请求）
                 try
@@ -541,6 +611,10 @@ namespace TodoSidebar.Services
                             DeletedAt = ParseRemoteDeletedAt(remoteTask.DeletedAt),
                             Recurrence = RecurrenceRule.Normalize(remoteTask.Recurrence),
                             IsDirty = false,
+                            // R(review 修复 v5.6)：携带远端真实编辑时间落库（见 UpsertTaskFromRemote），
+                            // 原实现 LocalUpdatedAt 由库层写成"同步时刻"，会抬高 LWW 比较基线、
+                            // 让"先同步者"在后续冲突裁决中偏向本地胜，磨损真实编辑时间语义。
+                            LocalUpdatedAt = ToUtc(remoteTask.UpdatedAt),
                             LastSyncedAt = DateTime.UtcNow  // 与数据库 LastSyncedAt 存储格式（UTC）一致
                         };
                         
@@ -611,6 +685,16 @@ namespace TodoSidebar.Services
                             }
                             else
                             {
+                                // R(review 修复 v5.6)：本地已无此行而远端是"超过保留期的老墓碑"——
+                                // 跳过重新插入。原实现下 24h 全量对账会把本地已清理的回收站墓碑
+                                // 反复拉回，且 LastSyncedAt 被刷新导致 30 天清理栅栏无限顺延。
+                                // 保留期内的墓碑仍正常写入（跨设备同步删除标记是正确行为）。
+                                if (remoteTask.IsDeleted
+                                    && remoteTask.UpdatedAt < DateTime.UtcNow.AddDays(-DatabaseService.TrashRetentionDays))
+                                {
+                                    RecordObserved(remoteTask);
+                                    continue;
+                                }
                                 _dbService.UpsertTaskFromRemote(localTask);
                             }
                             downloaded++;
@@ -882,11 +966,19 @@ namespace TodoSidebar.Services
 
             // L27 修复：Cancel 后先等在途同步循环退出（最多 5 秒）再 Dispose CTS/Timer，
             // 避免在途同步仍持有已释放的资源；Wait 会把任务异常包装成 AggregateException 抛出，连同超时一并吞掉
+            bool loopExited = true;
             try { _syncLoopTask?.Wait(TimeSpan.FromSeconds(5)); }
             catch { }
+            if (_syncLoopTask != null && !_syncLoopTask.IsCompleted)
+                loopExited = false;
 
             // L27 修复：防重入标记复位移到等待之后——等待期间在途同步可能仍依赖该标记的互斥语义
-            Interlocked.Exchange(ref _syncInProgress, 0);
+            // R(review 修复 v5.6)：仅当循环确实退出才复位。若在途同步未在 5 秒内结束，
+            // 提前复位会让"旧同步仍持有进行中语义"时新同步可并发进入，交错执行 LWW 裁决与写库。
+            // 此时保留标记：在途 SyncAsync 的 finally 会在结束时自动复位；
+            // 重新登录后的首轮同步会短暂返回"正在同步中"（下个 30s tick 自动重试），不丢数据。
+            if (loopExited)
+                Interlocked.Exchange(ref _syncInProgress, 0);
 
             _syncTimer?.Dispose();
             _cts?.Dispose();
@@ -901,6 +993,11 @@ namespace TodoSidebar.Services
                 _network.ConnectivityChanged -= _networkHandler;
                 _networkHandler = null;
             }
+
+            // R(review 修复 v5.6)：归还初始化防重入标记——原实现只在初始化“失败”时复位，
+            // Stop() 后再次 InitializeAsync 会被守卫永久短路：登出→重登后
+            // 30 秒定时循环与断网恢复自动同步全部不再启动（与顶注释“Stop 后可再次 InitializeAsync 重启”矛盾）。
+            Interlocked.Exchange(ref _initGuard, 0);
         }
     }
 }

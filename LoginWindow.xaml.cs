@@ -267,6 +267,19 @@ namespace TodoSidebar
 
                         db.EnsureUserScope(currentUserId);
                         LogLoginDiag("[ui] EnsureUserScope 同步完成");
+
+                        // R(review 修复 v5.6)：归属确认/清库完成之后再启动同步循环，
+                        // 取代原来 App 登录事件处理器里"登录瞬间即启动"的路径——
+                        // 保证旧账号脏数据不会在确认弹窗之前就以新账号身份上传。
+                        try
+                        {
+                            await Services.SyncService.Instance.InitializeAsync();
+                            LogLoginDiag("[ui] SyncService 初始化完成（归属确认后）");
+                        }
+                        catch (Exception syncInitEx)
+                        {
+                            LogLoginDiag($"[ui] SyncService 初始化异常: {syncInitEx.Message}");
+                        }
                     }
 
                     // 登录成功：先释放旧 ViewModel（避免定时器/订阅泄漏），再初始化新实例

@@ -419,10 +419,16 @@ namespace TodoSidebar.Services
 
         private int InsertTaskCore(TaskItem task)
         {
+            // R(review 修复 v5.6)：SyncId 在插入时预生成并落库——
+            // 原实现要等"上传成功"才绑定 SyncId，若进程恰在上传成功与标记之间退出，
+            // 下轮会以新 GUID 重传 → 云端孤儿行 + 本地重复任务。
+            // 预生成后重传始终命中同一云端主键（upsert 幂等）。
+            task.SyncId ??= Guid.NewGuid().ToString();
+
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, IsDirty, LocalUpdatedAt)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, 1, @localUpdatedAt);
+                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LocalUpdatedAt)
+                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, 1, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
             cmd.Parameters.AddWithValue("@title", task.Title);
@@ -438,6 +444,7 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -570,7 +577,9 @@ namespace TodoSidebar.Services
                 using (var cmd = _connection!.CreateCommand())
                 {
                     cmd.Transaction = transaction;
-                    cmd.CommandText = "DELETE FROM Tasks WHERE Id = @id AND IsDeleted = 1";
+                    // R(review 修复 v5.6)：与 PurgeExpiredDeletedTasks 同口径加 IsDirty=0 守卫——
+                    // 未上云的删除墓碑不能本地硬删，否则云端存活行会在下次同步被拉回而"复活"
+                    cmd.CommandText = "DELETE FROM Tasks WHERE Id = @id AND IsDeleted = 1 AND IsDirty = 0";
                     cmd.Parameters.AddWithValue("@id", id);
                     affected = cmd.ExecuteNonQuery();
                 }
@@ -1371,7 +1380,11 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
-                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+                    // R(review 修复 v5.6)：LocalUpdatedAt 保留"真实编辑时间"的较新者（远端编辑时间 vs 本行现值），
+                    // 原实现写同步时刻 UtcNow——抬高本地编辑基线，令后续 LWW 偏向"本地胜"，
+                    // 在多设备并发编辑场景下可能误覆盖另一设备的较新修改。
+                    cmd.Parameters.AddWithValue("@localUpdatedAt",
+                        (MergeEditTime(existing.LocalUpdatedAt, task.LocalUpdatedAt, DateTime.UtcNow))?.ToString("O"));
                     cmd.Parameters.AddWithValue("@expected", expectedLocalUpdatedAt ?? (object)DBNull.Value);
                     return cmd.ExecuteNonQuery() > 0;
                 }
@@ -1397,7 +1410,9 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
-                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+                    // R(review 修复 v5.6)：远端新插入的行同样携带真实编辑时间，而非同步时刻
+                    cmd.Parameters.AddWithValue("@localUpdatedAt",
+                        (MergeEditTime(null, task.LocalUpdatedAt, DateTime.UtcNow))?.ToString("O"));
                     cmd.ExecuteNonQuery();
                     return true;
                 }
@@ -1413,6 +1428,22 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToLocalTime().ToString("O"));
             cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToLocalTime().ToString("O") ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToLocalTime().ToString("O") ?? (object)DBNull.Value);
+        }
+
+        /// <summary>
+        /// R(review 修复 v5.6)：合并"编辑时间"——取本行现值与远端编辑时间的较新者；
+        /// 两者都缺时回退默认值。比较前按 UTC 归一化，避免 Unspecified/Local 混存导致偏移误差。
+        /// </summary>
+        private static DateTime? MergeEditTime(DateTime? existing, DateTime? incoming, DateTime? fallback)
+        {
+            static DateTime ToUtcCompare(DateTime d)
+                => d.Kind == DateTimeKind.Utc ? d : d.ToUniversalTime();
+
+            if (existing.HasValue && incoming.HasValue)
+                return ToUtcCompare(existing.Value) >= ToUtcCompare(incoming.Value) ? existing : incoming;
+            if (existing.HasValue) return existing;
+            if (incoming.HasValue) return incoming;
+            return fallback;
         }
 
         /// <summary>

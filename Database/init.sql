@@ -1,5 +1,18 @@
 -- TodoSidebar Supabase 数据库初始化脚本
 -- 在 Supabase 控制台的 SQL Editor 中执行此脚本
+--
+-- ⚠️ 历史遗留脚本，请勿在新环境使用！
+-- 2026-08 云同步排查结论：
+--   1) 本脚本 tasks.user_id 为 UUID、RLS 用 auth.uid()=user_id、并带
+--      update_tasks_updated_at 触发器（每次 UPDATE 强制 updated_at=now()）——
+--      触发器会把客户端上传的"真实编辑时间"改写为服务端时间，击穿 LWW 冲突解决
+--      （"谁最后联网谁赢"，较早编辑可静默覆盖较新编辑）。
+--   2) 与新版脚本（supabase_tasks_rls.sql / supabase_setup.sql，text user_id、无触发器）
+--      互斥：混跑会导致 RLS 策略创建报错（uuid=text 无操作符）。
+-- 新部署请统一使用：supabase_setup.sql + supabase_tasks_rls.sql（+ account_profile_setup.sql），
+-- 见仓库根目录 SETUP.md。存量库若存在本脚本建出的触发器，请先执行：
+--   drop trigger if exists update_tasks_updated_at on public.tasks;
+-- ============================================================
 
 -- 1. 启用 UUID 扩展（如果尚未启用）
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

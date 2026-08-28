@@ -37,7 +37,11 @@ namespace TodoSidebar
                 DwmBackdropHelper.ApplyMainShellAcrylic(this);
                 UpdateThemeToggleGlyph();
                 LoadDashboardHeader();
+                UpdateSyncStatusUi();
             };
+
+            // R(review 修复 v5.6)：同步状态实时刷新（后台线程触发时经 Dispatcher 调度到 UI 线程）
+            SyncService.Instance.StatusChanged += OnSyncStatusChanged;
 
             // v5.2 账号中心：顶栏头像随账号资料变化刷新
             AccountService.Instance.ProfileChanged += OnAccountProfileChanged;
@@ -65,6 +69,9 @@ namespace TodoSidebar
         /// <summary>窗口关闭时退订单例/长生命周期事件，防止窗口无法被回收</summary>
         protected override void OnClosed(EventArgs e)
         {
+            // R(review 修复 v5.6)：退订同步状态事件
+            SyncService.Instance.StatusChanged -= OnSyncStatusChanged;
+
             // 退订 ViewModel 事件（DataContext 判空）
             if (DataContext is MainViewModel vm)
             {
@@ -809,18 +816,86 @@ namespace TodoSidebar
                         : TryFindResource("DangerBrush") as Brush ?? Brushes.Red;
                 }
 
-                // 同步卡真实时间戳
-                if (SyncStampText != null)
-                {
-                    var last = SyncService.Instance.LastSyncTime;
-                    SyncStampText.Text = last.HasValue
-                        ? $"上次同步 {last.Value.ToString("HH:mm")} · 每 30 秒自动"
-                        : "尚未同步 · 每 30 秒自动";
-                }
+                // R(review 修复 v5.6)：同步卡状态改由真实状态驱动（含失败原因/离线提示）
+                UpdateSyncStatusUi();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"LoadDashboardHeader extras error: {ex.Message}");
+            }
+        }
+
+        /// <summary>R(review 修复 v5.6)：同步状态变化事件（可能来自后台同步线程，需调度回 UI 线程）。</summary>
+        private void OnSyncStatusChanged(object? sender, SyncStatus status)
+        {
+            if (Dispatcher.CheckAccess())
+                UpdateSyncStatusUi();
+            else
+                Dispatcher.BeginInvoke(new Action(UpdateSyncStatusUi));
+        }
+
+        /// <summary>
+        /// R(review 修复 v5.6)：按真实同步状态刷新仪表盘"同步"卡片。
+        /// 原实现硬编码"已同步到云端"绿点，未登录/离线/同步失败时仍然显示，
+        /// 用户误以为数据安全上云——本次检查的实测场景中即为该误导掩盖了"上传被云端拒绝"。
+        /// </summary>
+        private void UpdateSyncStatusUi()
+        {
+            if (SyncStatusDot == null || SyncStatusText == null) return;
+            try
+            {
+                var svc = SyncService.Instance;
+                Brush dotBrush;
+                string mainText;
+                string? subText = null;
+
+                switch (svc.Status)
+                {
+                    case SyncStatus.Syncing:
+                        dotBrush = TryFindResource("AccentBrush") as Brush ?? Brushes.Orange;
+                        mainText = " 正在同步...";
+                        break;
+                    case SyncStatus.Offline:
+                        dotBrush = TryFindResource("TextTertiaryBrush") as Brush ?? Brushes.Gray;
+                        mainText = " 离线，未同步";
+                        break;
+                    case SyncStatus.Error:
+                        dotBrush = TryFindResource("DangerBrush") as Brush ?? Brushes.Red;
+                        mainText = " 同步异常";
+                        subText = svc.LastError;
+                        break;
+                    default:
+                        if (!AuthService.Instance.IsLoggedIn)
+                        {
+                            dotBrush = TryFindResource("TextTertiaryBrush") as Brush ?? Brushes.Gray;
+                            mainText = " 未登录，数据仅存本机";
+                        }
+                        else if (svc.LastSyncTime.HasValue)
+                        {
+                            dotBrush = TryFindResource("SuccessBrush") as Brush ?? Brushes.Green;
+                            mainText = " 已同步到云端";
+                        }
+                        else
+                        {
+                            dotBrush = TryFindResource("TextTertiaryBrush") as Brush ?? Brushes.Gray;
+                            mainText = " 尚未同步";
+                        }
+                        break;
+                }
+
+                SyncStatusDot.Fill = dotBrush;
+                SyncStatusText.Text = mainText;
+
+                var last = svc.LastSyncTime;
+                if (SyncStampText != null)
+                    SyncStampText.Text = subText
+                        ?? (last.HasValue
+                            ? $"上次同步 {last.Value.ToString("HH:mm")} · 每 30 秒自动"
+                            : "每 30 秒自动同步 · 支持多设备合并");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateSyncStatusUi error: {ex.Message}");
             }
         }
 

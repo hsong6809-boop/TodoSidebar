@@ -592,8 +592,9 @@
                                 <Border Background="{DynamicResource CardBrush}" CornerRadius="14" Padding="14,12">
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="7" Height="7" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
-                                            <TextBlock Text=" 已同步到云端" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                            <!-- R(review 修复 v5.6)：状态点/文案由代码后台按真实同步状态刷新，不再硬编码"已同步" -->
+                                            <Ellipse x:Name="SyncStatusDot" Width="7" Height="7" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="SyncStatusText" Text=" 已同步到云端" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                         </StackPanel>
                                         <TextBlock x:Name="SyncStampText" Text="每 30 秒自动同步 · 支持多设备合并" FontSize="10"
                                                    Foreground="{DynamicResource TextTertiaryBrush}" Margin="15,4,0,0"/>

@@ -193,9 +193,17 @@ public static string AnonKey { get; set; } = "your-anon-key";
 
 ### 数据库初始化
 
-在 Supabase 控制台的 SQL Editor 中执行 `Database/init.sql` 脚本。
+云端表结构与 RLS 统一按根目录 **`SETUP.md`** 的脚本顺序初始化（`supabase_setup.sql` + `supabase_tasks_rls.sql` + `account_profile_setup.sql`）。旧版 `Database/init.sql` 已标记为历史遗留（含会覆盖客户端编辑时间的触发器），仅作存量迁移参考。
+v5.6.1 存量库修复请执行 `supabase_v560_cloud_migration.sql`（补 `deleted_at`/`recurrence` 列 + 触发器体检）。
 
 ## 📝 更新日志
+
+### v5.6.1 (2026-08-28)
+
+- ☁️ **云同步修复**：修复 v5.6 任务上云失败——云端补列迁移脚本 `supabase_v560_cloud_migration.sql`（`deleted_at`/`recurrence`），已积压的未同步数据自动补传
+- 🛡️ **同步可靠性**：上传前按 SyncId 比对远端版本，防旧编辑静默覆盖新编辑；登出重登后自动同步不再停摆；切号确认后再启动同步防串号；回收站墓碑不再被全量对账"复活"；任务 SyncId 落库时预生成，杜绝重复任务
+- 🧭 **同步状态可视**：仪表盘同步卡按真实状态显示（正在同步 / 离线 / 异常原因），失败不再静默
+- 🔧 回收站"彻底删除"增加未同步保护；下发远端任务时保留真实编辑时间（LWW 冲突裁决更准确）
 
 ### v5.6.0 (2026-08-25)
 

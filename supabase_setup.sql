@@ -83,6 +83,11 @@ alter table public.user_profile enable row level security;
 
 -- S5 修复：保证每个用户只有一行成长档案，使 upsert 语义正确。
 -- 注意：若历史数据已产生重复行，需先按 user_id 去重后再执行本语句。
+-- 去重预处理（有重复行时先执行；保留每个 user_id 最新一行）：
+-- delete from public.user_profile a
+-- using public.user_profile b
+-- where a.user_id = b.user_id
+--   and a.updated_at < b.updated_at;
 create unique index if not exists user_profile_user_id_unique on public.user_profile(user_id);
 
 drop policy if exists "user_profile_select_own" on public.user_profile;

@@ -38,6 +38,9 @@ bin/publish/
 # Session data (user-specific)
 session.json
 
+# Supabase 真实凭据（含发布目录；示例文件 supabase.example.json 除外）
+supabase.json
+
 # SQLite database (user data)
 *.db
 

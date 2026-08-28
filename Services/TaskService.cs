@@ -79,7 +79,10 @@ namespace TodoSidebar.Services
                     // 每日任务：记录今天的完成状态，不修改任务本身的 IsCompleted
                     var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
                     _db.MarkDailyTaskCompleted(task.Id, today);
-                    _db.MarkTaskDirty(task.Id); // 标记需要同步
+                    // R(review 修复 v5.6)：不再 MarkTaskDirty——"今日完成"只存本地
+                    // DailyTaskCompletion 表，云端没有按日完成表、也不同步。
+                    // 原来整行置脏会把"内容没变的一行"当待上传数据推上云，可能用本地
+                    // 过期内容整体覆盖另一设备的较新编辑（配合云端 updated_at 触发器更危险）。
                     task.IsTodayCompleted = true;
                     RewardTaskComplete(task);
                 }
@@ -194,7 +197,7 @@ namespace TodoSidebar.Services
                     // 每日任务：删除今天的完成记录
                     var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
                     _db.UnmarkDailyTaskCompleted(task.Id, today);
-                    _db.MarkTaskDirty(task.Id); // 标记需要同步
+                    // R(review 修复 v5.6)：同 CompleteTask——本地每日完成状态不参与云同步，不置脏
                     task.IsTodayCompleted = false;
                 }
                 else

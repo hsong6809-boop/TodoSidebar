@@ -38,11 +38,16 @@ create table if not exists public.tasks (
     updated_at    timestamptz not null default now(),
     is_deleted    boolean not null default false,
     -- 与 tasks_deleted_at_setup.sql 保持同类型（text，客户端发送 ISO 格式文本）
-    deleted_at    text
+    deleted_at    text,
+    -- v5.4 重复任务：规则编码（daily/weekdays/weekly:N/monthly）；null=不重复。
+    -- 注意：老环境（未执行 tasks_recurrence_setup.sql）按新客户端会因缺列拒收上行，
+    -- 本脚本创建的表直接含该列，与 tasks_recurrence_setup.sql 幂等互补。
+    recurrence    text
 );
 
 -- 存量环境补列（幂等；新环境建表已含该列时此句为无操作）
 alter table public.tasks add column if not exists deleted_at text;
+alter table public.tasks add column if not exists recurrence text;
 
 create index if not exists tasks_user_updated_idx on public.tasks (user_id, updated_at);
 

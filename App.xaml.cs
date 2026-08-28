@@ -348,7 +348,7 @@ namespace TodoSidebar
             try
             {
                 await AuthService.Instance.InitializeAsync();
-                _loginStateHandler = async (s, isLoggedIn) =>
+                _loginStateHandler = (s, isLoggedIn) =>
                 {
                     try
                     {
@@ -357,11 +357,10 @@ namespace TodoSidebar
                             // R58 修复（审查 M1）：归属校验（EnsureUserScope）已移交给
                             // LoginWindow 在登录路径上同步执行——那里有用户在场，
                             // 可以先弹"将丢失 N 条未同步数据"确认框再决定是否清库。
-                            // 处理器只负责无 UI 的网络类初始化，避免在确认前就把库清了
-                            TodoSidebar.Services.AuthService.LogAuthDiag("[handler] 开始 SyncService 初始化");
-
-                            await SyncService.Instance.InitializeAsync();
-                            TodoSidebar.Services.AuthService.LogAuthDiag("[handler] SyncService 初始化完成");
+                            // R(review 修复 v5.6)：同步循环的启动也从事件处理器中移除——
+                            // 原来登录成功瞬间后台立即启动同步并上传"旧账号的脏数据"，
+                            // 早于切号确认弹窗/清库动作，脏数据可能被传进新账号的云端。
+                            // 现在统一改由 LoginWindow 在 EnsureUserScope 完成之后显式启动。
 
                             // v5.2 账号中心：登录后供给账号档案（短 ID/昵称/头像），失败静默降级
                             _ = AccountService.Instance.EnsureProvisionAsync();

@@ -4,7 +4,9 @@
 -- 说明：
 --   recurrence 为规则编码文本：daily / weekdays / weekly:N(1=周一…7=周日) / monthly；
 --   NULL = 不重复。老客户端遇到未知列自动忽略，完全兼容。
---   未执行本脚本时新客户端的重复规则仅保存在本地、不上云。
+--   ⚠️ 必须执行！客户端 v5.6.0 每次任务 upsert 都会序列化该键（含 null），
+--   云端缺列时 PostgREST 会整批拒绝（42703/PGRST204），导致所有任务上传失败
+--   （2026-08 云同步排查实证）。与 supabase_v560_cloud_migration.sql 等价，任选其一。
 -- ============================================================
 
 alter table public.tasks add column if not exists recurrence text;
