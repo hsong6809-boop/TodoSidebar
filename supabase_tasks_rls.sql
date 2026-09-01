@@ -59,14 +59,14 @@ drop policy if exists "tasks_update_own" on public.tasks;
 drop policy if exists "tasks_delete_own" on public.tasks;
 
 create policy "tasks_select_own" on public.tasks
-    for select using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for select using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "tasks_insert_own" on public.tasks
-    for insert with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for insert with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "tasks_update_own" on public.tasks
-    for update using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
-    with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for update using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
+    with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "tasks_delete_own" on public.tasks
-    for delete using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for delete using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 
 -- ========== 3. 复查（应全部 rls_enabled=t） ==========
 select c.relname as table_name,

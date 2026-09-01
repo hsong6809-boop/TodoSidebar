@@ -292,6 +292,23 @@ namespace TodoSidebar.Services
                     });
                 }
 
+                // 3.5 每日打字量云同步（仅数量，LWW 按日合并；尽力而为，失败不影响主流程）
+                try
+                {
+                    await SyncTypingStatsAsync();
+                }
+                catch (Exception typingEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Typing stats sync skipped: {typingEx.Message}");
+                    _syncLog.Log(new SyncLogEntry
+                    {
+                        Action = "typing",
+                        Success = false,
+                        ErrorMessage = typingEx.Message,
+                        Details = "输入统计同步失败（请检查 Supabase 是否已建 typing_stat 表及 RLS 策略）"
+                    });
+                }
+
                 // 4. 定期清理软删除记录（30天前的）
                 _dbService.PurgeDeletedTasks(30);
                 
@@ -903,12 +920,87 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
+        /// 每日打字量云同步（仅每日合计数量，无任何按键/文本内容）：
+        /// 1) 上传：本地比云端新（或云端缺失）的日行，主键按 (user_id, date) 确定性生成 => upsert 幂等；
+        /// 2) 下载：云端比本地新的日行按 LWW（updated_at 最后写入胜）整行覆盖本地。
+        /// 需 Supabase 存在 typing_stat 表。时间比较统一截断到毫秒，规避
+        /// Postgres 微秒精度与本地 ticks 精度差异造成的乒乓上传。
+        /// </summary>
+        private async Task SyncTypingStatsAsync()
+        {
+            var client = SupabaseClientService.Client;
+            var userId = _authService.CurrentUser?.Id;
+            if (string.IsNullOrEmpty(userId))
+                return;
+
+            // 1. 拉取云端该用户全部日行（每日一行的小表，全量即可）
+            var remoteList = await client.From<SyncTypingStat>()
+                .Where(x => x.UserId == userId)
+                .Get();
+            // 同日期多行（异常场景）时取 updated_at 最新一行
+            var remoteByDate = (remoteList.Models ?? new List<SyncTypingStat>())
+                .GroupBy(m => m.Date)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(m => m.UpdatedAt).First());
+
+            // 2. 上传本地较新的日行
+            var localRows = _dbService.GetAllTypingStats();
+            var localByDate = localRows.ToDictionary(r => r.Date, r => r);
+            var toUpload = new List<SyncTypingStat>();
+            foreach (var row in localRows)
+            {
+                remoteByDate.TryGetValue(row.Date, out var remote);
+                if (remote == null || TruncMs(row.UpdatedAtUtc) > TruncMs(remote.UpdatedAt))
+                {
+                    toUpload.Add(new SyncTypingStat
+                    {
+                        Id = remote?.Id ?? DeterministicGuid(userId, "typing", row.Date),
+                        UserId = userId,
+                        Date = row.Date,
+                        KeyStrokes = row.KeyStrokes,
+                        WordChars = row.WordChars,
+                        UpdatedAt = TruncMs(row.UpdatedAtUtc)
+                    });
+                }
+            }
+            if (toUpload.Count > 0)
+                await client.From<SyncTypingStat>().Upsert(toUpload);
+
+            // 3. 下载云端较新的日行（LWW 覆盖本地）
+            foreach (var remote in remoteByDate.Values)
+            {
+                if (!localByDate.TryGetValue(remote.Date, out var local) ||
+                    TruncMs(remote.UpdatedAt) > TruncMs(local.UpdatedAtUtc))
+                {
+                    _dbService.UpsertTypingStatFromRemote(
+                        remote.Date, remote.KeyStrokes, remote.WordChars, remote.UpdatedAt);
+                }
+            }
+        }
+
+        /// <summary>毫秒精度截断：云端 timestamptz 为微秒精度、本地为 ticks，统一后再比较避免乒乓。</summary>
+        private static DateTime TruncMs(DateTime value)
+        {
+            var utc = value.ToUniversalTime();
+            var ticks = utc.Ticks - (utc.Ticks % TimeSpan.TicksPerMillisecond);
+            return new DateTime(ticks, DateTimeKind.Utc);
+        }
+
+        /// <summary>
         /// R10（审查 M17）：由本地行身份推导确定性 GUID（MD5 前 16 字节）。
         /// 同一本地行无论重传多少次，云端主键不变 => upsert 天然幂等。
         /// </summary>
         private static Guid DeterministicGuid(string userId, string kind, int localId, DateTime createdAt)
         {
             var raw = $"{userId}|{kind}|{localId}|{ToUtc(createdAt).Ticks}";
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
+            return new Guid(hash);
+        }
+
+        /// <summary>打字量日行专用：按 (user_id, date) 推导确定性 GUID，同日重传主键不变。</summary>
+        private static Guid DeterministicGuid(string userId, string kind, string key)
+        {
+            var raw = $"{userId}|{kind}|{key}";
             using var md5 = System.Security.Cryptography.MD5.Create();
             var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
             return new Guid(hash);

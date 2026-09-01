@@ -350,7 +350,7 @@ namespace TodoSidebar.Services
             ";
             challengeCmd.ExecuteNonQuery();
 
-            // R61「输入统计」：每日打字量（仅数量，无任何按键/文本内容；不参与云同步）
+            // R61「输入统计」：每日打字量（仅数量，无任何按键/文本内容；登录后由 SyncService 按日 LWW 云同步）
             using var typingCmd = connection.CreateCommand();
             typingCmd.CommandText = @"
                 CREATE TABLE IF NOT EXISTS DailyTypingStat (
@@ -1263,6 +1263,83 @@ namespace TodoSidebar.Services
             using var reader = cmd.ExecuteReader();
             if (!reader.Read()) return (0, 0);
             return (Convert.ToInt32(reader.GetValue(0)), Convert.ToInt32(reader.GetValue(1)));
+        });
+
+        /// <summary>
+        /// 读取区间内（含端点）每日打字量，返回 yyyy-MM-dd → (击键, 字数)。
+        /// 供统计窗口做周/月/年聚合。
+        /// </summary>
+        public Dictionary<string, (int KeyStrokes, int WordChars)> GetTypingStatsRange(DateTime start, DateTime end) => ExecuteLocked(() =>
+        {
+            var result = new Dictionary<string, (int KeyStrokes, int WordChars)>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                SELECT Date, KeyStrokes, WordChars FROM DailyTypingStat
+                WHERE Date >= @start AND Date <= @end";
+            cmd.Parameters.AddWithValue("@start", start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            cmd.Parameters.AddWithValue("@end", end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                result[reader.GetString(0)] = (Convert.ToInt32(reader.GetValue(1)), Convert.ToInt32(reader.GetValue(2)));
+            return result;
+        });
+
+        /// <summary>
+        /// 云同步用：读取全部日行（含 UTC 更新时间，按日期升序）。
+        /// 表为每日一行的小表，全量读取即可支撑上传比对。
+        /// </summary>
+        public List<(string Date, int KeyStrokes, int WordChars, DateTime UpdatedAtUtc)> GetAllTypingStats() => ExecuteLocked(() =>
+        {
+            var list = new List<(string Date, int KeyStrokes, int WordChars, DateTime UpdatedAtUtc)>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT Date, KeyStrokes, WordChars, UpdatedAt FROM DailyTypingStat ORDER BY Date";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var updatedAt = DateTime.TryParse(reader.GetValue(3)?.ToString(), null,
+                    DateTimeStyles.RoundtripKind, out var t) ? t.ToUniversalTime() : DateTime.UtcNow;
+                list.Add((reader.GetString(0),
+                    Convert.ToInt32(reader.GetValue(1)),
+                    Convert.ToInt32(reader.GetValue(2)),
+                    updatedAt));
+            }
+            return list;
+        });
+
+        /// <summary>
+        /// 云同步落库（LWW 最后写入胜）：仅当远端更新时间严格比本地新时整行覆盖该日数据；
+        /// 本地更新或相等时保留本地（返回 false）。覆盖而非累加，与"每日合计行"语义一致。
+        /// </summary>
+        public bool UpsertTypingStatFromRemote(string dateKey, int keyStrokes, int wordChars, DateTime remoteUpdatedAtUtc) => ExecuteLocked(() =>
+        {
+            DateTime? localUpdated = null;
+            using (var readCmd = _connection!.CreateCommand())
+            {
+                readCmd.CommandText = "SELECT UpdatedAt FROM DailyTypingStat WHERE Date = @d";
+                readCmd.Parameters.AddWithValue("@d", dateKey);
+                var raw = readCmd.ExecuteScalar()?.ToString();
+                if (!string.IsNullOrEmpty(raw) &&
+                    DateTime.TryParse(raw, null, DateTimeStyles.RoundtripKind, out var parsed))
+                    localUpdated = parsed.ToUniversalTime();
+            }
+
+            if (localUpdated.HasValue && localUpdated.Value >= remoteUpdatedAtUtc)
+                return false;
+
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO DailyTypingStat (Date, KeyStrokes, WordChars, UpdatedAt)
+                VALUES (@d, @k, @w, @u)
+                ON CONFLICT(Date) DO UPDATE SET
+                    KeyStrokes = @k,
+                    WordChars  = @w,
+                    UpdatedAt  = @u";
+            cmd.Parameters.AddWithValue("@d", dateKey);
+            cmd.Parameters.AddWithValue("@k", keyStrokes);
+            cmd.Parameters.AddWithValue("@w", wordChars);
+            cmd.Parameters.AddWithValue("@u", remoteUpdatedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            cmd.ExecuteNonQuery();
+            return true;
         });
 
         /// <summary>

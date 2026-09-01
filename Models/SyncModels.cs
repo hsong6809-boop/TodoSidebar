@@ -124,6 +124,33 @@ namespace TodoSidebar.Models
     }
 
     /// <summary>
+    /// 同步用的每日打字量（对应 Supabase typing_stat 表）。
+    /// 仅每日合计数量，无任何按键/文本内容；主键由客户端按 (user_id, date)
+    /// 确定性生成，upsert 幂等；多设备冲突按 updated_at LWW（最后写入胜）合并。
+    /// </summary>
+    [Table("typing_stat")]
+    public class SyncTypingStat : BaseModel
+    {
+        [PrimaryKey("id")]
+        public Guid Id { get; set; }
+
+        [Column("user_id")]
+        public string? UserId { get; set; }
+
+        [Column("date")]
+        public string Date { get; set; } = "";
+
+        [Column("key_strokes")]
+        public int KeyStrokes { get; set; }
+
+        [Column("word_chars")]
+        public int WordChars { get; set; }
+
+        [Column("updated_at")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    /// <summary>
     /// 同步用的用户成长档案（对应 Supabase user_profile 表）
     /// </summary>
     [Table("user_profile")]

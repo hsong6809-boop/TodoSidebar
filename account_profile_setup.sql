@@ -27,14 +27,14 @@ drop policy if exists "account_profile_update_own" on public.account_profile;
 drop policy if exists "account_profile_delete_own" on public.account_profile;
 
 create policy "account_profile_select_own" on public.account_profile
-    for select using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for select using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "account_profile_insert_own" on public.account_profile
-    for insert with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for insert with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "account_profile_update_own" on public.account_profile
-    for update using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
-    with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for update using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
+    with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "account_profile_delete_own" on public.account_profile
-    for delete using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for delete using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 
 -- ========== 验证 ==========
 -- select * from pg_tables where schemaname='public' and tablename='account_profile';

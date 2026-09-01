@@ -28,14 +28,14 @@ drop policy if exists "xp_log_update_own" on public.xp_log;
 drop policy if exists "xp_log_delete_own" on public.xp_log;
 
 create policy "xp_log_select_own" on public.xp_log
-    for select using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for select using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "xp_log_insert_own" on public.xp_log
-    for insert with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for insert with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "xp_log_update_own" on public.xp_log
-    for update using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
-    with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for update using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
+    with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "xp_log_delete_own" on public.xp_log
-    for delete using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for delete using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 
 -- ========== 2. pomodoro_session（番茄会话） ==========
 create table if not exists public.pomodoro_session (
@@ -57,14 +57,14 @@ drop policy if exists "pomodoro_update_own" on public.pomodoro_session;
 drop policy if exists "pomodoro_delete_own" on public.pomodoro_session;
 
 create policy "pomodoro_select_own" on public.pomodoro_session
-    for select using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for select using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "pomodoro_insert_own" on public.pomodoro_session
-    for insert with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for insert with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "pomodoro_update_own" on public.pomodoro_session
-    for update using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
-    with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for update using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
+    with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "pomodoro_delete_own" on public.pomodoro_session
-    for delete using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for delete using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 
 -- ========== 3. user_profile（用户成长档案） ==========
 create table if not exists public.user_profile (
@@ -96,16 +96,49 @@ drop policy if exists "user_profile_update_own" on public.user_profile;
 drop policy if exists "user_profile_delete_own" on public.user_profile;
 
 create policy "user_profile_select_own" on public.user_profile
-    for select using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for select using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "user_profile_insert_own" on public.user_profile
-    for insert with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for insert with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "user_profile_update_own" on public.user_profile
-    for update using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
-    with check (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for update using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
+    with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 create policy "user_profile_delete_own" on public.user_profile
-    for delete using (user_id in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+    for delete using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+
+-- ========== 4. typing_stat（每日打字量，云同步） ==========
+-- 仅每日合计数量（击键/估算字数），无任何按键序列或文本内容。
+-- id 由客户端按 (user_id, date) 确定性生成 => upsert 幂等，多设备同日不会插出重复行。
+create table if not exists public.typing_stat (
+    id          uuid primary key default gen_random_uuid(),
+    user_id     text,
+    date        text not null,                 -- yyyy-MM-dd（本机时区日）
+    key_strokes integer not null default 0,
+    word_chars  integer not null default 0,
+    updated_at  timestamptz not null default now()
+);
+
+-- 安全网：同一账号同一日期至多一行（确定性 GUID 正常不会触发）
+create unique index if not exists typing_stat_user_date_unique
+    on public.typing_stat(user_id, date);
+
+alter table public.typing_stat enable row level security;
+
+drop policy if exists "typing_stat_select_own" on public.typing_stat;
+drop policy if exists "typing_stat_insert_own" on public.typing_stat;
+drop policy if exists "typing_stat_update_own" on public.typing_stat;
+drop policy if exists "typing_stat_delete_own" on public.typing_stat;
+
+create policy "typing_stat_select_own" on public.typing_stat
+    for select using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+create policy "typing_stat_insert_own" on public.typing_stat
+    for insert with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+create policy "typing_stat_update_own" on public.typing_stat
+    for update using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')))
+    with check (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
+create policy "typing_stat_delete_own" on public.typing_stat
+    for delete using (user_id::text in (auth.uid()::text, replace(auth.uid()::text, '-', '')));
 
 -- ========== 验证 ==========
 -- 执行后可运行以下查询确认表与策略存在：
--- select tablename from pg_tables where schemaname='public' and tablename in ('xp_log','pomodoro_session','user_profile');
+-- select tablename from pg_tables where schemaname='public' and tablename in ('xp_log','pomodoro_session','user_profile','typing_stat');
 -- select policyname, tablename from pg_policies where schemaname='public' order by tablename, policyname;
