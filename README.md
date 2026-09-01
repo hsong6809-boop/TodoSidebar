@@ -198,6 +198,12 @@ v5.6.1 存量库修复请执行 `supabase_v560_cloud_migration.sql`（补 `delet
 
 ## 📝 更新日志
 
+### v5.6.2 (2026-09-01)
+
+- ⌨️ **键盘监控云同步**：每日打字量（仅击键/估算字数合计）随登录账号同步到 `typing_stat` 表，跨设备/换机可恢复完整历史；云端按 `updated_at` LWW（最后写入胜）按日合并，冲突不会互相覆盖
+- 📊 **输入统计聚合**：统计窗口新增「⌨️ 输入统计」卡片——今日/本周/本月/今年四档切换，估算字数/击键/日均字数/活跃天数 + 逐日（今年为月度）趋势柱状图
+- 🔧 **RLS 脚本兼容修复**：`supabase_setup.sql` / `supabase_tasks_rls.sql` / `account_profile_setup.sql` 的 `user_id` 统一 `::text` 转换，兼容云端 `uuid`/`text` 两种列类型，避免部署报 42883
+
 ### v5.6.1 (2026-08-28)
 
 - ☁️ **云同步修复**：修复 v5.6 任务上云失败——云端补列迁移脚本 `supabase_v560_cloud_migration.sql`（`deleted_at`/`recurrence`），已积压的未同步数据自动补传
