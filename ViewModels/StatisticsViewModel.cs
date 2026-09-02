@@ -107,6 +107,145 @@ namespace TodoSidebar.ViewModels
         /// <summary>登出重建 ViewModel 时释放定时器（进程退出场景由调度器随线程销毁兜底）。</summary>
         public void ShutdownTypingTimer() => StopTypingTimer();
 
+        // ===== v5.6.2 输入统计聚合（FullWindow 统计页共用；今日/本周/本月/今年）=====
+
+        /// <summary>周期索引：0=今日 1=本周 2=本月 3=今年。</summary>
+        [ObservableProperty]
+        private int _typingPeriodIndex;
+
+        /// <summary>卡片标题（如"本周 · 输入统计"）。</summary>
+        [ObservableProperty]
+        private string _typingPeriodTitle = "今日 · 输入统计";
+
+        [ObservableProperty]
+        private string _typingWordsText = "—";
+
+        [ObservableProperty]
+        private string _typingKeysText = "—";
+
+        [ObservableProperty]
+        private string _typingAvgText = "—";
+
+        [ObservableProperty]
+        private string _typingActiveText = "—";
+
+        /// <summary>图表说明文案（如"最近 7 天分布"）。</summary>
+        [ObservableProperty]
+        private string _typingTrendCaption = "";
+
+        /// <summary>趋势柱数据（值已归一化为 Ratio 供柱高绑定）。</summary>
+        [ObservableProperty]
+        private List<TypingTrendPoint> _typingTrend = new();
+
+        /// <summary>
+        /// 按当前周期聚合每日打字量并刷新汇总指标与趋势图。
+        /// 渲染前先冲刷内存增量落库（未启用时为空操作），保证"今日"数值最新。
+        /// </summary>
+        public void LoadTypingStats()
+        {
+            try
+            {
+                TypingStatsService.Instance.FlushNow();
+
+                var today = DateTime.Today;
+                var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7)); // 周一为一周起点
+                var monthStart = new DateTime(today.Year, today.Month, 1);
+                var yearStart = new DateTime(today.Year, 1, 1);
+
+                // 统计区间与图表区间（"今日"图表回溯最近 7 天；"今年"按月聚合）
+                (DateTime statStart, DateTime chartStart, bool monthly) = TypingPeriodIndex switch
+                {
+                    0 => (today, today.AddDays(-6), false),
+                    1 => (weekStart, weekStart, false),
+                    2 => (monthStart, monthStart, false),
+                    _ => (yearStart, yearStart, true)
+                };
+
+                TypingPeriodTitle = TypingPeriodIndex switch
+                {
+                    0 => "今日 · 输入统计",
+                    1 => "本周 · 输入统计",
+                    2 => "本月 · 输入统计",
+                    _ => "今年 · 输入统计"
+                };
+
+                var statMap = _dbService.GetTypingStatsRange(statStart, today);
+                long keys = 0, words = 0;
+                int activeDays = 0;
+                foreach (var v in statMap.Values)
+                {
+                    keys += v.KeyStrokes;
+                    words += v.WordChars;
+                    if (v.KeyStrokes > 0 || v.WordChars > 0) activeDays++;
+                }
+                int spanDays = (int)(today - statStart).TotalDays + 1;
+                TypingWordsText = words.ToString("N0", CultureInfo.InvariantCulture);
+                TypingKeysText = keys.ToString("N0", CultureInfo.InvariantCulture);
+                TypingAvgText = spanDays > 0
+                    ? Math.Round(words / (double)spanDays).ToString("N0", CultureInfo.InvariantCulture)
+                    : "0";
+                TypingActiveText = $"{activeDays}/{spanDays}";
+
+                // 趋势序列（与统计区间一致时直接复用，避免重复查库）
+                var chartMap = TypingPeriodIndex == 0
+                    ? _dbService.GetTypingStatsRange(chartStart, today)
+                    : statMap;
+                var points = new List<TypingTrendPoint>();
+                if (monthly)
+                {
+                    for (int m = 1; m <= 12; m++)
+                    {
+                        var prefix = $"{today.Year:0000}-{m:00}";
+                        double v = chartMap.Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                                           .Sum(kv => (double)kv.Value.WordChars);
+                        points.Add(new TypingTrendPoint
+                        {
+                            Label = $"{m}月",
+                            Value = v,
+                            ToolTip = $"{today.Year} 年 {m} 月 · 约 {v:N0} 字"
+                        });
+                    }
+                    TypingTrendCaption = $"{today.Year} 年 12 个月分布";
+                }
+                else
+                {
+                    for (var d = chartStart; d <= today; d = d.AddDays(1))
+                    {
+                        var key = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        double v = chartMap.TryGetValue(key, out var t) ? t.WordChars : 0;
+                        points.Add(new TypingTrendPoint
+                        {
+                            Label = $"{d.Month}/{d.Day}",
+                            Value = v,
+                            ToolTip = $"{d:M月d日} · 约 {v:N0} 字"
+                        });
+                    }
+                    TypingTrendCaption = TypingPeriodIndex switch
+                    {
+                        0 => "最近 7 天分布",
+                        1 => $"本周分布（{weekStart:M/d} 起）",
+                        2 => $"{today:yyyy 年 M 月}逐日分布",
+                        _ => ""
+                    };
+                }
+
+                double max = Math.Max(1, points.Any() ? points.Max(p => p.Value) : 0);
+                foreach (var p in points) p.Ratio = max > 0 ? p.Value / max : 0;
+                TypingTrend = points;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadTypingStats error: {ex.Message}");
+            }
+        }
+
+        /// <summary>切换输入统计周期并刷新（周期按钮点击）。</summary>
+        public void SetTypingPeriod(int index)
+        {
+            TypingPeriodIndex = index;
+            LoadTypingStats();
+        }
+
         [ObservableProperty]
         private List<DailyStats> _dailyStats = new();
 
@@ -391,6 +530,15 @@ namespace TodoSidebar.ViewModels
         public string ToolTip => Date.HasValue
             ? $"{Date.Value:M月d日} · 完成 {Count} 次"
             : "";
+    }
+
+    /// <summary>v5.6.2 输入统计趋势柱数据点（值已归一化为 0~1 的 Ratio 供柱高绑定）。</summary>
+    public class TypingTrendPoint
+    {
+        public string Label { get; set; } = "";
+        public double Value { get; set; }
+        public double Ratio { get; set; }
+        public string ToolTip { get; set; } = "";
     }
 
     public class DailyStats

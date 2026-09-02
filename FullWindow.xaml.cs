@@ -759,6 +759,12 @@ namespace TodoSidebar
                 // v5.3：重进页面时刷新热力图（跟随主题/强调色与最新数据）
                 if (vm != null)
                     vm.StatisticsViewModel.LoadHeatmap(vm.StatisticsViewModel.HeatmapYear);
+                // v5.6.2：刷新输入统计卡并标定当前周期按钮高亮
+                if (vm != null)
+                {
+                    vm.StatisticsViewModel.LoadTypingStats();
+                    HighlightTypingPeriodButtons();
+                }
             }
             if (page == "Trash") vm?.LoadDeletedTasks();
             if (page == "Achievements") LoadAchievements();
@@ -987,6 +993,35 @@ namespace TodoSidebar
             if (DataContext is MainViewModel vm
                 && vm.StatisticsViewModel.HeatmapYear < DateTime.Today.Year)
                 vm.StatisticsViewModel.LoadHeatmap(vm.StatisticsViewModel.HeatmapYear + 1);
+        }
+
+        // ==================== v5.6.2 输入统计周期切换 ====================
+
+        private void TypingPeriod_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is not MainViewModel vm) return;
+            if (sender is Button btn && int.TryParse(btn.Tag?.ToString(), out var index))
+            {
+                vm.StatisticsViewModel.SetTypingPeriod(index);
+                HighlightTypingPeriodButtons();
+            }
+        }
+
+        /// <summary>标定输入统计周期按钮高亮（选中态强调色底 + 白字）。</summary>
+        private void HighlightTypingPeriodButtons()
+        {
+            var buttons = new[] { TypingBtn0, TypingBtn1, TypingBtn2, TypingBtn3 };
+            int selected = (DataContext as MainViewModel)?.StatisticsViewModel.TypingPeriodIndex ?? 0;
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (buttons[i] == null) continue;
+                buttons[i].Background = i == selected
+                    ? TryFindResource("AccentBrush") as Brush ?? Brushes.Transparent
+                    : Brushes.Transparent;
+                buttons[i].Foreground = i == selected
+                    ? Brushes.White
+                    : (TryFindResource("TextSecondaryBrush") as Brush ?? Brushes.Gray);
+            }
         }
 
         // ==================== v5.6 番茄白噪音 ====================
