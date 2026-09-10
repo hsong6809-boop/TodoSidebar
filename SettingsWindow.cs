@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -51,6 +53,134 @@ namespace TodoSidebar
             try { TypingStatsCheck.IsChecked = DatabaseService.Instance.GetSetting("TypingStatsEnabled") == "true"; }
             catch { TypingStatsCheck.IsChecked = false; }
             finally { _suppressTypingEvents = suppressBak; }
+
+            // v5.7 显示形态（悬浮球）初始态
+            InitDisplayModeControls();
+        }
+
+        /// <summary>v5.7：构造期禁用形态控件事件，统一由此方法读库回填。</summary>
+        private void InitDisplayModeControls()
+        {
+            var db = DatabaseService.Instance;
+
+            // 审查 P1-2：RadioButton/CheckBox 在赋值瞬间就会触发 Checked/Unchecked，
+            // 逐个回填会连锁触发 8+ 次 SetSetting + ApplySettingsChanged（且最终落库值
+            // 依赖回填顺序，属于脆弱巧合）。这里统一静默，回填结束后一次性恢复。
+            _suppressWidgetEvents = true;
+            try
+            {
+                switch (db.GetSetting("StartupMode"))
+                {
+                    case "sidebar": StartupSidebarRadio.IsChecked = true; break;
+                    case "widget": StartupWidgetRadio.IsChecked = true; break;
+                    default: StartupFullRadio.IsChecked = true; break;
+                }
+
+                if (db.GetSetting("WidgetShape") == "circle") WidgetCircleRadio.IsChecked = true;
+                else WidgetPillRadio.IsChecked = true;
+
+                var items = (db.GetSetting("WidgetItems") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                WidgetItemNext.IsChecked = items.Contains("next");
+                WidgetItemToday.IsChecked = items.Contains("today");
+                WidgetItemTyping.IsChecked = items.Contains("typing");
+                WidgetItemCombo.IsChecked = items.Contains("combo");
+
+                int interval = 6;
+                try { interval = Math.Clamp(int.TryParse(db.GetSetting("WidgetInterval"), out var s) ? s : 6, 3, 30); }
+                catch { /* 读库失败用默认值 */ }
+                WidgetIntervalSlider.Value = interval;
+                WidgetIntervalText.Text = $"{interval} 秒";
+
+                WidgetIdleFadeCheck.IsChecked = db.GetSetting("WidgetIdleFade") != "false";
+                WidgetLockCheck.IsChecked = db.GetSetting("WidgetLocked") == "true";
+            }
+            finally
+            {
+                _suppressWidgetEvents = false;
+            }
+        }
+
+        /// <summary>v5.7：回填期间抑制形态控件事件（防止构造期连锁写库/通知悬浮球）。</summary>
+        private bool _suppressWidgetEvents;
+
+        /// <summary>v5.7：启动形态即时持久化，下次启动生效。</summary>
+        private void StartupMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (StartupSidebarRadio == null || _suppressWidgetEvents) return;
+            var mode = StartupSidebarRadio.IsChecked == true ? "sidebar"
+                     : StartupWidgetRadio.IsChecked == true ? "widget"
+                     : "full";
+            try { DatabaseService.Instance.SetSetting("StartupMode", mode); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 StartupMode 失败: {ex.Message}"); }
+        }
+
+        /// <summary>v5.7：悬浮球形状切换，已打开的悬浮球即时换形。</summary>
+        private void WidgetShape_Changed(object sender, RoutedEventArgs e)
+        {
+            if (WidgetPillRadio == null || WidgetCircleRadio == null || _suppressWidgetEvents) return;
+            var shape = WidgetCircleRadio.IsChecked == true ? "circle" : "pill";
+            try
+            {
+                DatabaseService.Instance.SetSetting("WidgetShape", shape);
+                WidgetWindow.ApplySettingsChanged();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 WidgetShape 失败: {ex.Message}"); }
+        }
+
+        /// <summary>v5.7：轮换内容勾选变化，重算并即时生效。</summary>
+        private void WidgetItem_Changed(object sender, RoutedEventArgs e)
+        {
+            if (WidgetItemNext == null || _suppressWidgetEvents) return;
+            var list = new List<string>();
+            if (WidgetItemNext.IsChecked == true) list.Add("next");
+            if (WidgetItemToday.IsChecked == true) list.Add("today");
+            if (WidgetItemTyping.IsChecked == true) list.Add("typing");
+            if (WidgetItemCombo.IsChecked == true) list.Add("combo");
+            try
+            {
+                DatabaseService.Instance.SetSetting("WidgetItems", string.Join(",", list));
+                WidgetWindow.ApplySettingsChanged();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 WidgetItems 失败: {ex.Message}"); }
+        }
+
+        /// <summary>v5.7：轮换间隔滑块（3~30 秒），拖动结束即存。</summary>
+        private void WidgetInterval_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (WidgetIntervalText == null) return;
+            int sec = (int)Math.Round(e.NewValue);
+            WidgetIntervalText.Text = $"{sec} 秒";
+            if (_suppressWidgetEvents) return;
+            try
+            {
+                DatabaseService.Instance.SetSetting("WidgetInterval", sec.ToString());
+                WidgetWindow.ApplySettingsChanged();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 WidgetInterval 失败: {ex.Message}"); }
+        }
+
+        /// <summary>v5.7：闲置淡化开关。</summary>
+        private void WidgetIdleFade_Changed(object sender, RoutedEventArgs e)
+        {
+            if (WidgetIdleFadeCheck == null || _suppressWidgetEvents) return;
+            try
+            {
+                DatabaseService.Instance.SetSetting("WidgetIdleFade", WidgetIdleFadeCheck.IsChecked == true ? "true" : "false");
+                WidgetWindow.ApplySettingsChanged();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 WidgetIdleFade 失败: {ex.Message}"); }
+        }
+
+        /// <summary>v5.7：锁定位置开关。</summary>
+        private void WidgetLock_Changed(object sender, RoutedEventArgs e)
+        {
+            if (WidgetLockCheck == null || _suppressWidgetEvents) return;
+            try
+            {
+                DatabaseService.Instance.SetSetting("WidgetLocked", WidgetLockCheck.IsChecked == true ? "true" : "false");
+                WidgetWindow.ApplySettingsChanged();
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"保存 WidgetLocked 失败: {ex.Message}"); }
         }
 
         /// <summary>构造期初始化复选框状态时防止误触发首启说明弹窗。</summary>

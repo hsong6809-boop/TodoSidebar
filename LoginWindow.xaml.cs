@@ -288,14 +288,19 @@ namespace TodoSidebar
                     App.SharedViewModel = new ViewModels.MainViewModel();
                     LogLoginDiag("[ui] MainViewModel 创建完成，启动通知服务");
                     Services.NotificationService.Instance.Start();
-                    LogLoginDiag("[ui] 通知服务已启动，创建 MainWindow");
-                    var mainWindow = new MainWindow();
-                    LogLoginDiag("[ui] MainWindow 构造完成，调用 Show()");
+                    // v5.7：按设置的默认形态打开主窗口（与启动时一致）
+                    Window mainWindow = App.GetStartupDisplayMode() switch
+                    {
+                        App.AppDisplayMode.Sidebar => new MainWindow(),
+                        App.AppDisplayMode.Widget => new WidgetWindow(),
+                        _ => new FullWindow()
+                    };
+                    LogLoginDiag("[ui] 主窗口构造完成，调用 Show()");
                     mainWindow.Show();
                     // R41 修复（审查 H4）：重登后把全局热键重新注册到新主窗口——
                     // 原实现热键只在应用启动时注册一次，登出销毁窗口后热键永久失效直到重启
                     App.AttachHotkeysTo(mainWindow);
-                    LogLoginDiag("[ui] MainWindow.Show() 完成，热键已重新注册，关闭登录窗口");
+                    LogLoginDiag("[ui] 主窗口 Show() 完成，热键已重新注册，关闭登录窗口");
                     Close();
                     return;
                 }

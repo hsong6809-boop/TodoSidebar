@@ -61,6 +61,9 @@ binTestOut*/
 proc_probe.txt
 *.bak
 
+# 本地构建探针（环境特定，不入库）
+tools/_build_probe.py
+
 backups/
 
 installer/

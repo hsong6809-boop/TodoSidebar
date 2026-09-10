@@ -14,6 +14,14 @@ namespace TodoSidebar
 {
     public partial class App : Application
     {
+        /// <summary>v5.7 显示形态：侧边栏 / 完整窗口 / 悬浮球（WidgetWindow）。</summary>
+        public enum AppDisplayMode
+        {
+            Sidebar,
+            Full,
+            Widget
+        }
+
         /// <summary>
         /// 全局 DI 容器。任何地方可以通过 App.Services.GetService<T>() 获取服务。
         /// </summary>
@@ -79,23 +87,16 @@ namespace TodoSidebar
                 {
                     // R41 修复（审查 H4）：读取静态"当前主窗口"引用而非闭包捕获的启动窗口——
                     // 登出重登后旧闭包引用指向已销毁窗口，会误判模式并可能开出第二个主窗口
-                    var currentMain = _currentMainWindow;
-                    if (currentMain is MainWindow sidebar)
+                    // v5.7：三态循环 侧边栏 → 完整 → 悬浮球 → 侧边栏
+                    // （App 类内 MainWindow 会被 Application.MainWindow 属性遮蔽，类型引用须全限定）
+                    var nextMode = _currentMainWindow switch
                     {
-                        var fullWindow = new FullWindow();
-                        fullWindow.Show();
-                        sidebar.Close();
-                        _currentMainWindow = fullWindow;
-                        _hotkeyService.ReRegisterHotkeys(fullWindow);
-                    }
-                    else if (currentMain is FullWindow full)
-                    {
-                        var sidebarWindow = new MainWindow();
-                        sidebarWindow.Show();
-                        full.Close();
-                        _currentMainWindow = sidebarWindow;
-                        _hotkeyService.ReRegisterHotkeys(sidebarWindow);
-                    }
+                        global::TodoSidebar.MainWindow => AppDisplayMode.Full,
+                        global::TodoSidebar.FullWindow => AppDisplayMode.Widget,
+                        global::TodoSidebar.WidgetWindow => AppDisplayMode.Sidebar,
+                        _ => AppDisplayMode.Full
+                    };
+                    SwitchDisplayMode(nextMode);
                 }
                 catch (Exception ex)
                 {
@@ -104,9 +105,17 @@ namespace TodoSidebar
             };
 
             // 新建任务/搜索热键：统一激活当前主窗口
+            // v5.7：悬浮球形态无输入区，改为直接切到完整窗口（新建/搜索都在那里）
             EventHandler activateHandler = (s, args) =>
             {
-                try { _currentMainWindow?.Activate(); } catch (Exception ex) { LogError("Hotkey activate error", ex); }
+                try
+                {
+                    if (_currentMainWindow is global::TodoSidebar.WidgetWindow)
+                        SwitchDisplayMode(AppDisplayMode.Full);
+                    else
+                        _currentMainWindow?.Activate();
+                }
+                catch (Exception ex) { LogError("Hotkey activate error", ex); }
             };
             _hotkeyService.NewTaskRequested += activateHandler;
             _hotkeyService.SearchRequested += activateHandler;
@@ -124,6 +133,62 @@ namespace TodoSidebar
         {
             try { _hotkeyService?.UnregisterHotkeys(); }
             catch (Exception ex) { LogError("DetachHotkeys error", ex); }
+        }
+
+        /// <summary>
+        /// v5.7：在三种显示形态间切换（侧边栏/完整/悬浮球）。
+        /// 新窗口 Show 并迁移热键后再关旧窗口，任何一步失败不破坏当前形态。
+        /// </summary>
+        public static void SwitchDisplayMode(AppDisplayMode mode)
+        {
+            var current = _currentMainWindow;
+            if (current is global::TodoSidebar.MainWindow && mode == AppDisplayMode.Sidebar) return;
+            if (current is global::TodoSidebar.FullWindow && mode == AppDisplayMode.Full) return;
+            if (current is global::TodoSidebar.WidgetWindow && mode == AppDisplayMode.Widget) return;
+
+            Window? target = null;
+            try
+            {
+                // 审查 P1-1：构造本身也会抛异常（XAML 解析失败 / 资源字典损坏），
+                // 必须与 Show 同处兜底——否则"失败不破坏当前形态"的承诺会在构造这一步漏出，
+                // 异常直接冒到全局处理器，而旧窗口已被逻辑遗弃。
+                target = mode switch
+                {
+                    AppDisplayMode.Sidebar => new global::TodoSidebar.MainWindow(),
+                    AppDisplayMode.Full => new global::TodoSidebar.FullWindow(),
+                    AppDisplayMode.Widget => new global::TodoSidebar.WidgetWindow(),
+                    _ => throw new ArgumentOutOfRangeException(nameof(mode))
+                };
+
+                target.Show();
+                _currentMainWindow = target;
+                AttachHotkeysTo(target);
+                current?.Close();
+            }
+            catch (Exception ex)
+            {
+                LogError("SwitchDisplayMode error", ex);
+                try { target?.Close(); } catch { /* 清理失败忽略 */ }
+                throw;
+            }
+        }
+
+        /// <summary>v5.7：读取启动形态设置（settings 表 StartupMode：sidebar/full/widget，默认 full）。</summary>
+        public static AppDisplayMode GetStartupDisplayMode()
+        {
+            try
+            {
+                return DatabaseService.Instance.GetSetting("StartupMode") switch
+                {
+                    "sidebar" => AppDisplayMode.Sidebar,
+                    "widget" => AppDisplayMode.Widget,
+                    _ => AppDisplayMode.Full
+                };
+            }
+            catch
+            {
+                return AppDisplayMode.Full;
+            }
         }
         
         /// <summary>
@@ -240,7 +305,15 @@ namespace TodoSidebar
                 if (isSidebarMode)
                     mainWindow = new MainWindow();
                 else
-                    mainWindow = new FullWindow();
+                {
+                    // v5.7：按设置的默认形态启动（--sidebar 参数优先级最高，保持兼容）
+                    mainWindow = GetStartupDisplayMode() switch
+                    {
+                        AppDisplayMode.Sidebar => new MainWindow(),
+                        AppDisplayMode.Widget => new WidgetWindow(),
+                        _ => new FullWindow()
+                    };
+                }
 
                 mainWindow.Show();
 

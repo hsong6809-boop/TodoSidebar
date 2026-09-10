@@ -57,5 +57,8 @@ namespace TodoSidebar.Controls
         public const string More = "More";
         public const string Restore = "Restore";
         public const string Filter = "Filter";
+
+        /// <summary>v5.7 悬浮球形态图标</summary>
+        public const string Orb = "Orb";
     }
 }

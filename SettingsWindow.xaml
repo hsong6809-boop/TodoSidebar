@@ -129,6 +129,64 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- 显示形态（v5.7 悬浮球） -->
+                    <Border Background="{DynamicResource CardBrush}"
+                            CornerRadius="12"
+                            Padding="14,12"
+                            Margin="0,0,0,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <controls:AppIcon Glyph="{x:Static controls:Icons.Orb}"
+                                                  FontSize="12"
+                                                  Foreground="{DynamicResource AccentBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,6,0"/>
+                                <TextBlock Text="显示形态"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <TextBlock Text="启动形态" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,4"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <RadioButton x:Name="StartupSidebarRadio" Content="📒 侧边栏" Tag="sidebar" Margin="0,0,8,0" Checked="StartupMode_Changed"/>
+                                <RadioButton x:Name="StartupFullRadio" Content="🪟 完整窗口" Tag="full" Margin="0,0,8,0" Checked="StartupMode_Changed"/>
+                                <RadioButton x:Name="StartupWidgetRadio" Content="⚪ 悬浮球" Tag="widget" Checked="StartupMode_Changed"/>
+                            </StackPanel>
+                            <TextBlock Text="悬浮球形状" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,4"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <RadioButton x:Name="WidgetPillRadio" Content="💊 条形胶囊" Tag="pill" Margin="0,0,8,0" Checked="WidgetShape_Changed"/>
+                                <RadioButton x:Name="WidgetCircleRadio" Content="⭕ 圆形" Tag="circle" Checked="WidgetShape_Changed"/>
+                            </StackPanel>
+                            <TextBlock Text="轮换信息（悬浮球上每轮循环显示）" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,4"/>
+                            <WrapPanel Margin="0,0,0,6">
+                                <CheckBox x:Name="WidgetItemNext" Content="接下来" FontSize="12.5" Margin="0,0,10,4" Checked="WidgetItem_Changed" Unchecked="WidgetItem_Changed"/>
+                                <CheckBox x:Name="WidgetItemToday" Content="今日进度" FontSize="12.5" Margin="0,0,10,4" Checked="WidgetItem_Changed" Unchecked="WidgetItem_Changed"/>
+                                <CheckBox x:Name="WidgetItemTyping" Content="输入字数" FontSize="12.5" Margin="0,0,10,4" Checked="WidgetItem_Changed" Unchecked="WidgetItem_Changed"/>
+                                <CheckBox x:Name="WidgetItemCombo" Content="连击" FontSize="12.5" Margin="0,0,0,4" Checked="WidgetItem_Changed" Unchecked="WidgetItem_Changed"/>
+                            </WrapPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                <TextBlock Text="轮换间隔" FontSize="11.5"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                <Slider x:Name="WidgetIntervalSlider" Width="150" Minimum="3" Maximum="30"
+                                        IsSnapToTickEnabled="True" TickFrequency="1"
+                                        Margin="10,0,8,0" VerticalAlignment="Center"
+                                        ValueChanged="WidgetInterval_Changed"/>
+                                <TextBlock x:Name="WidgetIntervalText" Text="6 秒" FontSize="11.5"
+                                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" Width="34"/>
+                            </StackPanel>
+                            <CheckBox x:Name="WidgetIdleFadeCheck" Content="闲置 20 秒后自动淡化（不挡视线）" FontSize="12.5" Margin="0,4,0,0"
+                                      Checked="WidgetIdleFade_Changed" Unchecked="WidgetIdleFade_Changed"/>
+                            <CheckBox x:Name="WidgetLockCheck" Content="锁定位置（拖动）" FontSize="12.5" Margin="0,4,0,0"
+                                      Checked="WidgetLock_Changed" Unchecked="WidgetLock_Changed"/>
+                            <TextBlock Text="提示：单击悬浮球手动翻页，双击展开完整窗口，拖动可移动位置，右键有快捷菜单。"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- 强调色 -->
                     <Border Background="{DynamicResource CardBrush}"
                             CornerRadius="12"

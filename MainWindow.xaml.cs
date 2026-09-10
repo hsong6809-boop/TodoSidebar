@@ -636,6 +636,19 @@ namespace TodoSidebar
             }
         }
 
+        /// <summary>v5.7：切换到悬浮球形态。</summary>
+        private void SwitchToWidget_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                App.SwitchDisplayMode(App.AppDisplayMode.Widget);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"切换模式失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             try
