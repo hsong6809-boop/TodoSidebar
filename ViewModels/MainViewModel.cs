@@ -28,6 +28,8 @@ namespace TodoSidebar.ViewModels
         private int _selectedTabIndex;
 
         [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(AddDailyTaskCommand))]
+        [NotifyCanExecuteChangedFor(nameof(AddDeadlineTaskCommand))]
         private string _newTaskTitle = string.Empty;
 
         [ObservableProperty]
@@ -37,6 +39,7 @@ namespace TodoSidebar.ViewModels
         private TaskPriority _newTaskPriority = TaskPriority.Medium;
 
         [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(AddSubTaskCommand))]
         private string _newSubTaskTitle = string.Empty;
 
         // 搜索相关
@@ -316,7 +319,19 @@ namespace TodoSidebar.ViewModels
             // M39 修复：同步完成后刷新等级/连击显示——云端档案合并进本地库后，
             // 原实现只重载任务列表，等级要重启应用才会变对，造成"等级没同步"的观感
             LoadLevelInfo();
+            // R70 修复（审查 M-4）：同步后 UnlockService 等级缓存也须失效，
+            // 否则强调色/头像解锁判定仍用旧等级（如 A 机升到 Lv8，B 机同步后
+            // 等级显示正确但 Forest 强调色仍不可选，需重启）
+            Services.UnlockService.RefreshLevel();
             UpdateComboDisplay();
+
+            // R71（审查 M1）：命令可用性依赖任务/回收站状态，
+            // 数据刷新后主动要求重新求值（否则按钮灰/亮状态会停在旧值）
+            CompleteTaskCommand.NotifyCanExecuteChanged();
+            DeleteTaskCommand.NotifyCanExecuteChanged();
+            RestoreFromTrashCommand.NotifyCanExecuteChanged();
+            PurgeFromTrashCommand.NotifyCanExecuteChanged();
+            RestoreHistoryTaskCommand.NotifyCanExecuteChanged();
         }
 
         private void LoadDailyTasks()
@@ -452,7 +467,19 @@ namespace TodoSidebar.ViewModels
 
         // ========== 任务 CRUD 命令 ==========
 
-        [RelayCommand]
+        // R71（审查 M1）：新增 CanExecute——原实现所有命令都无 CanExecute，
+        // 空输入时"添加"、已完成任务的"完成"按钮仍可点（点了静默无反应）。
+        private bool CanSubmitNewTask() => !string.IsNullOrWhiteSpace(NewTaskTitle);
+
+        private bool CanActOnTask(TaskItem? task) => task != null;
+
+        private bool CanCompleteTask(TaskItem? task)
+            => task is { IsCompleted: false, IsTodayCompleted: false };
+
+        private bool CanAddSubTask(TaskItem? task)
+            => task != null && !string.IsNullOrWhiteSpace(NewSubTaskTitle);
+
+        [RelayCommand(CanExecute = nameof(CanSubmitNewTask))]
         private void AddDailyTask()
         {
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
@@ -473,7 +500,7 @@ namespace TodoSidebar.ViewModels
             LoadCurrentTasks();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanSubmitNewTask))]
         private void AddDeadlineTask()
         {
             if (string.IsNullOrWhiteSpace(NewTaskTitle)) return;
@@ -506,7 +533,7 @@ namespace TodoSidebar.ViewModels
             LoadCurrentTasks();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanCompleteTask))]
         private void CompleteTask(TaskItem? task)
         {
             if (task == null) return;
@@ -517,7 +544,7 @@ namespace TodoSidebar.ViewModels
             LoadData();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanActOnTask))]
         private void DeleteTask(TaskItem? task)
         {
             if (task == null) return;
@@ -595,7 +622,7 @@ namespace TodoSidebar.ViewModels
             foreach (var t in items) DeletedTasks.Add(t);
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanActOnTask))]
         private void RestoreFromTrash(TaskItem? task)
         {
             if (task == null) return;
@@ -605,7 +632,7 @@ namespace TodoSidebar.ViewModels
             LoadData();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanActOnTask))]
         private void PurgeFromTrash(TaskItem? task)
         {
             if (task == null) return;
@@ -637,7 +664,7 @@ namespace TodoSidebar.ViewModels
             LoadDeletedTasks();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanActOnTask))]
         private void RestoreHistoryTask(TaskItem? task)
         {
             if (task == null) return;
@@ -674,7 +701,7 @@ namespace TodoSidebar.ViewModels
 
         // ========== 子任务操作 ==========
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanAddSubTask))]
         private void AddSubTask(TaskItem? task)
         {
             if (task == null || string.IsNullOrWhiteSpace(NewSubTaskTitle)) return;

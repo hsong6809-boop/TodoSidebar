@@ -53,7 +53,9 @@ namespace TodoSidebar.Services
         {
             try
             {
-                var today = DateTime.Today.ToString("yyyy-MM-dd");
+                // R71（审查 M12 残留）：与全库口径一致，显式 InvariantCulture，
+                // 避免泰历/回历等区域环境下日期键与已写入值不匹配、每日检测永久失效
+                var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
                 string last;
                 try { last = DatabaseService.Instance.GetSetting(LastCheckDateSetting) ?? ""; }
                 catch { return; } // 数据库不可用则不打扰

@@ -368,9 +368,12 @@ namespace TodoSidebar.ViewModels
             // 截止任务只统计今天完成的，避免把全部历史截止任务算进今天
             var todayCompletedDeadlines = _dbService.GetCompletedTasks(today, today.AddDays(1))
                 .Count(t => t.Type == TaskType.Deadline);
-            // 分母：每日任务总数 + 尚未完成且未过期的截止任务数
+            // 分母：每日任务总数 + 尚未完成且今日到期的截止任务数
+            // R70 修复（审查 H5）：与侧边栏 MainViewModel.RefreshTodayProgress 口径对齐——
+            // 只计「今日到期」的未完成截止任务（== today），而非 >= today（含未来任务）。
+            // 原实现有下周到期的未完成任务时，统计页完成率与侧边栏数字矛盾。
             var pendingValidDeadlines = allTasks.Count(t => t.Type == TaskType.Deadline
-                && t.Deadline.HasValue && t.Deadline.Value.Date >= today && !t.IsCompleted);
+                && t.Deadline.HasValue && t.Deadline.Value.Date == today && !t.IsCompleted);
             TodayTotal = dailyCount + pendingValidDeadlines;
             // R39（审查 M3/M12）：与写入端(TaskService L7)对齐 InvariantCulture
             var todayStr = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -385,8 +388,27 @@ namespace TodoSidebar.ViewModels
             // 每日统计（最近7天）。
             // R38 修复（审查 L4/L9）：历史天的分母改用"当天时点的每日任务数"序列
             // （一次拉取、本地聚合），不再错用今天的任务数，也不再逐日打库
+            // R71（审查 M5）：并入截止任务——原图表只看 DailyTaskCompletion，
+            // "某天只完成 3 个截止任务"会显示当天 0 完成，与顶部"今日完成"口径矛盾。
+            var windowStart = today.AddDays(-6);
+            var deadlineCompletedPerDay = new Dictionary<string, int>();
+            foreach (var t in _dbService.GetCompletedTasks(windowStart, today.AddDays(1)))
+            {
+                if (t.Type != TaskType.Deadline || !t.CompletedAt.HasValue) continue;
+                var k = t.CompletedAt.Value.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                deadlineCompletedPerDay[k] = deadlineCompletedPerDay.TryGetValue(k, out var c) ? c + 1 : 1;
+            }
+            var deadlineDuePerDay = new Dictionary<string, int>();
+            foreach (var t in allTasks)
+            {
+                if (t.Type != TaskType.Deadline || !t.Deadline.HasValue) continue;
+                var k = t.Deadline.Value.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                deadlineDuePerDay[k] = deadlineDuePerDay.TryGetValue(k, out var c) ? c + 1 : 1;
+            }
+
             var asOfCounts = BuildAsOfCountSeries(today, 7);
-            DailyStats = CalculateDailyStats(dailyCompletionRecords, 7, asOfCounts);
+            DailyStats = CalculateDailyStats(dailyCompletionRecords, 7, asOfCounts,
+                deadlineCompletedPerDay, deadlineDuePerDay);
 
             // 任务类型统计
             TaskTypeStats = new List<TaskTypeStats>
@@ -471,7 +493,9 @@ namespace TodoSidebar.ViewModels
 
         private List<DailyStats> CalculateDailyStats(
             Dictionary<string, HashSet<int>> dailyCompletionRecords, int days,
-            Dictionary<string, int> asOfTaskCounts)
+            Dictionary<string, int> asOfTaskCounts,
+            Dictionary<string, int> deadlineCompletedPerDay,
+            Dictionary<string, int> deadlineDuePerDay)
         {
             var stats = new List<DailyStats>();
 
@@ -486,12 +510,18 @@ namespace TodoSidebar.ViewModels
                 // 不再用今天的数量回溯历史（本周增删过任务时完成率被系统性抬高/压低）
                 var totalForDay = asOfTaskCounts.TryGetValue(dateStr, out var t) ? t : 0;
 
+                // R71（审查 M5）：并入当日截止任务——分子含当日完成，分母含当日到期
+                if (deadlineCompletedPerDay.TryGetValue(dateStr, out var dc))
+                    completedCount += dc;
+                if (deadlineDuePerDay.TryGetValue(dateStr, out var dd))
+                    totalForDay += dd;
+
                 stats.Add(new DailyStats
                 {
                     Date = date,
                     TotalTasks = totalForDay,
                     CompletedTasks = completedCount,
-                    CompletionRate = totalForDay > 0 ? (double)completedCount / totalForDay : 0
+                    CompletionRate = totalForDay > 0 ? Math.Min((double)completedCount / totalForDay, 1) : 0
                 });
             }
 

@@ -33,6 +33,9 @@ namespace TodoSidebar.Services
         /// <summary>昵称最大长度（字符），超出截断。</summary>
         internal const int NicknameMaxLength = 24;
 
+        /// <summary>远端头像 base64 解码后允许的最大字节数（128×128 PNG 远小于此值）。</summary>
+        internal const int MaxRemoteAvatarBytes = 512 * 1024;
+
         public string Uid { get; private set; } = string.Empty;
         public string Nickname { get; private set; } = string.Empty;
         public string AvatarKind { get; private set; } = "d1";
@@ -173,6 +176,15 @@ namespace TodoSidebar.Services
         private void ApplyRemote(string userId, SyncAccountProfile remote)
         {
             var data = remote.AvatarData;
+            // R71（审查 H4）：远端 avatar_data 必须校验大小与格式再落盘。
+            // 上限仅在本地 ProcessImageToBase64（上行）做过，下行缺失——
+            // 被攻破的同账号客户端可塞入超大 base64 写爆磁盘/内存。
+            if (remote.AvatarKind == "custom" && !string.IsNullOrEmpty(data) && !IsValidRemoteAvatar(data))
+            {
+                System.Diagnostics.Debug.WriteLine("AccountService: 远端头像数据非法（超限/非 PNG），已忽略");
+                data = null;
+            }
+
             if (remote.AvatarKind == "custom" && !string.IsNullOrEmpty(data))
             {
                 // 仅当内容变化才重写缓存文件，避免无谓磁盘 IO
@@ -181,6 +193,22 @@ namespace TodoSidebar.Services
             }
             ApplyLocal(userId, remote.Uid, CleanNickname(remote.Nickname),
                 NormalizeKind(remote.AvatarKind), data);
+        }
+
+        /// <summary>
+        /// R71（审查 H4）：校验远端头像 base64——解码后不超过上限且为 PNG。
+        /// </summary>
+        internal static bool IsValidRemoteAvatar(string base64)
+        {
+            try
+            {
+                var bytes = Convert.FromBase64String(base64);
+                if (bytes.Length is < 1 || bytes.Length > MaxRemoteAvatarBytes) return false;
+                // PNG 魔数 89 50 4E 47
+                return bytes.Length >= 4
+                    && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
+            }
+            catch { return false; }
         }
 
         private void ApplyLocal(string userId, string uid, string nick, string kind, string? avatarDataBase64)

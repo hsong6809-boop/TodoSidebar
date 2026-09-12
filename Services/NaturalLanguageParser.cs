@@ -43,12 +43,16 @@ namespace TodoSidebar.Services
             new(@"(?<m>\d{1,2})月(?<d>\d{1,2})[日号]", RegexOptions.Compiled);
 
         private static readonly Regex TimeRx =
-            new(@"(?<ap>上午|中午|下午|晚上)?\s*(?<hh>\d{1,2})[点时:：]\s*(?<mm>半|\d{1,2})?", RegexOptions.Compiled);
+            // R71（审查 NLP-M3）：补齐「凌晨/早上/傍晚」——原实现只认上午/中午/下午/晚上，
+            // 「凌晨2点开会」的「凌晨」会残留在标题、且无法表达傍晚时段
+            new(@"(?<ap>凌晨|早上|上午|中午|下午|傍晚|晚上)?\s*(?<hh>\d{1,2})[点时:：]\s*(?<mm>半|\d{1,2})?", RegexOptions.Compiled);
 
         private static readonly Regex RelHoursRx =
             new(@"(?<h>\d+(?:\.\d+)?)\s*(?:个)?小时后"
                 + @"|(?<halfnum>\d+(?:\.\d+)?)\s*个?半\s*小时后"
-                + @"|(?<halfcn>一)个?半\s*小时后"
+                // R70 修复（审查 H6）：halfcn 此前只认「一」，「两个半小时后」会落到
+                // 末尾「半小时后」分支被算成 0.5 小时。现扩展为常见中文数字。
+                + @"|(?<halfcn>[一二两三四五六七八九十])个?半\s*小时后"
                 + @"|半小时后",
                 RegexOptions.Compiled);
 
@@ -99,7 +103,16 @@ namespace TodoSidebar.Services
                 }
                 else if (mh.Groups["halfcn"].Success)
                 {
-                    hours = 1.5; // 中文数字「一个半小时」
+                    // R70 修复（审查 H6）：中文数字 N 个半小时 = N + 0.5
+                    // 「一个半小时」=1.5，「两个半小时」=2.5，「三个半小时」=3.5
+                    var cn = mh.Groups["halfcn"].Value[0];
+                    var n = cn switch
+                    {
+                        '一' => 1, '二' => 2, '两' => 2, '三' => 3, '四' => 4,
+                        '五' => 5, '六' => 6, '七' => 7, '八' => 8, '九' => 9, '十' => 10,
+                        _ => 1
+                    };
+                    hours = n + 0.5;
                 }
                 else if (text.Contains("半小时") && mh.Groups["h"].Value.Length == 0) hours = 0.5;
                 else if (!double.TryParse(mh.Groups["h"].Success ? mh.Groups["h"].Value : "1", NumberStyles.Float, CultureInfo.InvariantCulture, out var h))
@@ -266,6 +279,16 @@ namespace TodoSidebar.Services
                     break;
                 case "上午":
                     if (hh == 12) hh = 0;           // 上午12点按 0 点处理
+                    break;
+                // R71（审查 NLP-M3）：
+                case "凌晨":
+                    if (hh == 12) hh = 0;           // 凌晨12点 = 00:00；凌晨2点 = 02:00
+                    break;
+                case "早上":
+                    if (hh == 12) hh = 0;           // 早上12点按 0 点处理（同上午）
+                    break;
+                case "傍晚":
+                    if (hh < 12) hh += 12;          // 傍晚6点 = 18:00
                     break;
             }
 
