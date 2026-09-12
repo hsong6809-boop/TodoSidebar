@@ -181,6 +181,30 @@ namespace TodoSidebar.Tests
         }
 
         [Fact]
+        public void Parse_TwoAndHalfHoursLater_Is150Minutes()
+        {
+            // R70（审查 H6）：「两个半小时后」此前落到「半小时后」分支被算成 0.5 小时
+            var before = DateTime.Now.AddMinutes(148);
+            var after = DateTime.Now.AddMinutes(152);
+            var p = NaturalLanguageParser.Parse("两个半小时后 开会");
+            Assert.Equal("开会", p.Title);
+            Assert.True(p.HasDue);
+            Assert.InRange(p.DueDate!.Value, before, after);
+        }
+
+        [Fact]
+        public void Parse_ThreeAndHalfHoursLater_Is210Minutes()
+        {
+            // R70（审查 H6）：「三个半小时后」= 3.5 小时
+            var before = DateTime.Now.AddMinutes(208);
+            var after = DateTime.Now.AddMinutes(212);
+            var p = NaturalLanguageParser.Parse("三个半小时后 出发");
+            Assert.Equal("出发", p.Title);
+            Assert.True(p.HasDue);
+            Assert.InRange(p.DueDate!.Value, before, after);
+        }
+
+        [Fact]
         public void Parse_InvalidTime_KeepsOriginalText()
         {
             // R28（审查 M4）：非法时间「25点」解析失败时保留原文、不从标题剥离
@@ -195,6 +219,35 @@ namespace TodoSidebar.Tests
             // R29（审查 v5.x-L8）：裸冒号无分钟不当作时间，避免"版本15:新特性"被误剥离
             var p = NaturalLanguageParser.Parse("版本15:新特性 说明");
             Assert.Contains("15:新特性", p.Title);
+        }
+
+        [Fact]
+        public void Parse_EarlyMorning_StripFromTitleAndKeepsHour()
+        {
+            // R71（审查 NLP-M3）：「凌晨」此前不在时段词表内，会残留在标题
+            var p = NaturalLanguageParser.Parse("凌晨2点 看球赛");
+            Assert.Equal("看球赛", p.Title);
+            Assert.True(p.HasDue);
+            Assert.Equal(2, p.DueDate!.Value.Hour);
+        }
+
+        [Fact]
+        public void Parse_Evening_AddsTwelveHours()
+        {
+            // R71（审查 NLP-M3）：「傍晚6点」= 18:00
+            var p = NaturalLanguageParser.Parse("明天傍晚6点 跑步");
+            Assert.Equal("跑步", p.Title);
+            Assert.True(p.HasDue);
+            Assert.Equal(18, p.DueDate!.Value.Hour);
+        }
+
+        [Fact]
+        public void Parse_MorningWord_StrippedFromTitle()
+        {
+            // R71（审查 NLP-M3）：「早上」同「上午」，且不残留标题
+            var p = NaturalLanguageParser.Parse("早上9点 打卡");
+            Assert.Equal("打卡", p.Title);
+            Assert.Equal(9, p.DueDate!.Value.Hour);
         }
     }
 }

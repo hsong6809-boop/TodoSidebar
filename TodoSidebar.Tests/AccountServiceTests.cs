@@ -88,5 +88,39 @@ namespace TodoSidebar.Tests
         [Fact]
         public void CleanNickname_KeepsHashTagAndSymbols()
             => Assert.Equal("#工作_1号", AccountService.CleanNickname("#工作_1号"));
+
+        // ========== 远端头像校验（R71 审查 H4） ==========
+
+        [Fact]
+        public void IsValidRemoteAvatar_ValidSmallPng_True()
+        {
+            // 最小 PNG 头（8 字节签名）+ 少量填充
+            var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00 };
+            Assert.True(AccountService.IsValidRemoteAvatar(System.Convert.ToBase64String(png)));
+        }
+
+        [Fact]
+        public void IsValidRemoteAvatar_NonPng_False()
+        {
+            var jpeg = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00 };
+            Assert.False(AccountService.IsValidRemoteAvatar(System.Convert.ToBase64String(jpeg)));
+        }
+
+        [Fact]
+        public void IsValidRemoteAvatar_OverSizeLimit_False()
+        {
+            // 构造超过上限的 PNG 头数据
+            var big = new byte[AccountService.MaxRemoteAvatarBytes + 1];
+            big[0] = 0x89; big[1] = 0x50; big[2] = 0x4E; big[3] = 0x47;
+            Assert.False(AccountService.IsValidRemoteAvatar(System.Convert.ToBase64String(big)));
+        }
+
+        [Fact]
+        public void IsValidRemoteAvatar_NotBase64_False()
+            => Assert.False(AccountService.IsValidRemoteAvatar("!!!not-base64!!!"));
+
+        [Fact]
+        public void IsValidRemoteAvatar_Empty_False()
+            => Assert.False(AccountService.IsValidRemoteAvatar(""));
     }
 }
