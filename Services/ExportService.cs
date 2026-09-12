@@ -11,12 +11,13 @@ namespace TodoSidebar.Services
     public class ExportService : IExportService
     {
         private readonly DatabaseService _dbService;
-        private readonly TaskService _taskService;
 
         public ExportService(DatabaseService dbService)
         {
             _dbService = dbService;
-            _taskService = new TaskService(dbService);
+            // R71 修复（审查 L1）：删除死代码 _taskService——
+            // 原实现 new TaskService(dbService) 用默认 NullMessageService 构造后全文从未被调用，
+            // 白占一个字段并让"导出依赖 TaskService"的假象误导后续维护（ExportService 只读 DB 层）。
         }
 
         // 导出为 JSON
@@ -27,7 +28,9 @@ namespace TodoSidebar.Services
                 var exportData = new ExportData
                 {
                     ExportDate = DateTime.Now,
-                    Tasks = _dbService.GetTasks(),
+                    // R71（审查 M6）：备份含回收站软删行——备份语义是"回到快照"，
+                    // 排除软删行会导致恢复后回收站丢失、未上云墓碑缺失致云端存活行"复活"
+                    Tasks = _dbService.GetTasksIncludingDeleted(),
                     Settings = GetAllSettings()
                 };
 
@@ -138,26 +141,46 @@ namespace TodoSidebar.Services
             }
         }
 
-        private static string FormatTaskSuffix(TaskItem t)
+        /// <summary>
+        /// R71 修复（审查 M5）：标签按逗号分割（不是 '#'）。
+        /// 写入端（MainViewModel.ApplyPendingTags:440 / QuickAddWindow:151）存的是
+        /// string.Join(",", tags)，形如 "工作,生活"；原实现按 '#' 分割 → 整串被当成一个标签，
+        /// 导出 "（#工作,生活）"。现改为逐项加 '#'、剔除空项与项内已有的前导 '#'。
+        /// internal static：供 TodoSidebar.Tests 做纯逻辑测试（InternalsVisibleTo）。
+        /// </summary>
+        internal static string FormatTaskSuffix(TaskItem t)
         {
             var parts = new List<string>();
             if (t.Type == TaskType.Deadline && t.Deadline.HasValue)
                 parts.Add($"截止 {t.Deadline.Value:MM-dd HH:mm}");
             if (!string.IsNullOrWhiteSpace(t.Tags))
-                parts.Add(string.Join(" ", t.Tags.Split('#', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(x => "#" + x.Trim())));
+            {
+                var tags = string.Join(" ", t.Tags
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => x.Trim().TrimStart('#').Trim())      // R71：容忍 " #工作" / "#工作" 两种写法
+                    .Where(x => x.Length > 0)
+                    .Select(x => "#" + x));
+                // R71：全是空项（如 Tags = ","）时不产出空标签段
+                if (tags.Length > 0) parts.Add(tags);
+            }
             return parts.Count > 0 ? " （" + string.Join(" · ", parts) + "）" : "";
         }
 
         /// <summary>
         /// Markdown 转义。R55 修复（审查 L2）：反斜杠必须最先转义；剔除换行防止撕裂列表项；
         /// 转义反引号防止在 Obsidian 等渲染器中形成代码围栏注入。
+        /// R71 修复（审查 M6）：补转义 * 与 _——任务标题含 "2*3"/"snake_case"/"**重点**" 时
+        /// 会被渲染器当粗斜体，导致字符被吞或后续整段变斜体。
+        /// 反斜杠仍在第一步转义，此处新插入的反斜杠不会被二次转义（顺序关键，勿调整）。
+        /// internal static：供 TodoSidebar.Tests 做纯逻辑测试（InternalsVisibleTo）。
         /// </summary>
-        private static string EscapeMarkdown(string text)
+        internal static string EscapeMarkdown(string text)
             => text.Replace("\\", "\\\\", StringComparison.Ordinal)
                    .Replace("[", "\\[", StringComparison.Ordinal)
                    .Replace("]", "\\]", StringComparison.Ordinal)
                    .Replace("`", "\\`", StringComparison.Ordinal)
+                   .Replace("*", "\\*", StringComparison.Ordinal)
+                   .Replace("_", "\\_", StringComparison.Ordinal)
                    .Replace("\r", " ", StringComparison.Ordinal)
                    .Replace("\n", " ", StringComparison.Ordinal);
 

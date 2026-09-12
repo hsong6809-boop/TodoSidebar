@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TodoSidebar.Models
 {
@@ -117,6 +118,7 @@ namespace TodoSidebar.Models
         /// <summary>v5.3 回收站：删除于 N 天前（展示用）。
         /// R9 修复（审查 L5）：DeletedAt 现为 UTC，展示前转本地时区；
         /// ToLocalTime 对旧数据（本地 Kind）是无操作，天然兼容历史行。</summary>
+        [JsonIgnore] // R71（审查 L6）：派生属性，不写入备份
         public string DeletedAgoText => DeletedAt.HasValue
             ? (DateTime.Now - DeletedAt.Value.ToLocalTime()).TotalDays switch
             {
@@ -130,9 +132,11 @@ namespace TodoSidebar.Models
         public string? Recurrence { get; set; }
 
         /// <summary>是否设置了重复规则。</summary>
+        [JsonIgnore] // R71（审查 L6）：派生属性
         public bool HasRecurrence => !string.IsNullOrEmpty(Recurrence);
 
         /// <summary>重复规则的中文标签（卡片展示用）。</summary>
+        [JsonIgnore] // R71（审查 L6）：派生属性
         public string RecurrenceLabel => RecurrenceRule.LabelOf(Recurrence);
 
         private string? _subTasksJson;
@@ -155,7 +159,11 @@ namespace TodoSidebar.Models
             }
         }
         
+        // R71（审查 L6）：以下均为只读派生属性，备份 JSON 不再冗余序列化
+        // （原实现把它们一并写入，备份文件膨胀且 SubTasksJson 与 SubTasksList 双写）
+
         // 优先级颜色
+        [JsonIgnore]
         public string PriorityColor => Priority switch
         {
             TaskPriority.High => "#EF4444",   // Red-500
@@ -165,6 +173,7 @@ namespace TodoSidebar.Models
         };
         
         // 任务类型颜色
+        [JsonIgnore]
         public string TypeColor => Type switch
         {
             TaskType.Daily => "#6366F1",     // Indigo-500
@@ -173,6 +182,7 @@ namespace TodoSidebar.Models
         };
 
         // 类型文本
+        [JsonIgnore]
         public string TypeText => Type switch
         {
             TaskType.Daily => "每日",
@@ -181,6 +191,7 @@ namespace TodoSidebar.Models
         };
         
         // 优先级图标
+        [JsonIgnore]
         public string PriorityIcon => Priority switch
         {
             TaskPriority.High => "🔴",
@@ -194,8 +205,10 @@ namespace TodoSidebar.Models
         /// V2：截止时刻 = 截止日当天 24 点（次日 0 点）。
         /// 设置 8 月 29 日到期 → 29 日全天可做，30 日 0 点才算逾期。
         /// </summary>
+        [JsonIgnore]
         public DateTime DeadlineEndOfDay => Deadline!.Value.Date.AddDays(1);
 
+        [JsonIgnore]
         public string DeadlineUrgency
         {
             get
@@ -224,6 +237,7 @@ namespace TodoSidebar.Models
         /// V2-W5：截止任务紧急度分组序号（0 已逾期 / 1 今天 / 2 未来7天 / 3 更远）。
         /// 仅对截止任务有意义。
         /// </summary>
+        [JsonIgnore]
         public int DeadlineGroupOrder
         {
             get
@@ -239,6 +253,7 @@ namespace TodoSidebar.Models
         }
 
         /// <summary>V2-W5：紧急度分组显示名。</summary>
+        [JsonIgnore]
         public string DeadlineGroupName => DeadlineGroupOrder switch
         {
             0 => "已逾期",
@@ -248,6 +263,7 @@ namespace TodoSidebar.Models
         };
         
         // 标签列表
+        [JsonIgnore]
         public List<string> TagList
         {
             get
@@ -259,15 +275,18 @@ namespace TodoSidebar.Models
         }
 
         /// <summary>V5.1：是否有标签。</summary>
+        [JsonIgnore]
         public bool HasTags => TagList.Count > 0;
 
         /// <summary>V5.1：卡片展示用，形如 "#a #b"。</summary>
+        [JsonIgnore]
         public string TagsDisplay => TagList.Count == 0 ? string.Empty : "#" + string.Join(" #", TagList);
 
         // 子任务列表（从JSON解析，带缓存）
         private List<SubTask>? _cachedSubTasks;
         private string? _lastSubTasksJson;
         
+        [JsonIgnore]
         public List<SubTask> SubTasksList
         {
             get
@@ -282,15 +301,19 @@ namespace TodoSidebar.Models
         }
         
         // 子任务进度文本（如 "2/5"）
+        [JsonIgnore]
         public string SubTasksProgressText => SubTaskHelper.GetProgressText(SubTasksList);
         
         // 子任务是否全部完成
+        [JsonIgnore]
         public bool AllSubTasksCompleted => SubTasksList.Count > 0 && SubTasksList.All(s => s.IsCompleted);
         
         // 子任务数量
+        [JsonIgnore]
         public int SubTasksCount => SubTasksList.Count;
         
         // 是否有子任务
+        [JsonIgnore]
         public bool HasSubTasks => SubTasksList.Count > 0;
     }
 

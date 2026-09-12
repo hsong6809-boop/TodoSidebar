@@ -19,6 +19,8 @@ namespace TodoSidebar.Services
         List<TaskItem> GetTasks(TaskType? type = null, bool? completed = null);
         List<TaskItem> GetCompletedTasks(DateTime? fromDate = null, DateTime? toDate = null);
         List<TaskItem> GetTasks();  // 获取所有任务（用于导出）
+        /// <summary>R71（审查 M6）：含回收站软删行的全量快照，供备份使用</summary>
+        List<TaskItem> GetTasksIncludingDeleted();
         List<TaskItem> SearchTasks(string keyword, TaskType? type = null, TaskPriority? priority = null);
 
         // v5.3 回收站
@@ -52,6 +54,9 @@ namespace TodoSidebar.Services
 
         void MarkTaskSynced(int localId, string syncId, string? expectedLocalUpdatedAt = null);
         TaskItem? GetTaskBySyncId(string syncId);
+
+        /// <summary>R71（审查 H1）：上传前预绑定 SyncId（保持 IsDirty），避免首传重复行</summary>
+        void BindTaskSyncId(int localId, string syncId);
 
         /// <summary>
         /// 通过 SyncId 写入远端任务。R8 修复（审查 M4）：expectedLocalUpdatedAt 为乐观守卫——

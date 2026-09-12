@@ -125,6 +125,18 @@ namespace TodoSidebar.Services
                 var next = RecurrenceRule.NextDeadline(completedTask.Recurrence, baseDate);
                 if (next == null) return;
 
+                // R70 修复（审查 C5）：派生前检查下一期是否已存在。
+                // 「完成 → 取消完成 → 再完成」原先会无条件再生成一期，
+                // 导致列表出现同 Title/Deadline/Recurrence 的幽灵实例。
+                // R71（复审 N1）：改用带过滤的 GetTasks 重载，避免每次完成任务都全表加载+反序列化
+                var nextDate = next.Value.Date;
+                var exists = _db.GetTasks(TaskType.Deadline, completed: false).Any(t =>
+                    t.Title == completedTask.Title
+                    && t.Recurrence == completedTask.Recurrence
+                    && t.Deadline.HasValue
+                    && t.Deadline.Value.Date == nextDate);
+                if (exists) return;
+
                 var nextTask = new TaskItem
                 {
                     Title = completedTask.Title,

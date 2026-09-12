@@ -82,7 +82,11 @@ namespace TodoSidebar.Services
         public void RegisterProgress(string typePrefix, int amount = 1)
         {
             var today = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // L7 修复：InvariantCulture 防区域差异
-            var challenges = _db.GetDailyChallenges(today);
+            // R70 修复（审查 H7）：先确保当日挑战已生成。
+            // 原实现直接 GetDailyChallenges，若用户尚未打开挑战 UI（挑战未入库），
+            // 返回空列表、进度与 XP 全部静默丢失；跨天后首次完成任务尤其明显。
+            // R71（复审 N2）：直接使用返回值，避免再读一次库
+            var challenges = GetTodayChallenges();
             var changed = false;
 
             foreach (var c in challenges)

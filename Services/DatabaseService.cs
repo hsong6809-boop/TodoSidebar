@@ -453,44 +453,13 @@ namespace TodoSidebar.Services
         /// 插入导入/恢复的任务，保留同步字段（SyncId/IsDirty/IsDeleted/LastSyncedAt），
         /// 避免恢复后与云端产生重复任务。
         /// </summary>
-        public int InsertImportedTask(TaskItem task) => ExecuteLocked(() =>
-        {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, Recurrence, LocalUpdatedAt)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @recurrence, @localUpdatedAt);
-                SELECT last_insert_rowid();
-            ";
-            cmd.Parameters.AddWithValue("@title", task.Title);
-            cmd.Parameters.AddWithValue("@type", (int)task.Type);
-            cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
-            cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-            cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
-            cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
-            cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
-            cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
-            // R12 修复（审查 M2）：导入路径同样保留软删时间，避免回收站清理守卫永不命中
-            cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
-            return Convert.ToInt32(cmd.ExecuteScalar());
-        });
-
         public void UpdateTask(TaskItem task) => ExecuteLocked(() =>
         {
             using var cmd = _connection!.CreateCommand();
             cmd.CommandText = @"
                 UPDATE Tasks SET
                     Title = @title,
+                    Type = @type,
                     Priority = @priority,
                     IsCompleted = @completed,
                     Deadline = @deadline,
@@ -508,6 +477,9 @@ namespace TodoSidebar.Services
             ";
             cmd.Parameters.AddWithValue("@id", task.Id);
             cmd.Parameters.AddWithValue("@title", task.Title);
+            // R71（审查 M9）：补写 Type——原 SET 列表漏了该列，每日↔截止切换写库被静默丢弃，
+            // 内存对象与库不一致、刷新后类型回跳
+            cmd.Parameters.AddWithValue("@type", (int)task.Type);
             cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
             cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
             cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
@@ -658,8 +630,8 @@ namespace TodoSidebar.Services
                     using var cmd = _connection.CreateCommand();
                     cmd.Transaction = transaction;
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -674,13 +646,18 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                    // R70 修复（审查 C3）：导入路径此前漏写 Recurrence，备份恢复后
+                    // daily/weekly/monthly 循环任务全部静默退化为一次性任务
+                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
                     cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     // R12 修复（审查 M2）：导入路径同样保留软删时间
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+                    // R70 修复（审查 M1）：保留任务真实编辑时间，而非写死导入时刻——
+                    // 写死会抬高 LWW 基线，多设备场景下用旧导入数据覆盖较新编辑
+                    cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
                     cmd.ExecuteNonQuery();
                     imported++;
                 }
@@ -1172,6 +1149,25 @@ namespace TodoSidebar.Services
             return tasks;
         });
 
+        /// <summary>
+        /// R71（审查 M6）：含回收站（软删除）任务的全量快照，用于备份/导出。
+        /// 备份语义是"回到快照"，排除软删行会导致：恢复后回收站内容丢失，
+        /// 且未上云的墓碑缺失、云端存活行被拉回"复活"。
+        /// 独立命名（而非重载）以避免与 GetTasks()/GetTasks(TaskType?,bool?) 产生重载歧义。
+        /// </summary>
+        public List<TaskItem> GetTasksIncludingDeleted() => ExecuteLocked(() =>
+        {
+            var tasks = new List<TaskItem>();
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Tasks ORDER BY SortOrder, CreatedAt DESC";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                tasks.Add(ReadTask(reader));
+            }
+            return tasks;
+        });
+
         // 批量更新任务排序
         public void UpdateTaskOrder(List<(int id, int order)> orders) => ExecuteLocked(() =>
         {
@@ -1251,7 +1247,8 @@ namespace TodoSidebar.Services
             cmd.Parameters.AddWithValue("@w", wordDelta);
             cmd.Parameters.AddWithValue("@u", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
             cmd.ExecuteNonQuery();
-            return true;
+            // R71（审查 L1）：去掉无意义的 return true——方法签名为 void，
+            // 原 lambda 靠返回值匹配 ExecuteLocked<T> 重载，返回值被丢弃。改用 Action 重载。
         });
 
         /// <summary>读取某日打字量；无记录返回 (0, 0)。</summary>
@@ -1296,7 +1293,9 @@ namespace TodoSidebar.Services
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                var updatedAt = DateTime.TryParse(reader.GetValue(3)?.ToString(), null,
+                // R70 修复（审查 M4）：显式 InvariantCulture——写入端已锁，读端漏网
+                // 会在非 ISO 友好文化环境下解析失败并回退 UtcNow，LWW 比较失真
+                var updatedAt = DateTime.TryParse(reader.GetValue(3)?.ToString(), CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var t) ? t.ToUniversalTime() : DateTime.UtcNow;
                 list.Add((reader.GetString(0),
                     Convert.ToInt32(reader.GetValue(1)),
@@ -1319,7 +1318,8 @@ namespace TodoSidebar.Services
                 readCmd.Parameters.AddWithValue("@d", dateKey);
                 var raw = readCmd.ExecuteScalar()?.ToString();
                 if (!string.IsNullOrEmpty(raw) &&
-                    DateTime.TryParse(raw, null, DateTimeStyles.RoundtripKind, out var parsed))
+                    // R70 修复（审查 M4）：与写入端对齐 InvariantCulture
+                    DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
                     localUpdated = parsed.ToUniversalTime();
             }
 
@@ -1341,6 +1341,27 @@ namespace TodoSidebar.Services
             cmd.ExecuteNonQuery();
             return true;
         });
+
+        /// <summary>
+        /// R70 修复（审查 H1）：上传前预绑定 SyncId（保持 IsDirty=1）。
+        /// 原实现无 SyncId 的脏任务每轮上传都新生成 GUID——云端 Upsert 成功后、
+        /// MarkTaskSynced 写库前崩溃/断电，下一轮再生成新 GUID 会在云端造出重复行。
+        /// 预绑定后即使本轮标记失败，下轮也会用同一 GUID upsert（幂等）。
+        /// </summary>
+        public void BindTaskSyncId(int localId, string syncId)
+        {
+            ExecuteLocked(() =>
+            {
+                using var cmd = _connection!.CreateCommand();
+                // R71（复审 N3）：无条件覆盖——调用方仅在 SyncId 为空或损坏（TryParse 失败）时进入，
+                // 原 WHERE 守卫 (SyncId IS NULL OR SyncId = '') 无法覆盖"非空损坏值"子场景，
+                // 会让预绑定静默失效、云端重复行风险仍在
+                cmd.CommandText = "UPDATE Tasks SET SyncId = @syncId WHERE Id = @id";
+                cmd.Parameters.AddWithValue("@id", localId);
+                cmd.Parameters.AddWithValue("@syncId", syncId);
+                cmd.ExecuteNonQuery();
+            });
+        }
 
         /// <summary>
         /// 标记任务已同步。
@@ -1391,9 +1412,12 @@ namespace TodoSidebar.Services
             using var cmd = _connection!.CreateCommand();
             // R13 修复（审查 M5）：导入去重只应看"存活"任务——
             // 同 SyncId 的行躺在回收站时不应视为已存在而跳过导入（同步路径仍需含软删行，默认不变）
+            // R71（复审 M2）：稳定排序——软删与存活行可能同 SyncId 并存（部分唯一索引只约束存活行），
+            // 无 ORDER BY 时取到哪条不确定，同步路径可能拿软删墓碑当"现有本地行"致 LWW 判错。
+            // 优先返回存活行，其次取 Id 最大者。
             cmd.CommandText = includeDeleted
-                ? "SELECT * FROM Tasks WHERE SyncId = @syncId"
-                : "SELECT * FROM Tasks WHERE SyncId = @syncId AND IsDeleted = 0";
+                ? "SELECT * FROM Tasks WHERE SyncId = @syncId ORDER BY IsDeleted ASC, Id DESC"
+                : "SELECT * FROM Tasks WHERE SyncId = @syncId AND IsDeleted = 0 ORDER BY Id DESC";
             cmd.Parameters.AddWithValue("@syncId", syncId);
             using var reader = cmd.ExecuteReader();
             if (reader.Read())
@@ -1434,6 +1458,8 @@ namespace TodoSidebar.Services
                             Tags = @tags,
                             SortOrder = @sortOrder,
                             SubTasksJson = @subTasksJson,
+                            EstimatedMinutes = @estimatedMinutes,
+                            ActualMinutes = @actualMinutes,
                             Recurrence = @recurrence,
                             IsDeleted = @isDeleted,
                             DeletedAt = @deletedAt,
@@ -1453,6 +1479,9 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                    // R71（审查 M20）：耗时字段随远端更新
+                    cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
@@ -1470,8 +1499,8 @@ namespace TodoSidebar.Services
                     // 插入新任务
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @subTasksJson, @recurrence, @syncId, 0, @syncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
+                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, 0, @syncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
@@ -1482,6 +1511,9 @@ namespace TodoSidebar.Services
                     cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
                     cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                    // R71（审查 M20）：耗时字段随远端下行
+                    cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
@@ -1629,7 +1661,10 @@ namespace TodoSidebar.Services
                 using var transaction = _connection!.BeginTransaction();
                 try
                 {
-                    foreach (var table in new[] { "Tasks", "DailyTaskCompletion", "XpLog", "PomodoroSession", "AchievementUnlocks", "DailyChallenge" })
+                    // R70 修复（审查 C4）：必须包含 DailyTypingStat——
+                    // 该表登录后由 SyncTypingStatsAsync 按日 LWW 上传，
+                    // 漏清会导致旧账号的击键/字数统计串入新账号的云端 typing_stat
+                    foreach (var table in new[] { "Tasks", "DailyTaskCompletion", "XpLog", "PomodoroSession", "AchievementUnlocks", "DailyChallenge", "DailyTypingStat" })
                     {
                         using var cmd = _connection.CreateCommand();
                         cmd.Transaction = transaction;
@@ -1651,6 +1686,16 @@ namespace TodoSidebar.Services
                         clearCursor.Transaction = transaction;
                         clearCursor.CommandText = "DELETE FROM Settings WHERE Key LIKE 'LastSyncTimeUtc%'";
                         clearCursor.ExecuteNonQuery();
+                    }
+
+                    // R70 修复（审查 M5）：清理旧账号的业务行为计数器，
+                    // 否则新账号会继承成就/循环任务终身计数，解锁口径被污染
+                    // R71（复审残留）：补齐 TrashLifetimeCount/NlpUsedCount/QuickAddUsedCount
+                    using (var clearCounters = _connection.CreateCommand())
+                    {
+                        clearCounters.Transaction = transaction;
+                        clearCounters.CommandText = "DELETE FROM Settings WHERE Key IN ('RecurringCompletedLifetime','TrashLifetimeCount','NlpUsedCount','QuickAddUsedCount')";
+                        clearCounters.ExecuteNonQuery();
                     }
 
                     // 记录当前用户
@@ -2239,18 +2284,24 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// 在数据库锁保护下执行操作，防止多线程并发访问
+        /// 在数据库锁保护下执行操作，防止多线程并发访问。
+        /// R71（审查 L3）：Wait 带超时——原实现无超时，持锁线程若卡死（非异常路径的阻塞 I/O），
+        /// 全应用 DB 操作会永久挂起且无任何提示。超时改为抛明确异常，让上层能记录/恢复。
         /// </summary>
+        private static readonly TimeSpan DbLockTimeout = TimeSpan.FromSeconds(30);
+
         private T ExecuteLocked<T>(Func<T> action)
         {
-            _dbLock.Wait();
+            if (!_dbLock.Wait(DbLockTimeout))
+                throw new TimeoutException("数据库操作等待锁超时（可能有线程长期占用数据库锁）");
             try { return action(); }
             finally { _dbLock.Release(); }
         }
 
         private void ExecuteLocked(Action action)
         {
-            _dbLock.Wait();
+            if (!_dbLock.Wait(DbLockTimeout))
+                throw new TimeoutException("数据库操作等待锁超时（可能有线程长期占用数据库锁）");
             try { action(); }
             finally { _dbLock.Release(); }
         }
