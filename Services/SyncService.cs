@@ -20,6 +20,20 @@ namespace TodoSidebar.Services
         private PeriodicTimer? _syncTimer;
         private CancellationTokenSource? _cts;
         private Task? _syncLoopTask;
+
+        /// <summary>
+        /// R71（审查 M14）：在途同步 HTTP 调用的取消令牌，供 Stop()/登出/退出时中断。
+        /// CTS 可能已被 Stop 释放，故对 ObjectDisposedException 降级为 None。
+        /// </summary>
+        private CancellationToken SyncToken
+        {
+            get
+            {
+                try { return _cts?.Token ?? CancellationToken.None; }
+                catch (ObjectDisposedException) { return CancellationToken.None; }
+            }
+        }
+
         private readonly DatabaseService _dbService = DatabaseService.Instance;
         private readonly AuthService _authService = AuthService.Instance;
         private readonly SyncLogService _syncLog = SyncLogService.Instance;
@@ -236,30 +250,34 @@ namespace TodoSidebar.Services
             // 防重入：Interlocked 原子操作防止并发同步
             if (Interlocked.CompareExchange(ref _syncInProgress, 1, 0) != 0)
                 return new SyncResult { Success = false, Error = "正在同步中" };
-            
-            if (!AuthService.Instance.IsLoggedIn)
-                return new SyncResult { Success = false, Error = "未登录" };
-            
-            // 离线检查
-            if (!_network.IsOnline)
-            {
-                _syncLog.Log(new SyncLogEntry
-                {
-                    Action = "sync",
-                    Success = false,
-                    Details = "已离线，跳过同步"
-                });
-                // R(review 修复 v5.6)：离线状态显式上报，UI 得以显示"离线，未同步"而非误显示已同步
-                LastError = "已离线，未同步";
-                SetStatus(SyncStatus.Offline);
-                return new SyncResult { Success = false, Error = "已离线" };
-            }
-            
-            SetStatus(SyncStatus.Syncing);
+
+            // R70 修复（审查 C1）：登录/离线检查必须与主逻辑同处 try/finally。
+            // 原实现这两条早退在 finally 之外直接 return，不会复位 _syncInProgress——
+            // 离线/未登录一次后，此后所有 SyncAsync / 手动同步永久返回"正在同步中"，
+            // 网络恢复也无法自愈，只能重启或登出。
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            
             try
             {
+                if (!AuthService.Instance.IsLoggedIn)
+                    return new SyncResult { Success = false, Error = "未登录" };
+
+                // 离线检查
+                if (!_network.IsOnline)
+                {
+                    _syncLog.Log(new SyncLogEntry
+                    {
+                        Action = "sync",
+                        Success = false,
+                        Details = "已离线，跳过同步"
+                    });
+                    // R(review 修复 v5.6)：离线状态显式上报，UI 得以显示"离线，未同步"而非误显示已同步
+                    LastError = "已离线，未同步";
+                    SetStatus(SyncStatus.Offline);
+                    return new SyncResult { Success = false, Error = "已离线" };
+                }
+
+                SetStatus(SyncStatus.Syncing);
+
                 var result = new SyncResult();
                 var syncUserId = AuthService.Instance.CurrentUser?.Id;
 
@@ -386,6 +404,38 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 上传本地更改（批量 upsert）
         /// </summary>
+        /// <summary>
+        /// R71（审查 M9）：批量拉取给定 SyncId 对应的远端 updated_at（分片 In 查询），
+        /// 替代上传预检的逐任务 GET。查询失败时降级返回已取到的部分
+        /// （等价于"预检失败不阻断上传"的原语义，下一轮自动重试）。
+        /// </summary>
+        private async Task<Dictionary<Guid, DateTime>> FetchRemoteUpdatedAtAsync(List<Guid> ids)
+        {
+            var result = new Dictionary<Guid, DateTime>();
+            if (ids.Count == 0) return result;
+
+            var client = SupabaseClientService.Client;
+            const int chunkSize = 100;
+            for (int i = 0; i < ids.Count; i += chunkSize)
+            {
+                var chunk = ids.Skip(i).Take(chunkSize).Select(g => (object)g.ToString()).ToList();
+                try
+                {
+                    var resp = await client.From<SyncTask>()
+                        .Filter("id", Supabase.Postgrest.Constants.Operator.In, chunk)
+                        .Get(SyncToken);
+                    foreach (var row in resp.Models ?? new List<SyncTask>())
+                        result[row.Id] = row.UpdatedAt;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Batch pre-check error (offset {i}): {ex.Message}");
+                    return result;
+                }
+            }
+            return result;
+        }
+
         public async Task<int> UploadLocalChangesAsync()
         {
             try
@@ -404,9 +454,20 @@ namespace TodoSidebar.Services
                 var taskMapping = new List<(int localId, SyncTask syncTask, string? expectedLocalUpdatedAt)>();
                 int skipped = 0;
 
+                // R71（审查 M9）：上传前预检改为批量拉取，替代原先"每任务一次 GET"的 N+1。
+                // 先收集所有合法 SyncId，分片 In 查询远端 updated_at 到字典，循环中内存比对。
+                // 100 条脏任务从 100 次往返降到 1 次。
+                var validIds = dirtyTasks
+                    .Select(t => t.SyncId)
+                    .Where(s => !string.IsNullOrEmpty(s) && Guid.TryParse(s, out _))
+                    .Select(s => Guid.Parse(s!))
+                    .Distinct()
+                    .ToList();
+                var remoteUpdatedAt = await FetchRemoteUpdatedAtAsync(validIds);
+
                 foreach (var task in dirtyTasks)
                 {
-                    // R(review 修复 v5.6)：上传前按 SyncId 单查远端版本，防止"盲推覆盖"——
+                    // R(review 修复 v5.6)：上传前比对远端版本，防止"盲推覆盖"——
                     // 原实现直接 whole-row upsert：A 机离线编辑任务 tL（旧）、B 机随后编辑 tR（新）并同步，
                     // A 机恢复联网自动同步时会把服务端从 tR 回退成 tL，下载侧 LWW 已无还手之力
                     // （它拿到的"远端"正是本机刚覆盖的版本），B 的较新编辑在两端都被永久抹掉。
@@ -415,32 +476,29 @@ namespace TodoSidebar.Services
                     if (!string.IsNullOrEmpty(task.SyncId) && Guid.TryParse(task.SyncId, out syncId))
                     {
                         var localEditUtc = task.LocalUpdatedAt.HasValue ? ToUtc(task.LocalUpdatedAt.Value) : DateTime.UtcNow;
-                        try
+                        if (remoteUpdatedAt.TryGetValue(syncId, out var remoteUtc) && remoteUtc > localEditUtc)
                         {
-                            var remoteResp = await client.From<SyncTask>().Where(x => x.Id == syncId).Get();
-                            var remoteRow = remoteResp.Models?.FirstOrDefault();
-                            if (remoteRow != null && remoteRow.UpdatedAt > localEditUtc)
+                            skipped++;
+                            _syncLog.Log(new SyncLogEntry
                             {
-                                skipped++;
-                                _syncLog.Log(new SyncLogEntry
-                                {
-                                    Action = "upload",
-                                    Success = true,
-                                    Details = $"跳过本地任务#{task.Id}：远端较新（LWW 交由下载侧收敛）"
-                                });
-                                continue;
-                            }
-                        }
-                        catch (Exception checkEx)
-                        {
-                            // 预检失败不阻断上传（保持原语义），下一轮自动重试
-                            System.Diagnostics.Debug.WriteLine($"Upload pre-check error for task {task.Id}: {checkEx.Message}");
+                                Action = "upload",
+                                Success = true,
+                                Details = $"跳过本地任务#{task.Id}：远端较新（LWW 交由下载侧收敛）"
+                            });
+                            continue;
                         }
                     }
                     else
                     {
                         // M11 修复：SyncId 损坏时不再让整个上传流程卡死，视为无 SyncId 重新生成
+                        // R70 修复（审查 H1）：生成后立即落库预绑定（保持 IsDirty=1），
+                        // 避免"上传成功但标记失败"时下轮换新 GUID 在云端再造重复行
                         syncId = Guid.NewGuid();
+                        try { _dbService.BindTaskSyncId(task.Id, syncId.ToString()); }
+                        catch (Exception bindEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Bind SyncId error for task {task.Id}: {bindEx.Message}");
+                        }
                     }
 
                     var syncTask = new SyncTask
@@ -458,6 +516,9 @@ namespace TodoSidebar.Services
                         Tags = task.Tags,
                         SortOrder = task.SortOrder,
                         SubtasksJson = task.SubTasksJson,
+                        // R71（审查 M20）：耗时字段跨设备同步（原模型缺列导致静默丢字段）
+                        EstimatedMinutes = task.EstimatedMinutes,
+                        ActualMinutes = task.ActualMinutes,
                         // R1 修复（审查 H1）：上传携带真实编辑时间而非"上传时刻"。
                         // 原实现每次上传都取 UtcNow，离线编辑 2 小时后上线会被当成"最新修改"，
                         // LWW 比较变成"谁最后联网谁赢"，静默覆盖其他设备更晚的真实编辑。
@@ -492,7 +553,7 @@ namespace TodoSidebar.Services
                 // 批量 upsert（一次 HTTP 请求）
                 try
                 {
-                    await client.From<SyncTask>().Upsert(syncTasks);
+                    await client.From<SyncTask>().Upsert(syncTasks, cancellationToken: SyncToken);
 
                     // 全部成功，标记本地任务已同步
                     foreach (var (localId, syncTask, expected) in taskMapping)
@@ -514,7 +575,7 @@ namespace TodoSidebar.Services
                     {
                         try
                         {
-                            await client.From<SyncTask>().Upsert(syncTask);
+                            await client.From<SyncTask>().Upsert(syncTask, cancellationToken: SyncToken);
                             _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
                             uploaded++;
                             retryDelay = 500; // 成功则重置
@@ -561,34 +622,72 @@ namespace TodoSidebar.Services
                 // 增量同步：只拉取上次同步后有更新的任务。
                 // M12 修复：分页拉取——服务端 PostgREST 有单页行数上限（托管版默认 1000），
                 // 原实现一次 Get() 超限时静默截断，多设备"看似同步成功实则缺数据"
+                //
+                // R71 修复（审查 H2）：从 OFFSET 分页改为 (updated_at, id) keyset 游标。
+                // 原实现用 Range(offset, offset+N) 翻页，翻页期间远端发生删除/改归属会让
+                // 后续行整体左移，当前页末行被跳过；被跳过的行落在新旧游标之间，
+                // 之后增量过滤永远不再覆盖 => 静默永久缺失（只能等 24h 全量对账）。
+                // 现在每页以「本页最大 (updated_at, id)」为新下界（客户端按同一序丢弃边界内重复行）。
+                // 注：Postgres uuid 按字节序比较，与其规范字符串的字典序一致，故用字符串比较决胜。
                 const int PageSize = 500;
                 var remoteTasks = new List<SyncTask>();
-                int offset = 0;
+                var seenIds = new HashSet<Guid>();
+                DateTime? atCursor = (!fullReconcile && _lastSyncTimeUtc.HasValue)
+                    ? _lastSyncTimeUtc.Value.ToUniversalTime()
+                    : (DateTime?)null;
+                string idCursor = "";
+                int pageLoops = 0;
                 while (true)
                 {
                     var query = client.From<SyncTask>().Where(x => x.UserId == userId);
-                    if (!fullReconcile && _lastSyncTimeUtc.HasValue)
+                    if (atCursor.HasValue)
                     {
                         // 拉取上次同步后更新的任务（包括新创建的和已删除的）
-                        query = query.Where(x => x.UpdatedAt >= _lastSyncTimeUtc.Value);
+                        query = query.Where(x => x.UpdatedAt >= atCursor.Value);
                     }
 
-                    // R2 修复（审查 H2）：稳定排序是 offset 分页正确性的前提。
-                    // 无 ORDER BY 时 PostgREST 行序未定义，两页之间远端有写入会导致页界漂移，
-                    // 被跳过的行此后增量过滤永远不再覆盖 => 静默永久缺失。
-                    query = query.Order("updated_at",
-                        Supabase.Postgrest.Constants.Ordering.Ascending,
-                        Supabase.Postgrest.Constants.NullPosition.Last);
+                    // 稳定排序：updated_at 主序 + id 决胜，保证并列时间戳页间顺序一致
+                    query = query
+                        .Order("updated_at",
+                            Supabase.Postgrest.Constants.Ordering.Ascending,
+                            Supabase.Postgrest.Constants.NullPosition.Last)
+                        .Order("id",
+                            Supabase.Postgrest.Constants.Ordering.Ascending,
+                            Supabase.Postgrest.Constants.NullPosition.Last);
 
-                    var response = await query.Range(offset, offset + PageSize - 1).Get();
+                    var response = await query.Range(0, PageSize - 1).Get(SyncToken);
                     var page = response.Models ?? new List<SyncTask>();
-                    remoteTasks.AddRange(page);
+
+                    // 丢弃落在游标内（<= 已处理边界）的重复行
+                    foreach (var t in page)
+                    {
+                        if (atCursor.HasValue)
+                        {
+                            var cmp = string.CompareOrdinal(t.Id.ToString(), idCursor);
+                            if (t.UpdatedAt < atCursor.Value || (t.UpdatedAt == atCursor.Value && cmp <= 0))
+                                continue;
+                        }
+                        if (seenIds.Add(t.Id)) remoteTasks.Add(t);
+                    }
 
                     // 返回不足一页说明已取完
                     if (page.Count < PageSize) break;
 
-                    offset += PageSize;
-                    if (offset > 50000) break; // 安全上限，防异常死循环
+                    var maxAt = page.Max(t => t.UpdatedAt);
+                    var maxId = page.Where(t => t.UpdatedAt == maxAt)
+                                    .OrderBy(t => t.Id.ToString(), StringComparer.Ordinal)
+                                    .Last().Id.ToString();
+
+                    // 无法推进（极端：整页同一时间戳且 id 未前进）则停止，交由 24h 全量对账兜底
+                    bool progressed = !atCursor.HasValue
+                        || maxAt > atCursor.Value
+                        || (maxAt == atCursor.Value && string.CompareOrdinal(maxId, idCursor) > 0);
+                    if (!progressed) break;
+
+                    atCursor = maxAt;
+                    idCursor = maxId;
+
+                    if (++pageLoops > 1000) break; // 安全上限，防异常死循环
                 }
 
                 if (remoteTasks.Count == 0)
@@ -624,6 +723,9 @@ namespace TodoSidebar.Services
                             Tags = remoteTask.Tags,
                             SortOrder = remoteTask.SortOrder,
                             SubTasksJson = remoteTask.SubtasksJson,
+                            // R71（审查 M20）：耗时字段随远端下行
+                            EstimatedMinutes = remoteTask.EstimatedMinutes,
+                            ActualMinutes = remoteTask.ActualMinutes,
                             IsDeleted = remoteTask.IsDeleted,
                             DeletedAt = ParseRemoteDeletedAt(remoteTask.DeletedAt),
                             Recurrence = RecurrenceRule.Normalize(remoteTask.Recurrence),
@@ -720,7 +822,22 @@ namespace TodoSidebar.Services
                     }
                     catch (Exception ex)
                     {
+                        // R71（复审 H3）：单行失败不再静默——写入 sync_log 留痕。
+                        // 失败行时间戳不计入游标（RecordObserved 未调用），下轮增量仍会覆盖到它；
+                        // 但若同批其他成功行时间戳更大、游标推进越过该行，最长需等 24h 全量对账。
+                        // 记日志让"同步成功但缺数据"可被排查。
                         System.Diagnostics.Debug.WriteLine($"Download task {remoteTask.Id} error: {ex.Message}");
+                        try
+                        {
+                            _syncLog.Log(new SyncLogEntry
+                            {
+                                Action = "download-row",
+                                Success = false,
+                                ErrorMessage = ex.Message,
+                                Details = $"下载单行失败，下轮重试: {remoteTask.Id}"
+                            });
+                        }
+                        catch { /* 日志失败不影响同步 */ }
                     }
                 }
                 
@@ -830,7 +947,7 @@ namespace TodoSidebar.Services
                     Date = x.Date,
                     CreatedAt = x.CreatedAt
                 }).ToList();
-                await client.From<SyncXpLog>().Upsert(batch);
+                await client.From<SyncXpLog>().Upsert(batch, cancellationToken: SyncToken);
                 foreach (var x in dirtyXp)
                     _dbService.MarkXpLogSynced(x.Id);
             }
@@ -851,7 +968,7 @@ namespace TodoSidebar.Services
                     Completed = p.Completed,
                     Date = p.Date
                 }).ToList();
-                await client.From<SyncPomodoroSession>().Upsert(batch);
+                await client.From<SyncPomodoroSession>().Upsert(batch, cancellationToken: SyncToken);
                 foreach (var p in dirtyPomo)
                     _dbService.MarkPomodoroSynced(p.Id);
             }
@@ -860,7 +977,7 @@ namespace TodoSidebar.Services
             var local = _dbService.GetUserGrowth();
             var remoteList = await client.From<SyncUserProfile>()
                 .Where(x => x.UserId == userId)
-                .Get();
+                .Get(SyncToken);
             // S5 修复：客户端按 UpdatedAt 取最新一行，避免多行时任意取值
             var remote = remoteList.Models
                 .OrderByDescending(m => m.UpdatedAt)
@@ -882,7 +999,7 @@ namespace TodoSidebar.Services
                     ComboDays = local.ComboDays,
                     BestComboDays = local.BestComboDays,
                     Title = local.Title
-                });
+                }, cancellationToken: SyncToken);
             }
             else if (remote.TotalXp > local.TotalXp)
             {
@@ -915,7 +1032,38 @@ namespace TodoSidebar.Services
                     ComboDays = local.ComboDays,
                     BestComboDays = local.BestComboDays,
                     Title = local.Title
-                });
+                }, cancellationToken: SyncToken);
+            }
+            else
+            {
+                // R71（审查 M10）：TotalXp 相等时也必须对称合并连击——
+                // 原实现在两个 > 分支之外不动作，导致"只涨连击不涨 XP"的设备
+                // 云端 combo_days 永不同步。此处取双方较大者，任一变化即回写。
+                var mergedCombo = Math.Max(local.ComboDays, remote.ComboDays);
+                var mergedBest = Math.Max(local.BestComboDays, remote.BestComboDays);
+
+                var localChanged = mergedCombo != local.ComboDays || mergedBest != local.BestComboDays;
+                if (localChanged)
+                {
+                    local.ComboDays = mergedCombo;
+                    local.BestComboDays = mergedBest;
+                    _dbService.SaveUserGrowth(local);
+                }
+
+                if (mergedCombo != remote.ComboDays || mergedBest != remote.BestComboDays)
+                {
+                    await client.From<SyncUserProfile>().Upsert(new SyncUserProfile
+                    {
+                        Id = profileId,
+                        UserId = userId,
+                        Level = local.Level,
+                        Xp = local.Xp,
+                        TotalXp = local.TotalXp,
+                        ComboDays = mergedCombo,
+                        BestComboDays = mergedBest,
+                        Title = local.Title
+                    }, cancellationToken: SyncToken);
+                }
             }
         }
 
@@ -936,7 +1084,7 @@ namespace TodoSidebar.Services
             // 1. 拉取云端该用户全部日行（每日一行的小表，全量即可）
             var remoteList = await client.From<SyncTypingStat>()
                 .Where(x => x.UserId == userId)
-                .Get();
+                .Get(SyncToken);
             // 同日期多行（异常场景）时取 updated_at 最新一行
             var remoteByDate = (remoteList.Models ?? new List<SyncTypingStat>())
                 .GroupBy(m => m.Date)
@@ -963,7 +1111,7 @@ namespace TodoSidebar.Services
                 }
             }
             if (toUpload.Count > 0)
-                await client.From<SyncTypingStat>().Upsert(toUpload);
+                await client.From<SyncTypingStat>().Upsert(toUpload, cancellationToken: SyncToken);
 
             // 3. 下载云端较新的日行（LWW 覆盖本地）
             foreach (var remote in remoteByDate.Values)
@@ -1031,6 +1179,28 @@ namespace TodoSidebar.Services
         public void EndManualSync()
         {
             Interlocked.Exchange(ref _syncInProgress, 0);
+        }
+
+        /// <summary>
+        /// R71（审查 M11）：手动「仅下载」后推进并持久化增量游标。
+        /// 原实现丢弃 DownloadRemoteChangesAsync 的 maxObservedUpdatedAt，
+        /// 游标不动 => 下轮自动同步会重复拉同一批（靠回声明跳被消化，但浪费且 UI 时间戳失真）。
+        /// </summary>
+        public void CommitDownloadCursor(DateTime? maxObservedUpdatedAt)
+        {
+            if (!maxObservedUpdatedAt.HasValue) return;
+            var userId = AuthService.Instance.CurrentUser?.Id;
+            if (string.IsNullOrEmpty(userId)) return;
+
+            try
+            {
+                _lastSyncTimeUtc = maxObservedUpdatedAt.Value.ToUniversalTime() - CursorOverlapWindow;
+                _dbService.SetSetting(CursorKey(userId), _lastSyncTimeUtc.Value.ToString("O"));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CommitDownloadCursor error: {ex.Message}");
+            }
         }
         
         /// <summary>

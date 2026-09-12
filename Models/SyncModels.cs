@@ -48,6 +48,14 @@ namespace TodoSidebar.Models
         
         [Column("subtasks_json")]
         public string? SubtasksJson { get; set; }
+
+        /// <summary>v5.7.1 修复（审查 M20）：预估耗时（分钟），跨设备同步。</summary>
+        [Column("estimated_minutes")]
+        public int? EstimatedMinutes { get; set; }
+
+        /// <summary>v5.7.1 修复（审查 M20）：实际耗时（分钟），跨设备同步。</summary>
+        [Column("actual_minutes")]
+        public int? ActualMinutes { get; set; }
         
         [Column("updated_at")]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

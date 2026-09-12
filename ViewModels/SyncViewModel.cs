@@ -136,7 +136,9 @@ namespace TodoSidebar.ViewModels
 
             try
             {
-                var (downloaded, conflicts, _) = await _syncService.DownloadRemoteChangesAsync();
+                var (downloaded, conflicts, maxObserved) = await _syncService.DownloadRemoteChangesAsync();
+                // R71（审查 M11）：推进增量游标，避免下轮自动同步重复拉取同一批
+                _syncService.CommitDownloadCursor(maxObserved);
                 LastSyncTime = DateTime.Now;
                 SyncStatusText = $"下载完成：{downloaded} 条数据已下载" + (conflicts > 0 ? $"（{conflicts} 条冲突）" : "");
                 OnSyncCompleted?.Invoke();

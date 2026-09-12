@@ -78,6 +78,10 @@ namespace TodoSidebar.Services
         {
             lock (_lock)
             {
+                // R71（复审 M13）：先释放旧 Client（其内部 HttpClient / 自动刷新定时器），
+                // 再置空。原实现只置 null，切号时旧连接与定时器泄漏。
+                try { (_client as IDisposable)?.Dispose(); }
+                catch { /* 释放失败不影响置空 */ }
                 _client = null;
             }
         }
