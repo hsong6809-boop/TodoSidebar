@@ -29,15 +29,17 @@ where tgrelid = 'public.tasks'::regclass and not tgisinternal;
 
 -- 若上一条查出了 update_tasks_updated_at，请取消注释并执行下面的替换语句，
 -- 使"客户端显式携带了更新的 updated_at"时保留客户端值（仅未携带/相同时才用 now 兜底）：
--- create or replace function update_updated_at_column()
--- returns trigger as $$
--- begin
---     if new.updated_at is null or new.updated_at = old.updated_at then
---         new.updated_at = now();
---     end if;
---     return new;
--- end;
--- $$ language 'plpgsql';
+-- R71 修复（审查 M3）：下方语句已默认启用（原为注释，导致多数部署漏执行、LWW 持续被击穿）。
+-- 若你的库本来就没有该触发器，本段为幂等 no-op，可安全执行。
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+    if new.updated_at is null or new.updated_at = old.updated_at then
+        new.updated_at = now();
+    end if;
+    return new;
+end;
+$$ language 'plpgsql';
 
 -- ============================================================
 -- 验证（应全部通过）

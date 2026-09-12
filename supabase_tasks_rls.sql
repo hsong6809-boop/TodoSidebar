@@ -35,6 +35,9 @@ create table if not exists public.tasks (
     tags          text,
     sort_order    integer not null default 0,
     subtasks_json text,
+    -- v5.7.1：预估/实际耗时（分钟），跨设备同步（对应 SyncTask.EstimatedMinutes/ActualMinutes）
+    estimated_minutes integer,
+    actual_minutes    integer,
     updated_at    timestamptz not null default now(),
     is_deleted    boolean not null default false,
     -- 与 tasks_deleted_at_setup.sql 保持同类型（text，客户端发送 ISO 格式文本）
@@ -48,6 +51,14 @@ create table if not exists public.tasks (
 -- 存量环境补列（幂等；新环境建表已含该列时此句为无操作）
 alter table public.tasks add column if not exists deleted_at text;
 alter table public.tasks add column if not exists recurrence text;
+-- v5.7.1：补耗时列（客户端 upsert 会序列化这两个键，缺列会被 PostgREST 整批拒绝）
+alter table public.tasks add column if not exists estimated_minutes integer;
+alter table public.tasks add column if not exists actual_minutes integer;
+
+-- R71（审查 M8）：user_id 不得为空——RLS 条件对 NULL 行永不命中，会留下"谁也看不见"的幽灵行。
+-- 用 NOT VALID 约束：只校验新增/更新行，不阻断存量历史行（避免迁移失败）。
+alter table public.tasks drop constraint if exists tasks_user_id_not_null;
+alter table public.tasks add constraint tasks_user_id_not_null check (user_id is not null) not valid;
 
 create index if not exists tasks_user_updated_idx on public.tasks (user_id, updated_at);
 

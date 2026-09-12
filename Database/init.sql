@@ -130,20 +130,26 @@ DROP POLICY IF EXISTS "Users can insert own sync_conflicts" ON sync_conflicts;
 CREATE POLICY "Users can insert own sync_conflicts" ON sync_conflicts
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- 7. 创建更新 updated_at 的触发器函数
+-- 7. （R71 修复·审查 M3）updated_at 触发器——已废弃
+-- 历史版本在此创建 update_tasks_updated_at 触发器（UPDATE 时强制 updated_at=now()），
+-- 会把客户端上传的真实编辑时间改写为服务端时间，击穿 LWW 冲突解决。
+-- 现改为【确保该触发器不存在】，而不是创建它。存量库若已有请手动 drop（见文件头）。
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
+
+-- 保留函数定义但不再挂触发器；若被其他脚本复用，改为"仅在客户端未提供时兜底"的安全语义。
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = now();
+    -- 仅在客户端未显式携带 updated_at（或未变化）时才兜底为 now()，
+    -- 避免覆盖客户端上传的真实编辑时间（LWW 依赖该值）。
+    IF NEW.updated_at IS NULL OR NEW.updated_at = OLD.updated_at THEN
+        NEW.updated_at = now();
+    END IF;
     RETURN NEW;
 END;
 $$ language 'plpgsql';
 
--- 8. 为 tasks 表创建触发器（L5：幂等化）
-DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
-CREATE TRIGGER update_tasks_updated_at
-    BEFORE UPDATE ON tasks
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- 8. 不再为 tasks 表创建触发器（见上）
+-- 如需为其他表复用该函数，请显式创建，并确认客户端会携带 updated_at。
 
 -- 完成！
