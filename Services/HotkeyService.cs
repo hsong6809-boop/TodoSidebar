@@ -109,6 +109,9 @@ namespace TodoSidebar.Services
             UnregisterHotKey(_windowHandle, HOTKEY_QUICK_ADD);
 
             _source?.RemoveHook(HwndHook);
+            // R71：移除 Hook 后释放 HwndSource 引用——原实现退订后 _source 仍持有窗口源，
+            // 窗口销毁/服务 Dispose 后该字段仍指向已失效的 HwndSource（引用泄漏 + 状态误导）
+            _source = null;
             _isRegistered = false;
         }
 

@@ -16,6 +16,10 @@ namespace TodoSidebar
         // 异步操作进行中标记，防止登录/注册/忘记密码并发提交
         private bool _isBusy;
 
+        // R71：窗口已关闭标记——构造期发出的预检（最长 5 秒 HTTP 超时）与登录请求的续体
+        // 可能在窗口关闭后才回到 UI 线程，此处记录关闭状态以拦截关闭后的 UI 写入。
+        private bool _closed;
+
         /// <summary>L22 修复：UI 展示的模糊配置提示（不含任何 AnonKey 片段）</summary>
         private const string ConfigHint = "\n\n[诊断] 配置可能有误，详见日志";
 
@@ -26,6 +30,9 @@ namespace TodoSidebar
 
             // P2：真实亚克力背板（默认关闭；设置 AcrylicEnabled=true 可开启，失败静默降级）
             Loaded += (_, _) => DwmBackdropHelper.ApplyMainShellAcrylic(this);
+
+            // R71：关闭窗口后置位，供下方预检/登录的异步续体在写 UI 前判空
+            Closed += (_, _) => _closed = true;
 
             // M37：进入登录页即后台预检同步服务器连通性（不阻塞 UI），
             // 网络不通时提前给出可行动提示，而不是等用户点登录后"卡住无反应"
@@ -47,6 +54,8 @@ namespace TodoSidebar
             }
             catch (Exception ex)
             {
+                // R71：窗口已关闭则不再写 UI（用户可能在 5 秒超时窗口内关掉登录窗）
+                if (_closed) return;
                 ShowError(ex.Message);
                 return;
             }
@@ -55,6 +64,8 @@ namespace TodoSidebar
             {
                 using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
                 using var resp = await http.GetAsync(url.TrimEnd('/') + "/auth/v1/health");
+                // R71：await 之后重新判空——续体执行时窗口可能已经关闭
+                if (_closed) return;
                 if (!resp.IsSuccessStatusCode)
                 {
                     ShowWarning($"同步服务器响应异常（HTTP {(int)resp.StatusCode}），登录可能失败");
@@ -62,6 +73,8 @@ namespace TodoSidebar
             }
             catch (Exception)
             {
+                // R71：同上，失败路径同样先判窗口状态
+                if (_closed) return;
                 ShowWarning("⚠ 当前网络连接同步服务器不稳定：登录/注册可能失败。链路干扰是间歇性的，可稍等片刻多点几次重试；持续失败请检查网络或使用代理");
             }
         }
@@ -446,6 +459,10 @@ namespace TodoSidebar
         
         private void ShowError(string message)
         {
+            // R71：窗口已关闭（或正在关闭）时不再碰 UI——登录/注册/预检的异步续体
+            // 都汇聚到这里写 ErrorText，集中拦截可覆盖所有 late-write 路径
+            if (_closed) return;
+
             ErrorText.Text = message;
             ErrorText.Visibility = Visibility.Visible;
         }

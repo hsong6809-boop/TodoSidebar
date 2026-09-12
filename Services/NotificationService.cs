@@ -55,7 +55,9 @@ namespace TodoSidebar.Services
                     _lastClearDate = today;
                 }
             };
-            _midnightTimer.Start();
+            // R71：构造期不启动定时器——原实现在此 _midnightTimer.Start()，
+            // 与 _checkTimer 行为不一致（Start() 之前零点清理已在跑），
+            // 统一交由 Start() 启动（Stop() 已按对成对停两个计时器）。
         }
 
         public void Start()
@@ -209,12 +211,24 @@ namespace TodoSidebar.Services
             Topmost = true;
             ShowInTaskbar = false;
 
+            // R71：资源键可能缺失（主题字典尚未加载 / 退出期资源已释放），
+            // 原实现直接强转 Application.Current.Resources[key] 会抛 KeyNotFound 或 NullReference，
+            // 使整条通知构造失败（连通知窗口都弹不出来）。改为 TryFindResource + 兜底画刷。
+            var cardBrush = Application.Current?.TryFindResource("CardBrush") as System.Windows.Media.Brush
+                            ?? System.Windows.Media.Brushes.White;
+            var accentBrush = Application.Current?.TryFindResource("AccentBrush") as System.Windows.Media.Brush
+                              ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x63, 0x66, 0xF1));
+            var textBrush = Application.Current?.TryFindResource("TextBrush") as System.Windows.Media.Brush
+                            ?? System.Windows.Media.Brushes.Black;
+            var textSecondaryBrush = Application.Current?.TryFindResource("TextSecondaryBrush") as System.Windows.Media.Brush
+                                     ?? System.Windows.Media.Brushes.DimGray;
+
             var border = new System.Windows.Controls.Border
             {
-                Background = (System.Windows.Media.Brush)Application.Current.Resources["CardBrush"],
+                Background = cardBrush,
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(16),
-                BorderBrush = (System.Windows.Media.Brush)Application.Current.Resources["AccentBrush"],
+                BorderBrush = accentBrush,
                 BorderThickness = new Thickness(0, 0, 3, 0),
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
@@ -231,14 +245,14 @@ namespace TodoSidebar.Services
                 Text = title,
                 FontWeight = FontWeights.Bold,
                 FontSize = 14,
-                Foreground = (System.Windows.Media.Brush)Application.Current.Resources["TextBrush"]
+                Foreground = textBrush
             };
 
             var messageBlock = new System.Windows.Controls.TextBlock
             {
                 Text = message,
                 FontSize = 12,
-                Foreground = (System.Windows.Media.Brush)Application.Current.Resources["TextSecondaryBrush"],
+                Foreground = textSecondaryBrush,
                 TextWrapping = TextWrapping.Wrap
             };
 

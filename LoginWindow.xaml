@@ -1,3 +1,5 @@
+<!-- R71：去掉根窗口 Topmost="True"——登录窗常驻置顶会一直压在其他应用之上（用户切到邮箱查收验证码时被遮挡）。
+     窗口本身由 WindowStartupLocation=CenterScreen 居中显示，无需强制置顶即可被用户看到。 -->
 <Window x:Class="TodoSidebar.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -9,8 +11,7 @@
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
-        ResizeMode="NoResize"
-        Topmost="True">
+        ResizeMode="NoResize">
 
     <Border Background="{DynamicResource GlassBrush}"
             CornerRadius="16"

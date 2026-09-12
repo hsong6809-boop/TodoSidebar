@@ -204,11 +204,21 @@ namespace TodoSidebar
         private async Task SaveNicknameAsync()
         {
             NicknameHint.Text = "";
-            await _account.SetNicknameAsync(NicknameInput.Text);
-            NicknameHint.Text = "已保存 ✓";
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
-            timer.Tick += (s, args) => { timer.Stop(); NicknameHint.Text = ""; };
-            timer.Start();
+            // R70 修复（审查 H8）：async void 调用链上必须自带 try/catch——
+            // 云端写失败/网络异常原先会直接沿 async void 抛出，可能崩进程。
+            // 同文件头像路径已修，昵称路径此前遗漏。
+            try
+            {
+                await _account.SetNicknameAsync(NicknameInput.Text);
+                NicknameHint.Text = "已保存 ✓";
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
+                timer.Tick += (s, args) => { timer.Stop(); NicknameHint.Text = ""; };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                NicknameHint.Text = $"保存失败: {ex.Message}";
+            }
         }
 
         private void CopyUid_Click(object sender, RoutedEventArgs e)

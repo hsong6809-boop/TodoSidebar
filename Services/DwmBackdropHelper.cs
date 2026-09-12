@@ -26,7 +26,7 @@ namespace TodoSidebar.Services
         {
             public int AccentState;
             public uint AccentFlags;
-            public uint GradientColor;   // ABGR
+            public uint GradientColor;   // R71：ABI 为 0xAABBGGRR（见 TryEnableAcrylic 中的拼装注释）
             public uint AnimationId;
         }
 
@@ -84,14 +84,16 @@ namespace TodoSidebar.Services
                 var hwnd = new WindowInteropHelper(window).EnsureHandle();
                 if (hwnd == IntPtr.Zero) return false;
 
-                // R50 修复（审查 L1）：GradientColor 惯例为 0xAARRGGBB——
-                // 原实现 R/B 通道写反，开启亚克力后底色红蓝互换（深色主题变暖棕、浅色偏粉）
-                uint abgr = ((uint)alpha << 24) | ((uint)tint.R << 16) | ((uint)tint.G << 8) | tint.B;
+                // R71 修复（审查 M2）：SetWindowCompositionAttribute 的 ACCENT_POLICY.GradientColor
+                // 实际 ABI 为 0xAABBGGRR（不是 0xAARRGGBB）——
+                // 按 ARGB 拼装会让 R/B 通道互换（深色主题底色偏暖棕、浅色偏粉）。
+                // 变量名同步改为 gradientColor，避免再与通道序混淆。
+                uint gradientColor = ((uint)alpha << 24) | ((uint)tint.B << 16) | ((uint)tint.G << 8) | tint.R;
                 var accent = new AccentPolicy
                 {
                     AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,
                     AccentFlags = 2,
-                    GradientColor = abgr
+                    GradientColor = gradientColor
                 };
 
                 var accentPtr = Marshal.AllocHGlobal(Marshal.SizeOf<AccentPolicy>());

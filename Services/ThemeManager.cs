@@ -110,6 +110,7 @@ namespace TodoSidebar.Services
             LoadThemePreference();
 
             // M33：监听系统主题变化，"跟随系统"模式下实时响应明暗切换
+            // R71：该静态事件必须由 Shutdown() 在 App.OnExit 时退订，否则单例被广播列表长期持有
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         }
 
@@ -124,6 +125,24 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
+        /// R71：退订系统外观广播。SystemEvents.UserPreferenceChanged 是静态事件，
+        /// 订阅后本单例会被系统广播列表长期持有（进程内最后一个强引用），
+        /// 且在 Dispatcher 停机后仍可能被触发——退出路径必须显式退订。
+        /// 由 App.OnExit 调用。
+        /// </summary>
+        public void Shutdown()
+        {
+            try
+            {
+                SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ThemeManager: 退订系统主题广播失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// M33：系统外观偏好变化回调。仅处理常规类别（含应用主题颜色），
         /// 且当前为"跟随系统"时才重新应用；事件来自系统广播线程，必须封送回 UI 线程。
         /// </summary>
@@ -135,7 +154,12 @@ namespace TodoSidebar.Services
             var app = Application.Current;
             if (app == null) return;
 
-            app.Dispatcher.Invoke(() => ApplyTheme(ThemeType.System));
+            // R71：应用已开始/完成关闭时直接返回——此时 Dispatcher 不再处理队列，
+            // 继续 Invoke 会阻塞或抛异常（退出期系统广播仍可能到达）
+            var dispatcher = app.Dispatcher;
+            if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+
+            dispatcher.Invoke(() => ApplyTheme(ThemeType.System));
         }
 
         private void LoadThemePreference()

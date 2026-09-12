@@ -144,7 +144,10 @@ namespace TodoSidebar
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            // 保存标题
+            // R71（审查 M12）：先在局部变量里算出全部新值并完成所有校验/确认，
+            // 最后才一次性写回共享 _task。原实现先改 Title/Priority、后弹截止日期确认，
+            // 用户在确认框点"取消"时标题/优先级已落在列表共享对象上但未落库，
+            // 造成内存与 DB 不一致、下次刷新回滚。
             var newTitle = TitleInput.Text.Trim();
             if (string.IsNullOrWhiteSpace(newTitle))
             {
@@ -152,32 +155,20 @@ namespace TodoSidebar
                 return;
             }
 
-            if (newTitle != _task.Title)
-            {
-                _task.Title = newTitle;
-                _hasChanges = true;
-            }
-
-            // 保存优先级
             var newPriority = TaskPriority.Medium;
             if (PriorityHigh.IsChecked == true)
                 newPriority = TaskPriority.High;
             else if (PriorityLow.IsChecked == true)
                 newPriority = TaskPriority.Low;
 
-            if (newPriority != _task.Priority)
-            {
-                _task.Priority = newPriority;
-                _hasChanges = true;
-            }
-
-            // 保存截止日期
+            DateTime? newDeadline = null;
+            string? selectedRecurrence = null;
             if (_task.Type == TaskType.Deadline)
             {
                 // R49 修复（审查 L3）：DatePicker.SelectedDate 恒为当日 00:00，
                 // 统一按 .Date 口径取值与比较——原实现遇到带时间成分的 Deadline
                 // （导入/自然语言解析产生）时每次"打开→保存"都会把时间抹成 00:00 并误标有修改
-                var newDeadline = DeadlinePicker.SelectedDate?.Date;
+                newDeadline = DeadlinePicker.SelectedDate?.Date;
 
                 // L21 修复：编辑后的截止日期早于今天时二次确认（取消则不保存），
                 // 与新增流程"截止日期不能早于今天"的校验行为对齐
@@ -189,14 +180,31 @@ namespace TodoSidebar
                         return;
                 }
 
+                // v5.4 保存重复规则（空串归一化为 null）
+                selectedRecurrence = RecurrenceRule.Normalize(RecurrenceCombo.SelectedValue as string);
+            }
+
+            // ===== 全部确认通过，统一写回 =====
+            if (newTitle != _task.Title)
+            {
+                _task.Title = newTitle;
+                _hasChanges = true;
+            }
+
+            if (newPriority != _task.Priority)
+            {
+                _task.Priority = newPriority;
+                _hasChanges = true;
+            }
+
+            if (_task.Type == TaskType.Deadline)
+            {
                 if (newDeadline != _task.Deadline?.Date)
                 {
                     _task.Deadline = newDeadline;
                     _hasChanges = true;
                 }
 
-                // v5.4 保存重复规则（空串归一化为 null）
-                var selectedRecurrence = RecurrenceRule.Normalize(RecurrenceCombo.SelectedValue as string);
                 if (selectedRecurrence != _task.Recurrence)
                 {
                     _task.Recurrence = selectedRecurrence;

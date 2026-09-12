@@ -123,6 +123,16 @@ namespace TodoSidebar
                 if (_isCollapsed && !_mouseCheckTimer.IsEnabled)
                     _mouseCheckTimer.Start();
             };
+
+            // R71：展开态的"鼠标离开窗口 → 延迟收起"改由本事件驱动。
+            // 原实现依赖 _mouseCheckTimer 每 150ms 轮询 IsMouseOver（首次收起启动后永不停止，
+            // 展开态长期空转）；轮询只保留给收起态——收起后窗口仅 3px 宽（CollapsedWidth），
+            // 光标停在 30px 命中区内时不会产生任何窗口鼠标事件，必须轮询。
+            MouseLeave += (_, _) =>
+            {
+                if (_isCollapsed || _isAnimating) return;
+                _collapseDelayTimer.Start();
+            };
             
             // 窗口失焦 → 立即收起
             Deactivated += (_, _) =>
@@ -594,6 +604,8 @@ namespace TodoSidebar
             }
             else
             {
+                // R71：展开态兜底分支——正常路径下定时器已在展开动画结束时停止，
+                // 此处保留以防某些路径（如快速收起/展开竞态）让定时器在展开态仍在运行
                 if (!IsMouseOver)
                 {
                     _collapseDelayTimer.Start();
@@ -624,11 +636,11 @@ namespace TodoSidebar
         {
             try
             {
-                var fullWindow = new FullWindow();
-                fullWindow.Show();
-                // M28：切换窗口后把全局热键迁移到新窗口，否则本窗口销毁后热键静默失效
-                HotkeyService.Current?.ReRegisterHotkeys(fullWindow);
-                Close();
+                // R70 修复（审查 C2）：必须走 App.SwitchDisplayMode，它会更新静态
+                // _currentMainWindow 并迁移热键。原实现 new+Show+ReRegisterHotkeys+Close
+                // 旁路了该入口，热键三态循环仍认为当前是侧边栏，再按 Ctrl+Alt+T 会再开
+                // 一个 FullWindow（双完整窗口）。
+                App.SwitchDisplayMode(App.AppDisplayMode.Full);
             }
             catch (Exception ex)
             {
@@ -758,7 +770,9 @@ namespace TodoSidebar
             _isCollapsed = false;
             _hoverDelayTimer.Stop();
             _collapseDelayTimer.Stop(); // 展开时必须停止收起定时器，防止立即被收回
-            // 注意：不停止 _mouseCheckTimer，保持运行以检测鼠标离开窗口
+            // R71：轮询定时器不再常驻——展开动画结束后由 AnimatePanel 停止（见该处注释）；
+            // 若期间被快速收起则保留运行（收起态需要轮询检测光标靠近触发条）。
+            // 展开态的鼠标离开检测由构造函数里的 MouseLeave 事件承担。
 
             // M31：先停掉上一次的兜底定时器，避免快速收起/展开时多个兜底并存
             StopFailSafeTimer();
@@ -829,6 +843,11 @@ namespace TodoSidebar
                         MainPanel.BeginAnimation(UIElement.OpacityProperty, null);
                         MainPanel.Opacity = 1;  // 修复：动画清除后局部值会回退到0，必须显式设为1
                         _isAnimating = false;
+                        // R71：面板展开稳定后停止收起态专用的鼠标轮询定时器。
+                        // 原实现首次收起启动后永不停（每 150ms 空转）；展开态"鼠标离开→收起"
+                        // 已由 Window.MouseLeave 事件驱动，此处的 else 分支仅作兜底。
+                        // 条件判断兼容"展开动画未结束时又被收起"的竞态（收起态仍需轮询）。
+                        if (!_isCollapsed) _mouseCheckTimer.Stop();
                     };
                     MainPanel.BeginAnimation(UIElement.OpacityProperty, fadeIn);
                 }

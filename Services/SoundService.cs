@@ -108,6 +108,23 @@ namespace TodoSidebar.Services
 
         public void Stop() => StopInternal(fade: true);
 
+        /// <summary>
+        /// R71（复审 SoundService）：退出清理——停淡出计时器并关闭 MediaPlayer。
+        /// 原实现 OnExit 不停白噪音/不关播放器，退出瞬间音频被硬切、媒体会话未显式释放。
+        /// </summary>
+        public void Shutdown()
+        {
+            try
+            {
+                _fadeTimer?.Stop();
+                _fadeTimer = null;
+                _player?.Close();
+                _player = null;
+                IsPlaying = false;
+            }
+            catch { /* 退出清理失败忽略 */ }
+        }
+
         // ==================== 内部 ====================
 
         private static string packUri(string relative)

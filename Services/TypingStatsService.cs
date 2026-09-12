@@ -332,6 +332,9 @@ namespace TodoSidebar.Services
             {
                 if (IsEnabled) FlushNow();
                 if (_flushTimer != null) _flushTimer.Stop();
+                // R71：停表后置空引用——原实现只 Stop 不置 null，已 Dispose 的服务仍持有
+                // Dispatcher 定时器（含 Tick 闭包）引用，且 SetEnabled(true) 的 `_flushTimer ??=` 判断会复用已停用的旧实例
+                _flushTimer = null;
                 UninstallHook();
             }
             catch

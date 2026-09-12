@@ -125,6 +125,15 @@ namespace TodoSidebar
             }
         }
 
+        /// <summary>
+        /// R71：解析 ITaskService（DI 容器，与 SettingsWindow.cs:27 同款取服务写法）。
+        /// App.Services 只在 OnStartup 配置容器前为 null；此时退回与 DI 注册（App.xaml.cs:378）
+        /// 完全等价的实例，避免浮窗因容器缺失而静默失败。
+        /// </summary>
+        private static ITaskService ResolveTaskService()
+            => App.Services?.GetService(typeof(ITaskService)) as ITaskService
+               ?? new TaskService(DatabaseService.Instance, MessageService.Instance);
+
         private void Submit()
         {
             var raw = InputBox.Text.Trim();
@@ -137,18 +146,18 @@ namespace TodoSidebar
                 var deadline = parsed.DueDate;
                 var type = deadline.HasValue ? TaskType.Deadline : TaskType.Daily;
 
-                var task = new TaskItem
-                {
-                    Title = title,
-                    Type = type,
-                    Priority = parsed.Priority ?? TaskPriority.Medium,
-                    Deadline = deadline
-                };
-                task.Id = DatabaseService.Instance.InsertTask(task);
+                // R71 修复（审查 M8）：不再直连 DatabaseService.InsertTask 绕过服务层——
+                // 统一走 ITaskService.AddTask（与 MainViewModel.AddDailyTask:471 /
+                // AddDeadlineTask:503 同一创建入口），服务层的统一校验/事件/后续打点对浮窗一并生效。
+                // 副作用等价性：创建路径本身不发 XP/成就（XP 只在 TaskService.CompleteTask 发放），
+                // 每日任务完成状态也只在完成时写 DailyTaskCompletion 表，故无重复发放风险。
+                var task = ResolveTaskService().AddTask(title, type, deadline, parsed.Priority ?? TaskPriority.Medium);
 
                 if (parsed.Tags.Count > 0)
                 {
                     task.Tags = string.Join(",", parsed.Tags);
+                    // R71：ITaskService.AddTask 不接受标签入参，补写标签仍走 DB 层 UpdateTask，
+                    // 与 MainViewModel.ApplyPendingTags（MainViewModel.cs:436-444）保持同一模式。
                     DatabaseService.Instance.UpdateTask(task);
                 }
 

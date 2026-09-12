@@ -124,7 +124,17 @@ namespace TodoSidebar
 
         #region 每日挑战面板
 
-        private void OnChallengesUpdated(object? sender, EventArgs e) => LoadChallenges();
+        /// <summary>R71：挑战更新事件可能由后台线程（同步/定时器链路）触发，同样需封送回 UI 线程。</summary>
+        private void OnChallengesUpdated(object? sender, EventArgs e)
+        {
+            // R71 修复：原实现直接 LoadChallenges() 改 UI（ChallengeList.ItemsSource），
+            // 无 Dispatcher 判断——后台线程触发时会抛 InvalidOperationException 或产生跨线程 UI 访问。
+            // 与同文件 OnSyncStatusChanged 保持一致的封送模式。
+            if (Dispatcher.CheckAccess())
+                LoadChallenges();
+            else
+                Dispatcher.BeginInvoke(new Action(LoadChallenges));
+        }
 
         /// <summary>加载今日挑战到面板</summary>
         private void LoadChallenges()
@@ -550,13 +560,16 @@ namespace TodoSidebar
 
         private void CollapseToSidebar_Click(object sender, RoutedEventArgs e)
         {
-            // 关闭完整窗口，打开侧边栏窗口
-            var sidebarWindow = new MainWindow();
-            sidebarWindow.Show();
-            // M28 修复：热键注册绑定在窗口句柄上，旧窗口销毁会自动注销全部热键，
-            // 切换后必须重注册到新窗口，否则 Ctrl+Alt+T 等全局热键静默失效
-            Services.HotkeyService.Current?.ReRegisterHotkeys(sidebarWindow);
-            this.Close();
+            try
+            {
+                // R70 修复（审查 C2）：统一走 SwitchDisplayMode，同步 _currentMainWindow 与热键。
+                // 原实现 new MainWindow + ReRegisterHotkeys 会令静态引用失步，热键三态循环错乱。
+                App.SwitchDisplayMode(App.AppDisplayMode.Sidebar);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"切换模式失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         /// <summary>v5.7：切换到悬浮球形态。</summary>
@@ -938,10 +951,8 @@ namespace TodoSidebar
         {
             try
             {
-                var sidebar = new MainWindow();
-                sidebar.Show();
-                Services.HotkeyService.Current?.ReRegisterHotkeys(sidebar);
-                Close();
+                // R70 修复（审查 C2）：与 CollapseToSidebar 对齐，统一走 SwitchDisplayMode
+                App.SwitchDisplayMode(App.AppDisplayMode.Sidebar);
             }
             catch (Exception ex)
             {

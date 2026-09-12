@@ -199,7 +199,8 @@ namespace TodoSidebar.Services
         // 粒子效果
         public static void CreateCompletionParticles(Canvas canvas, Point position)
         {
-            var random = new Random();
+            // R71：改用 Random.Shared——原实现每次调用 new Random()，
+            // 快速连续触发（连续完成任务/升级）会因时间种子相同得到完全一致的粒子方向分布。
 
             for (int i = 0; i < 8; i++)
             {
@@ -215,8 +216,8 @@ namespace TodoSidebar.Services
                 Canvas.SetTop(particle, position.Y);
                 canvas.Children.Add(particle);
 
-                var angle = random.NextDouble() * Math.PI * 2;
-                var distance = random.Next(30, 60);
+                var angle = Random.Shared.NextDouble() * Math.PI * 2;
+                var distance = Random.Shared.Next(30, 60);
 
                 var xAnimation = new DoubleAnimation(
                     position.X,

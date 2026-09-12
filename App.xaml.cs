@@ -61,6 +61,14 @@ namespace TodoSidebar
             {
                 // RegisterHotkeys 内部会先 Unregister 再注册（HotkeyService.cs:51）
                 (_hotkeyService ??= new HotkeyService()).RegisterHotkeys(newMain);
+
+                // R70 修复（审查 H9）：消费 LastRegistrationFailed——原实现有属性无读取方，
+                // 热键被其他程序占用时 Ctrl+Alt+T/N/F/Space 静默失效，用户只能猜测
+                if (_hotkeyService.LastRegistrationFailed)
+                {
+                    try { NotificationService.Instance.ShowNotification("热键提示", "部分全局热键注册失败，可能被其他程序占用。可在设置中查看快捷键说明。"); }
+                    catch { /* 提示失败不影响主流程 */ }
+                }
             }
             catch (Exception ex)
             {
@@ -163,7 +171,10 @@ namespace TodoSidebar
                 target.Show();
                 _currentMainWindow = target;
                 AttachHotkeysTo(target);
-                current?.Close();
+                // R70 修复（审查 C2）：Close 失败不得连带影响刚创建的新窗口——
+                // 原实现若 Close 抛异常会走 catch 把 target 也关掉，热键挂在已销毁 HWND 上
+                try { current?.Close(); }
+                catch (Exception closeEx) { LogError("SwitchDisplayMode close old window error", closeEx); }
             }
             catch (Exception ex)
             {
@@ -377,6 +388,10 @@ namespace TodoSidebar
         // 此时转 Shutdown 让用户感知而不是无限静默
         private static readonly Queue<DateTime> _recentUiErrors = new();
 
+        // R71（审查 M17）：单次异常提示节流——同一分钟内最多提示一次，
+        // 避免偶发错误刷屏，同时让用户知道"功能可能没生效"
+        private static DateTime _lastErrorNotifyUtc = DateTime.MinValue;
+
         private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
             LogError("UI thread unhandled exception", e.Exception);
@@ -407,6 +422,22 @@ namespace TodoSidebar
             if (e.Exception.InnerException != null)
                 errorMessage += $"\n\n内部异常:\n{e.Exception.InnerException.Message}";
             System.Diagnostics.Debug.WriteLine(errorMessage);
+
+            // R71（审查 M17）：单次异常不再完全静默——节流提示一次（日志已单独记录详情）。
+            // 原实现只 Debug.WriteLine + Handled=true，Release 下用户对"按钮无反应/数据没保存"毫无感知。
+            if (now - _lastErrorNotifyUtc > TimeSpan.FromSeconds(60))
+            {
+                _lastErrorNotifyUtc = now;
+                try
+                {
+                    // App 类内 Services 会被 IServiceProvider 属性遮蔽，须全限定命名空间
+                    TodoSidebar.Services.NotificationService.Instance.ShowNotification(
+                        "发生内部错误",
+                        "部分操作可能未生效，详情见 %APPDATA%\\TodoSidebar\\logs\\app.log");
+                }
+                catch { /* 提示失败不影响主流程 */ }
+            }
+
             e.Handled = true;
         }
 
@@ -500,6 +531,11 @@ namespace TodoSidebar
                 _hotkeyService?.Dispose();
                 _hotkeyService = null;
                 _currentMainWindow = null;
+                // R71（复审 SoundService）：停白噪音并关闭 MediaPlayer
+                SoundService.Instance.Shutdown();
+                // R71：退订 SystemEvents.UserPreferenceChanged——静态事件不退订会让
+                // ThemeManager 单例被系统广播列表长期持有，且停机后回调仍可能到达
+                ThemeManager.Instance.Shutdown();
                 NotificationService.Instance.Stop();
                 SyncService.Instance.Stop();
                 // R61：退出前冲刷残余打字增量并卸载键盘钩子（必须在 DatabaseService.Dispose 之前）
