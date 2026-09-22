@@ -38,7 +38,7 @@ Name: "startupicon"; Description: "开机自启动"; GroupDescription: "{cm:Addi
 [Files]
 ; 永不打包 supabase.json：真实 Anon Key 不得进入安装包/仓库。
 ; 运行时配置：环境变量 SUPABASE_URL / SUPABASE_ANON_KEY，或用户目录 AppData 配置（见 Config/SupabaseConfig.cs）。
-Source: "bin\publish_sc\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "TodoSidebar.pdb,supabase.json"
+Source: "bin\publish_sc\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "TodoSidebar.pdb,supabase.json,每日任务-Setup-*.exe,*.iss"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
