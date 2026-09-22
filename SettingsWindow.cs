@@ -329,28 +329,38 @@ namespace TodoSidebar
             UpdateStatusText.Text = "正在检查更新…";
             UpdateStatusText.Foreground = FindResource("TextSecondaryBrush") as System.Windows.Media.Brush
                 ?? System.Windows.Media.Brushes.Gray;
-
-            var info = await Services.UpdateChecker.CheckAsync();
-
-            UpdateCheckButton.IsEnabled = true;
-
-            if (info == null)
+            try
             {
+                var info = await Services.UpdateChecker.CheckAsync();
+
+                if (info == null)
+                {
+                    UpdateStatusText.Text = "检查失败，请稍后重试";
+                    return;
+                }
+
+                if (!info.HasUpdate)
+                {
+                    UpdateStatusText.Text = $"当前已是最新版本（{info.CurrentVersion}）✓";
+                    return;
+                }
+
+                UpdateStatusText.Text = $"发现新版本 {info.RemoteVersion}！";
+                UpdateStatusText.Foreground = FindResource("AccentBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.DodgerBlue;
+
+                Services.UpdateChecker.PromptDownload(info);
+            }
+            catch (Exception ex)
+            {
+                // U3/T9：async void 必须自吞并提示，避免网络/空引用直接冒泡
+                System.Diagnostics.Debug.WriteLine($"CheckUpdate error: {ex.Message}");
                 UpdateStatusText.Text = "检查失败，请稍后重试";
-                return;
             }
-
-            if (!info.HasUpdate)
+            finally
             {
-                UpdateStatusText.Text = $"当前已是最新版本（{info.CurrentVersion}）✓";
-                return;
+                UpdateCheckButton.IsEnabled = true;
             }
-
-            UpdateStatusText.Text = $"发现新版本 {info.RemoteVersion}！";
-            UpdateStatusText.Foreground = FindResource("AccentBrush") as System.Windows.Media.Brush
-                ?? System.Windows.Media.Brushes.DodgerBlue;
-
-            Services.UpdateChecker.PromptDownload(info);
         }
 
         private void Theme_Changed(object sender, RoutedEventArgs e)

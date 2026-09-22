@@ -339,7 +339,14 @@ namespace TodoSidebar.Services
                 // 下一轮增量仍会覆盖到它，不再永久漏同步。
                 if (downloadResult.maxObservedUpdatedAt.HasValue)
                 {
-                    _lastSyncTimeUtc = downloadResult.maxObservedUpdatedAt.Value.ToUniversalTime() - CursorOverlapWindow;
+                    var cursor = downloadResult.maxObservedUpdatedAt.Value.ToUniversalTime() - CursorOverlapWindow;
+                    // S2/T3：失败行下界——游标不得越过，否则失败行在下轮增量被跳过
+                    if (downloadResult.minFailedUpdatedAt.HasValue)
+                    {
+                        var failFloor = downloadResult.minFailedUpdatedAt.Value.ToUniversalTime() - TimeSpan.FromSeconds(1);
+                        if (failFloor < cursor) cursor = failFloor;
+                    }
+                    _lastSyncTimeUtc = cursor;
                 }
                 else if (fullReconcile)
                 {
@@ -493,11 +500,21 @@ namespace TodoSidebar.Services
                         // M11 修复：SyncId 损坏时不再让整个上传流程卡死，视为无 SyncId 重新生成
                         // R70 修复（审查 H1）：生成后立即落库预绑定（保持 IsDirty=1），
                         // 避免"上传成功但标记失败"时下轮换新 GUID 在云端再造重复行
+                        // S8/T3：绑定失败则跳过本条——绝不用一次性 GUID 直传（会在云端造重复行）
                         syncId = Guid.NewGuid();
                         try { _dbService.BindTaskSyncId(task.Id, syncId.ToString()); }
                         catch (Exception bindEx)
                         {
                             System.Diagnostics.Debug.WriteLine($"Bind SyncId error for task {task.Id}: {bindEx.Message}");
+                            _syncLog.Log(new SyncLogEntry
+                            {
+                                Action = "upload",
+                                Success = false,
+                                ErrorMessage = bindEx.Message,
+                                Details = $"跳过任务#{task.Id}：SyncId 绑定失败，本轮不上传"
+                            });
+                            skipped++;
+                            continue;
                         }
                     }
 
@@ -550,51 +567,52 @@ namespace TodoSidebar.Services
                 if (syncTasks.Count == 0)
                     return 0;
 
-                // 批量 upsert（一次 HTTP 请求）
-                try
+                // 批量 upsert（S12/T3：分片 80，避免超 PostgREST body 上限后整批失败）
+                const int upsertChunk = 80;
+                int uploadedTotal = 0;
+                for (int off = 0; off < taskMapping.Count; off += upsertChunk)
                 {
-                    await client.From<SyncTask>().Upsert(syncTasks, cancellationToken: SyncToken);
-
-                    // 全部成功，标记本地任务已同步
-                    foreach (var (localId, syncTask, expected) in taskMapping)
+                    var slice = taskMapping.Skip(off).Take(upsertChunk).ToList();
+                    var sliceTasks = slice.Select(x => x.Item2).ToList();
+                    try
                     {
-                        _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
-                    }
-
-                    return syncTasks.Count;
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Batch upload error: {ex.Message}");
-
-                    // 批量失败时逐条重试（指数退避）
-                    int uploaded = 0;
-                    int failed = 0;
-                    int retryDelay = 500; // 初始 500ms
-                    foreach (var (localId, syncTask, expected) in taskMapping)
-                    {
-                        try
+                        await client.From<SyncTask>().Upsert(sliceTasks, cancellationToken: SyncToken);
+                        foreach (var (localId, syncTask, expected) in slice)
                         {
-                            await client.From<SyncTask>().Upsert(syncTask, cancellationToken: SyncToken);
                             _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
-                            uploaded++;
-                            retryDelay = 500; // 成功则重置
                         }
-                        catch (Exception itemEx)
+                        uploadedTotal += slice.Count;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Batch upload error (chunk {off}): {ex.Message}");
+
+                        // 批量失败时逐条重试（指数退避）
+                        int retryDelay = 500; // 初始 500ms
+                        foreach (var (localId, syncTask, expected) in slice)
                         {
-                            System.Diagnostics.Debug.WriteLine($"Upload task {localId} error: {itemEx.Message}");
-                            failed++;
-                            // IsDirty 保持为1，下次同步会重试
-                            await Task.Delay(retryDelay);
-                            retryDelay = Math.Min(retryDelay * 2, 5000); // 最大 5 秒
+                            try
+                            {
+                                await client.From<SyncTask>().Upsert(syncTask, cancellationToken: SyncToken);
+                                _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
+                                uploadedTotal++;
+                                retryDelay = 500; // 成功则重置
+                            }
+                            catch (Exception itemEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Upload task {localId} error: {itemEx.Message}");
+                                // IsDirty 保持为1，下次同步会重试
+                                await Task.Delay(retryDelay, SyncToken);
+                                retryDelay = Math.Min(retryDelay * 2, 5000); // 最大 5 秒
+                            }
                         }
                     }
-                    
-                    // 全部失败视为同步失败（让 SyncAsync 感知），部分成功则返回成功条数
-                    if (failed > 0 && uploaded == 0)
-                        throw new InvalidOperationException($"批量上传全部失败（{failed} 条），稍后重试");
-                    return uploaded;
                 }
+
+                // 部分成功则返回成功条数；全部失败抛出让 SyncAsync 感知
+                if (uploadedTotal == 0 && taskMapping.Count > 0)
+                    throw new InvalidOperationException($"批量上传全部失败（{taskMapping.Count} 条），稍后重试");
+                return uploadedTotal;
             }
             catch (Exception ex)
             {
@@ -610,15 +628,15 @@ namespace TodoSidebar.Services
         /// - 返回本轮成功处理行的最大 updated_at，供游标推进使用（不再用本机墙钟）；
         /// - fullReconcile=true 时忽略游标全量拉取（周期性对账，保证旧时间戳行最终收敛）。
         /// </summary>
-        public async Task<(int downloaded, int conflicts, DateTime? maxObservedUpdatedAt)> DownloadRemoteChangesAsync(bool fullReconcile = false)
+        public async Task<(int downloaded, int conflicts, DateTime? maxObservedUpdatedAt, DateTime? minFailedUpdatedAt)> DownloadRemoteChangesAsync(bool fullReconcile = false)
         {
             try
             {
                 var client = SupabaseClientService.Client;
                 var userId = _authService.CurrentUser?.Id;
                 if (string.IsNullOrEmpty(userId))
-                    return (0, 0, null);
-                
+                    return (0, 0, null, null);
+
                 // 增量同步：只拉取上次同步后有更新的任务。
                 // M12 修复：分页拉取——服务端 PostgREST 有单页行数上限（托管版默认 1000），
                 // 原实现一次 Get() 超限时静默截断，多设备"看似同步成功实则缺数据"
@@ -640,10 +658,24 @@ namespace TodoSidebar.Services
                 while (true)
                 {
                     var query = client.From<SyncTask>().Where(x => x.UserId == userId);
+                    // S1/T3：真 keyset 续拉——(updated_at,id) > (cursor_at,cursor_id)
+                    // 边界时间戳挤满一页时，仅 UpdatedAt>=cursor 会反复拉到已见行而 progress 失败
+                    bool boundaryOnly = false;
                     if (atCursor.HasValue)
                     {
-                        // 拉取上次同步后更新的任务（包括新创建的和已删除的）
-                        query = query.Where(x => x.UpdatedAt >= atCursor.Value);
+                        if (!string.IsNullOrEmpty(idCursor) && Guid.TryParse(idCursor, out var idCurGuid))
+                        {
+                            // S1/T3：边界续拉——同一 updated_at 已见 id 之后的行
+                            // (updated_at = A AND id > B)，避免 Range(0,N) 反复拉到已见行
+                            query = query
+                                .Filter("updated_at", Supabase.Postgrest.Constants.Operator.Equals, atCursor.Value)
+                                .Filter("id", Supabase.Postgrest.Constants.Operator.GreaterThan, idCurGuid);
+                            boundaryOnly = true;
+                        }
+                        else
+                        {
+                            query = query.Where(x => x.UpdatedAt >= atCursor.Value);
+                        }
                     }
 
                     // 稳定排序：updated_at 主序 + id 决胜，保证并列时间戳页间顺序一致
@@ -658,7 +690,7 @@ namespace TodoSidebar.Services
                     var response = await query.Range(0, PageSize - 1).Get(SyncToken);
                     var page = response.Models ?? new List<SyncTask>();
 
-                    // 丢弃落在游标内（<= 已处理边界）的重复行
+                    // 丢弃落在游标内（<= 已处理边界）的重复行（服务端 Or 后仍保险过滤）
                     foreach (var t in page)
                     {
                         if (atCursor.HasValue)
@@ -691,18 +723,25 @@ namespace TodoSidebar.Services
                 }
 
                 if (remoteTasks.Count == 0)
-                    return (0, 0, null);
+                    return (0, 0, null, null);
                 
                 int downloaded = 0;
                 int conflicts = 0;
                 DateTime? maxObserved = null;
+                DateTime? minFailedUpdatedAt = null;
 
                 // R3 修复（审查 M6）：只把"成功处理"的行计入游标推进；
                 // 失败行的时间戳不记录，下一轮增量过滤仍会覆盖到它
+                // S2/T3：同时记录失败行最小时间戳，游标不得越过失败下界
                 void RecordObserved(SyncTask t)
                 {
                     if (!maxObserved.HasValue || t.UpdatedAt > maxObserved.Value)
                         maxObserved = t.UpdatedAt;
+                }
+                void RecordFailed(SyncTask t)
+                {
+                    if (!minFailedUpdatedAt.HasValue || t.UpdatedAt < minFailedUpdatedAt.Value)
+                        minFailedUpdatedAt = t.UpdatedAt;
                 }
                 
                 foreach (var remoteTask in remoteTasks)
@@ -823,9 +862,8 @@ namespace TodoSidebar.Services
                     catch (Exception ex)
                     {
                         // R71（复审 H3）：单行失败不再静默——写入 sync_log 留痕。
-                        // 失败行时间戳不计入游标（RecordObserved 未调用），下轮增量仍会覆盖到它；
-                        // 但若同批其他成功行时间戳更大、游标推进越过该行，最长需等 24h 全量对账。
-                        // 记日志让"同步成功但缺数据"可被排查。
+                        // S2/T3：记入 minFailedUpdatedAt，游标不得越过失败下界
+                        RecordFailed(remoteTask);
                         System.Diagnostics.Debug.WriteLine($"Download task {remoteTask.Id} error: {ex.Message}");
                         try
                         {
@@ -840,8 +878,8 @@ namespace TodoSidebar.Services
                         catch { /* 日志失败不影响同步 */ }
                     }
                 }
-                
-                return (downloaded, conflicts, maxObserved);
+
+                return (downloaded, conflicts, maxObserved, minFailedUpdatedAt);
             }
             catch (Exception ex)
             {
@@ -1190,7 +1228,7 @@ namespace TodoSidebar.Services
         /// 原实现丢弃 DownloadRemoteChangesAsync 的 maxObservedUpdatedAt，
         /// 游标不动 => 下轮自动同步会重复拉同一批（靠回声明跳被消化，但浪费且 UI 时间戳失真）。
         /// </summary>
-        public void CommitDownloadCursor(DateTime? maxObservedUpdatedAt)
+        public void CommitDownloadCursor(DateTime? maxObservedUpdatedAt, DateTime? minFailedUpdatedAt = null)
         {
             if (!maxObservedUpdatedAt.HasValue) return;
             var userId = AuthService.Instance.CurrentUser?.Id;
@@ -1198,7 +1236,14 @@ namespace TodoSidebar.Services
 
             try
             {
-                _lastSyncTimeUtc = maxObservedUpdatedAt.Value.ToUniversalTime() - CursorOverlapWindow;
+                var cursor = maxObservedUpdatedAt.Value.ToUniversalTime() - CursorOverlapWindow;
+                // S2/T3：失败行下界压低游标
+                if (minFailedUpdatedAt.HasValue)
+                {
+                    var failFloor = minFailedUpdatedAt.Value.ToUniversalTime() - TimeSpan.FromSeconds(1);
+                    if (failFloor < cursor) cursor = failFloor;
+                }
+                _lastSyncTimeUtc = cursor;
                 _dbService.SetSetting(CursorKey(userId), _lastSyncTimeUtc.Value.ToString("O"));
             }
             catch (Exception ex)

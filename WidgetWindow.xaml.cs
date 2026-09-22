@@ -296,6 +296,8 @@ namespace TodoSidebar
             // PomodoroService.Tick 会让 UpdateDisplay 每秒执行两遍（冗余刷新），去除。
             PomodoroService.Instance.StateChanged += OnPomoStateChanged;
             PomodoroService.Instance.SessionCompleted += OnPomoSessionCompleted;
+            // U2/T9：主题切换后重算亚克力 tint 与显示
+            ThemeManager.Instance.ThemeChanged += OnThemeChanged;
 
             // 轮换定时器
             _rotateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_intervalSec) };
@@ -344,11 +346,41 @@ namespace TodoSidebar
         private void OnPomoStateChanged(object? sender, PomodoroState state) => UpdateDisplay(animate: true);
         private void OnPomoSessionCompleted(object? sender, PomodoroSessionCompletedEventArgs e) => UpdateDisplay(animate: true);
 
+        private void OnThemeChanged(object? sender, ThemeType e)
+        {
+            try
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    Dispatcher.BeginInvoke(new Action(() => OnThemeChanged(sender, e)));
+                    return;
+                }
+                DwmBackdropHelper.ApplyMainShellAcrylic(this);
+                UpdateDisplay(animate: false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"WidgetWindow OnThemeChanged: {ex.Message}");
+            }
+        }
+
         private void Window_Closed(object? sender, EventArgs e)
         {
             if (ReferenceEquals(_current, this)) _current = null;
             PomodoroService.Instance.StateChanged -= OnPomoStateChanged;
             PomodoroService.Instance.SessionCompleted -= OnPomoSessionCompleted;
+            ThemeManager.Instance.ThemeChanged -= OnThemeChanged;
+            // U1/T9：对称摘掉 HwndSource hook，避免形态切换累积回调
+            try
+            {
+                var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+                if (source != null && _hook != null) source.RemoveHook(_hook);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"WidgetWindow RemoveHook: {ex.Message}");
+            }
+            _hook = null;
             _rotateTimer?.Stop();
             _fastTimer?.Stop();
             _idleTimer?.Stop();
