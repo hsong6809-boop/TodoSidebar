@@ -48,7 +48,8 @@ drop trigger if exists update_tasks_updated_at on public.tasks;
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 任务改了不上云、本地一直"待同步"，无报错 | 云端缺 deleted_at/recurrence 列，上传被 PostgREST 整批拒绝 | 执行 `sql/supabase_v560_cloud_migration.sql` |
+| 任务改了不上云、本地一直"待同步"，无报错 | 云端缺 deleted_at/recurrence/estimated_minutes/actual_minutes 等列，上传被 PostgREST 整批拒绝（PGRST204/42703） | 先执行 `sql/supabase_v571_cloud_migration.sql`；v5.6 存量再补跑 `sql/supabase_v560_cloud_migration.sql` |
+| 界面显示"已同步"但别的设备看不到新任务 | 上传被云端拒收后曾被静默跳过（v5.8.1 已修：会显示「待同步 N 条」并把失败写入 LastError） | 执行上一行补列 SQL；升级到含降级重试的客户端后，缺耗时列时会自动降级上传任务本体 |
 | 登录/同步报错 `42703 / PGRST204 / column ... does not exist` | 同上；或客户端版本与云端 schema 不一致 | 对齐脚本 ② 后重跑 |
 | 其他设备收不到某任务的修改 | 云端 updated_at 被旧触发器改写，LWW 判定失真 | 执行 2-d 删除/替换触发器 |
 | 多账号数据串号 | RLS 未开或策略缺失 | 重跑 ② ，核对 2-b |

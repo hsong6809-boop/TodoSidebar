@@ -42,6 +42,8 @@ namespace TodoSidebar
 
             // R(review 修复 v5.6)：同步状态实时刷新（后台线程触发时经 Dispatcher 调度到 UI 线程）
             SyncService.Instance.StatusChanged += OnSyncStatusChanged;
+            // 同步完成后脏任务数会变，但 Status 可能仍是 Idle——补刷一次避免"已同步/待同步"卡住
+            SyncService.Instance.SyncCompleted += OnSyncCompletedRefresh;
 
             // v5.2 账号中心：顶栏头像随账号资料变化刷新
             AccountService.Instance.ProfileChanged += OnAccountProfileChanged;
@@ -71,6 +73,7 @@ namespace TodoSidebar
         {
             // R(review 修复 v5.6)：退订同步状态事件
             SyncService.Instance.StatusChanged -= OnSyncStatusChanged;
+            SyncService.Instance.SyncCompleted -= OnSyncCompletedRefresh;
 
             // 退订 ViewModel 事件（DataContext 判空）
             if (DataContext is MainViewModel vm)
@@ -866,6 +869,14 @@ namespace TodoSidebar
                 Dispatcher.BeginInvoke(new Action(UpdateSyncStatusUi));
         }
 
+        private void OnSyncCompletedRefresh(object? sender, SyncResult e)
+        {
+            if (Dispatcher.CheckAccess())
+                UpdateSyncStatusUi();
+            else
+                Dispatcher.BeginInvoke(new Action(UpdateSyncStatusUi));
+        }
+
         /// <summary>
         /// R(review 修复 v5.6)：按真实同步状态刷新仪表盘"同步"卡片。
         /// 原实现硬编码"已同步到云端"绿点，未登录/离线/同步失败时仍然显示，
@@ -880,6 +891,10 @@ namespace TodoSidebar
                 Brush dotBrush;
                 string mainText;
                 string? subText = null;
+                // 本地仍有未上云修改时，绝不能只凭 LastSyncTime 显示"已同步"——
+                // 上传被云端拒收/预检失败时 LastSyncTime 仍会更新，会误导用户以为数据已安全上云
+                int dirtyCount = 0;
+                try { dirtyCount = DatabaseService.Instance.GetDirtyTaskCount(); } catch { /* 读失败按 0 */ }
 
                 switch (svc.Status)
                 {
@@ -889,18 +904,25 @@ namespace TodoSidebar
                         break;
                     case SyncStatus.Offline:
                         dotBrush = TryFindResource("TextTertiaryBrush") as Brush ?? Brushes.Gray;
-                        mainText = " 离线，未同步";
+                        mainText = dirtyCount > 0 ? $" 离线，{dirtyCount} 条待同步" : " 离线，未同步";
+                        subText = svc.LastError;
                         break;
                     case SyncStatus.Error:
                         dotBrush = TryFindResource("DangerBrush") as Brush ?? Brushes.Red;
-                        mainText = " 同步异常";
+                        mainText = dirtyCount > 0 ? $" 同步异常（{dirtyCount} 条待同步）" : " 同步异常";
                         subText = svc.LastError;
                         break;
                     default:
                         if (!AuthService.Instance.IsLoggedIn)
                         {
                             dotBrush = TryFindResource("TextTertiaryBrush") as Brush ?? Brushes.Gray;
-                            mainText = " 未登录，数据仅存本机";
+                            mainText = dirtyCount > 0 ? $" 未登录，{dirtyCount} 条仅存本机" : " 未登录，数据仅存本机";
+                        }
+                        else if (dirtyCount > 0)
+                        {
+                            dotBrush = TryFindResource("AccentBrush") as Brush ?? Brushes.Orange;
+                            mainText = $" 待同步 {dirtyCount} 条";
+                            subText = svc.LastError ?? "本地修改尚未全部上云";
                         }
                         else if (svc.LastSyncTime.HasValue)
                         {

@@ -447,6 +447,73 @@ namespace TodoSidebar.Services
             return (result, verified);
         }
 
+        /// <summary>
+        /// 云端 schema 缓存缺少 estimated_minutes/actual_minutes（未执行 v5.7.1 补列）时，
+        /// 完整模型 upsert 会被 PostgREST 整批拒绝（PGRST204）。识别到该错误后自动降级
+        /// 用不含耗时列的模型重试，保证任务本体仍可同步；补列后无需改客户端。
+        /// </summary>
+        private static bool _cloudMissingDurationColumns;
+
+        private static bool IsMissingDurationColumnError(Exception ex)
+        {
+            var msg = ex.Message ?? string.Empty;
+            if (msg.Contains("estimated_minutes", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("actual_minutes", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return msg.Contains("PGRST204", StringComparison.OrdinalIgnoreCase)
+                && (msg.Contains("column", StringComparison.OrdinalIgnoreCase)
+                    || msg.Contains("schema cache", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static SyncTaskWithoutDuration ToWithoutDuration(SyncTask t) => new()
+        {
+            Id = t.Id,
+            UserId = t.UserId,
+            Title = t.Title,
+            Type = t.Type,
+            Priority = t.Priority,
+            IsCompleted = t.IsCompleted,
+            CreatedAt = t.CreatedAt,
+            Deadline = t.Deadline,
+            CompletedAt = t.CompletedAt,
+            Description = t.Description,
+            Tags = t.Tags,
+            SortOrder = t.SortOrder,
+            SubtasksJson = t.SubtasksJson,
+            UpdatedAt = t.UpdatedAt,
+            IsDeleted = t.IsDeleted,
+            DeletedAt = t.DeletedAt,
+            Recurrence = t.Recurrence
+        };
+
+        private async Task UpsertTasksAsync(List<SyncTask> tasks)
+        {
+            if (tasks.Count == 0) return;
+            var client = SupabaseClientService.Client;
+            if (_cloudMissingDurationColumns)
+            {
+                await client.From<SyncTaskWithoutDuration>()
+                    .Upsert(tasks.Select(ToWithoutDuration).ToList(), cancellationToken: SyncToken);
+                return;
+            }
+            try
+            {
+                await client.From<SyncTask>().Upsert(tasks, cancellationToken: SyncToken);
+            }
+            catch (Exception ex) when (IsMissingDurationColumnError(ex))
+            {
+                _cloudMissingDurationColumns = true;
+                _syncLog.Log(new SyncLogEntry
+                {
+                    Action = "upload",
+                    Success = true,
+                    Details = "云端缺 estimated_minutes/actual_minutes，已降级为不含耗时字段上传（请执行 sql/supabase_v571_cloud_migration.sql）"
+                });
+                await client.From<SyncTaskWithoutDuration>()
+                    .Upsert(tasks.Select(ToWithoutDuration).ToList(), cancellationToken: SyncToken);
+            }
+        }
+
         public async Task<int> UploadLocalChangesAsync()
         {
             try
@@ -464,6 +531,7 @@ namespace TodoSidebar.Services
                 var syncTasks = new List<SyncTask>();
                 var taskMapping = new List<(int localId, SyncTask syncTask, string? expectedLocalUpdatedAt)>();
                 int skipped = 0;
+                int hardSkipped = 0; // 预检分片失败 / SyncId 绑定失败——不能报同步成功
 
                 // R71（审查 M9）：上传前预检改为批量拉取，替代原先"每任务一次 GET"的 N+1。
                 // 先收集所有合法 SyncId，分片 In 查询远端 updated_at 到字典，循环中内存比对。
@@ -491,6 +559,7 @@ namespace TodoSidebar.Services
                         if (!precheckVerified.Contains(syncId))
                         {
                             skipped++;
+                            hardSkipped++;
                             _syncLog.Log(new SyncLogEntry
                             {
                                 Action = "upload",
@@ -531,6 +600,7 @@ namespace TodoSidebar.Services
                                 Details = $"跳过任务#{task.Id}：SyncId 绑定失败，本轮不上传"
                             });
                             skipped++;
+                            hardSkipped++;
                             continue;
                         }
                     }
@@ -580,9 +650,16 @@ namespace TodoSidebar.Services
                     });
                 }
 
-                // 全部被"远端较新"跳过时无需发请求（下载侧会在本轮收敛）
+                // 预检/绑定失败导致一条都没法上传时，不能假装成功——否则 UI 会显示"已同步"
+                // 而本地 IsDirty 永远清不掉（云端缺列/网络错误都会走到这里）。
+                // LWW「远端较新」跳过不算失败，下载侧会收敛。
                 if (syncTasks.Count == 0)
+                {
+                    if (hardSkipped > 0)
+                        throw new InvalidOperationException(
+                            $"本地有 {dirtyTasks.Count} 条待同步，但本轮预检/绑定失败跳过 {hardSkipped} 条，稍后重试");
                     return 0;
+                }
 
                 // 批量 upsert（S12/T3：分片 80，避免超 PostgREST body 上限后整批失败）
                 const int upsertChunk = 80;
@@ -593,7 +670,7 @@ namespace TodoSidebar.Services
                     var sliceTasks = slice.Select(x => x.Item2).ToList();
                     try
                     {
-                        await client.From<SyncTask>().Upsert(sliceTasks, cancellationToken: SyncToken);
+                        await UpsertTasksAsync(sliceTasks);
                         foreach (var (localId, syncTask, expected) in slice)
                         {
                             _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
@@ -603,6 +680,13 @@ namespace TodoSidebar.Services
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Batch upload error (chunk {off}): {ex.Message}");
+                        _syncLog.Log(new SyncLogEntry
+                        {
+                            Action = "upload",
+                            Success = false,
+                            ErrorMessage = ex.Message,
+                            Details = $"批量上传失败（{ex.GetType().Name}），转入逐条重试"
+                        });
 
                         // 批量失败时逐条重试（指数退避）
                         int retryDelay = 500; // 初始 500ms
@@ -610,7 +694,7 @@ namespace TodoSidebar.Services
                         {
                             try
                             {
-                                await client.From<SyncTask>().Upsert(syncTask, cancellationToken: SyncToken);
+                                await UpsertTasksAsync(new List<SyncTask> { syncTask });
                                 _dbService.MarkTaskSynced(localId, syncTask.Id.ToString(), expected);
                                 uploadedTotal++;
                                 retryDelay = 500; // 成功则重置
@@ -618,6 +702,14 @@ namespace TodoSidebar.Services
                             catch (Exception itemEx)
                             {
                                 System.Diagnostics.Debug.WriteLine($"Upload task {localId} error: {itemEx.Message}");
+                                LastError = $"任务#{localId} 上传失败：{itemEx.Message}";
+                                _syncLog.Log(new SyncLogEntry
+                                {
+                                    Action = "upload",
+                                    Success = false,
+                                    ErrorMessage = itemEx.Message,
+                                    Details = $"任务#{localId} 单条上传失败，下轮重试"
+                                });
                                 // IsDirty 保持为1，下次同步会重试
                                 await Task.Delay(retryDelay, SyncToken);
                                 retryDelay = Math.Min(retryDelay * 2, 5000); // 最大 5 秒
@@ -811,8 +903,8 @@ namespace TodoSidebar.Services
                         if (existing != null && existing.IsDirty)
                         {
                             // 冲突：本地有未同步的修改 + 远程也有修改
-                            var localEditTime = existing.LocalUpdatedAt ?? existing.LastSyncedAt ?? DateTime.MinValue;
-                            if (remoteTask.UpdatedAt > localEditTime)
+                            var localEditTime = ToUtc(existing.LocalUpdatedAt ?? existing.LastSyncedAt ?? DateTime.MinValue);
+                            if (ToUtc(remoteTask.UpdatedAt) > localEditTime)
                             {
                                 // 远程更新，覆盖本地。
                                 // R8 修复（审查 M4）：带乐观守卫写入——判定与写入之间本地若又被编辑

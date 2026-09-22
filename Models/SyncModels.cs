@@ -73,6 +73,66 @@ namespace TodoSidebar.Models
     }
 
     /// <summary>
+    /// 云端尚未执行 v5.7.1 补列（estimated_minutes/actual_minutes）时的降级上传模型。
+    /// PostgREST 对未知列会整批拒绝（PGRST204），导致本地任务永远 IsDirty=1。
+    /// 缺列环境下用本模型重试可先完成任务本体同步；补列后自动回到完整模型。
+    /// </summary>
+    [Table("tasks")]
+    public class SyncTaskWithoutDuration : BaseModel
+    {
+        [PrimaryKey("id")]
+        public Guid Id { get; set; }
+
+        [Column("user_id")]
+        public string? UserId { get; set; }
+
+        [Column("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [Column("type")]
+        public int Type { get; set; }
+
+        [Column("priority")]
+        public int Priority { get; set; } = 1;
+
+        [Column("is_completed")]
+        public bool IsCompleted { get; set; }
+
+        [Column("created_at")]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        [Column("deadline")]
+        public DateTime? Deadline { get; set; }
+
+        [Column("completed_at")]
+        public DateTime? CompletedAt { get; set; }
+
+        [Column("description")]
+        public string? Description { get; set; }
+
+        [Column("tags")]
+        public string? Tags { get; set; }
+
+        [Column("sort_order")]
+        public int SortOrder { get; set; }
+
+        [Column("subtasks_json")]
+        public string? SubtasksJson { get; set; }
+
+        [Column("updated_at")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        [Column("is_deleted")]
+        public bool IsDeleted { get; set; }
+
+        [Column("deleted_at")]
+        public string? DeletedAt { get; set; }
+
+        [Column("recurrence")]
+        public string? Recurrence { get; set; }
+    }
+
+    /// <summary>
     /// 同步用的 XP 流水模型（对应 Supabase xp_log 表）
     /// </summary>
     [Table("xp_log")]

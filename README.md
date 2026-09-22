@@ -69,7 +69,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `每日任务-Setup-5.8.0.exe`
+2. 运行 `每日任务-Setup-5.8.1.exe`
 3. 按照向导完成安装
 
 ### 首次使用
@@ -195,8 +195,14 @@ public static string AnonKey { get; set; } = "your-anon-key";
 
 云端表结构与 RLS 统一按 **`SETUP.md`** 的脚本顺序初始化（`sql/supabase_setup.sql` + `sql/supabase_tasks_rls.sql` + `sql/account_profile_setup.sql`）。旧版 `Database/init.sql` 已标记为历史遗留（含会覆盖客户端编辑时间的触发器），仅作存量迁移参考。
 v5.6.1 存量库修复请执行 `sql/supabase_v560_cloud_migration.sql`（补 `deleted_at`/`recurrence` 列 + 触发器体检）。
+v5.7.1+ 需补 `sql/supabase_v571_cloud_migration.sql`（`estimated_minutes`/`actual_minutes`）；未执行时 v5.8.1 客户端会自动降级上传任务本体。
 
 ## 📝 更新日志
+
+### v5.8.1 (2026-09-22)
+
+- ☁️ **同步修复**：云端缺 `estimated_minutes`/`actual_minutes` 时上传降级重试（不再整批失败后假成功）；预检失败不再报"已同步"；同步卡片会显示「待同步 N 条」
+- 🔧 **同步稳健性**：单条上传失败写入 LastError/sync_log；LWW 时间比较统一 UTC
 
 ### v5.8.0 (2026-09-22)
 
