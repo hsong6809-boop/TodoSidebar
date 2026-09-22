@@ -185,39 +185,38 @@ namespace TodoSidebar
             }
 
             // ===== 全部确认通过，统一写回 =====
-            if (newTitle != _task.Title)
+            // U4/T9：先写库再回写共享实例——原先先改 _task 后 Save，DB 失败会内存/库分叉
+            var staged = new TaskItem
             {
-                _task.Title = newTitle;
-                _hasChanges = true;
-            }
-
-            if (newPriority != _task.Priority)
-            {
-                _task.Priority = newPriority;
-                _hasChanges = true;
-            }
-
-            if (_task.Type == TaskType.Deadline)
-            {
-                if (newDeadline != _task.Deadline?.Date)
-                {
-                    _task.Deadline = newDeadline;
-                    _hasChanges = true;
-                }
-
-                if (selectedRecurrence != _task.Recurrence)
-                {
-                    _task.Recurrence = selectedRecurrence;
-                    _hasChanges = true;
-                }
-            }
-
-            // 保存子任务
-            if (_hasChanges)
-            {
-                _task.SubTasksJson = SubTaskHelper.SerializeSubTasks(_subTasks);
-                _viewModel.SaveTaskToDb(_task);
-            }
+                Id = _task.Id,
+                Type = _task.Type,
+                Title = newTitle,
+                Priority = newPriority,
+                Deadline = (_task.Type == TaskType.Deadline) ? newDeadline : _task.Deadline,
+                Recurrence = selectedRecurrence,
+                Description = _task.Description,
+                Tags = _task.Tags,
+                SortOrder = _task.SortOrder,
+                IsCompleted = _task.IsCompleted,
+                CreatedAt = _task.CreatedAt,
+                CompletedAt = _task.CompletedAt,
+                EstimatedMinutes = _task.EstimatedMinutes,
+                ActualMinutes = _task.ActualMinutes,
+                SubTasksJson = SubTaskHelper.SerializeSubTasks(_subTasks),
+                SyncId = _task.SyncId,
+                IsDirty = _task.IsDirty,
+                IsDeleted = _task.IsDeleted,
+                DeletedAt = _task.DeletedAt,
+                LocalUpdatedAt = _task.LocalUpdatedAt,
+                LastSyncedAt = _task.LastSyncedAt
+            };
+            _viewModel.SaveTaskToDb(staged);
+            _task.Title = staged.Title;
+            _task.Priority = staged.Priority;
+            _task.Deadline = staged.Deadline;
+            _task.Recurrence = staged.Recurrence;
+            _task.SubTasksJson = staged.SubTasksJson;
+            _hasChanges = true;
 
             DialogResult = true;
             Close();

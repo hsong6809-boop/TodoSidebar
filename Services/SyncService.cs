@@ -154,7 +154,7 @@ namespace TodoSidebar.Services
                     // 迁移兼容：老版本使用全局键，首次按新键读取不到时回退一次
                     savedSyncTime = _dbService.GetSetting("LastSyncTimeUtc");
                 }
-                if (!string.IsNullOrEmpty(savedSyncTime) && DateTime.TryParse(savedSyncTime, out var parsed))
+                if (!string.IsNullOrEmpty(savedSyncTime) && DateTime.TryParse(savedSyncTime, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
                 {
                     _lastSyncTimeUtc = parsed;
                 }
@@ -471,6 +471,8 @@ namespace TodoSidebar.Services
                     .Distinct()
                     .ToList();
                 var remoteUpdatedAt = await FetchRemoteUpdatedAtAsync(validIds);
+                // S11/T3：预检不完整（分片失败导致字典缺 ID）时，未验证 ID 本轮不传，防盲覆盖
+                var precheckIncomplete = validIds.Any(id => !remoteUpdatedAt.ContainsKey(id));
 
                 foreach (var task in dirtyTasks)
                 {
@@ -482,6 +484,17 @@ namespace TodoSidebar.Services
                     Guid syncId;
                     if (!string.IsNullOrEmpty(task.SyncId) && Guid.TryParse(task.SyncId, out syncId))
                     {
+                        if (precheckIncomplete && !remoteUpdatedAt.ContainsKey(syncId))
+                        {
+                            skipped++;
+                            _syncLog.Log(new SyncLogEntry
+                            {
+                                Action = "upload",
+                                Success = false,
+                                Details = $"跳过任务#{task.Id}：预检未完成，本轮不上传以免盲覆盖"
+                            });
+                            continue;
+                        }
                         var localEditUtc = task.LocalUpdatedAt.HasValue ? ToUtc(task.LocalUpdatedAt.Value) : DateTime.UtcNow;
                         if (remoteUpdatedAt.TryGetValue(syncId, out var remoteUtc) && remoteUtc > localEditUtc)
                         {
@@ -660,7 +673,6 @@ namespace TodoSidebar.Services
                     var query = client.From<SyncTask>().Where(x => x.UserId == userId);
                     // S1/T3：真 keyset 续拉——(updated_at,id) > (cursor_at,cursor_id)
                     // 边界时间戳挤满一页时，仅 UpdatedAt>=cursor 会反复拉到已见行而 progress 失败
-                    bool boundaryOnly = false;
                     if (atCursor.HasValue)
                     {
                         if (!string.IsNullOrEmpty(idCursor) && Guid.TryParse(idCursor, out var idCurGuid))
@@ -670,7 +682,6 @@ namespace TodoSidebar.Services
                             query = query
                                 .Filter("updated_at", Supabase.Postgrest.Constants.Operator.Equals, atCursor.Value)
                                 .Filter("id", Supabase.Postgrest.Constants.Operator.GreaterThan, idCurGuid);
-                            boundaryOnly = true;
                         }
                         else
                         {
