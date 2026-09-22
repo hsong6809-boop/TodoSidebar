@@ -100,6 +100,27 @@ namespace TodoSidebar.ViewModels
             TodayProgressRate = r.Rate;
             IsOverachieving = r.IsOverachieving;
             TodayDoneText = r.DoneText;
+            RefreshOverdueFocus();
+        }
+
+        /// <summary>逾期未完成数（今日面板「先清尾巴」提示）。</summary>
+        [ObservableProperty]
+        private int _overdueCount;
+
+        /// <summary>今日焦点摘要：有逾期时提示优先清尾巴，否则显示接下来一项。</summary>
+        [ObservableProperty]
+        private string _overdueFocusText = "";
+
+        private void RefreshOverdueFocus()
+        {
+            var today = DateTime.Today;
+            OverdueCount = DeadlineTasks.Count(t =>
+                !t.IsCompleted
+                && t.Deadline.HasValue
+                && t.Deadline.Value.Date < today);
+            OverdueFocusText = OverdueCount > 0
+                ? $"先清尾巴：{OverdueCount} 项逾期"
+                : "";
         }
 
         /// <summary>今日完成数已溢出当日计划量（补做逾期/提前完成），供进度环转金色彩蛋。</summary>

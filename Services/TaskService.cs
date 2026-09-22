@@ -144,10 +144,11 @@ namespace TodoSidebar.Services
                 // R71（复审 N1）：改用带过滤的 GetTasks 重载，避免每次完成任务都全表加载+反序列化
                 // B4：存活（未删除）实例存在即不派生（含已完成的 next 也不再重复建）
                 var nextDate = next.Value.Date;
+                var seriesKey = RecurrenceRule.SeriesKey(completedTask.Recurrence, completedTask.Deadline);
                 var exists = _db.GetTasks(TaskType.Deadline, completed: null).Any(t =>
                     !t.IsDeleted
                     && t.Title == completedTask.Title
-                    && RecurrenceRule.Normalize(t.Recurrence) == RecurrenceRule.Normalize(completedTask.Recurrence)
+                    && RecurrenceRule.SeriesKey(t.Recurrence, t.Deadline) == seriesKey
                     && t.Deadline.HasValue
                     && t.Deadline.Value.Date == nextDate);
                 if (exists) return;
@@ -163,7 +164,9 @@ namespace TodoSidebar.Services
                     SortOrder = completedTask.SortOrder,
                     EstimatedMinutes = completedTask.EstimatedMinutes,
                     // SubTasksJson 有意不复制：每期从空清单重新勾选；ActualMinutes 同理不复制
-                    Recurrence = completedTask.Recurrence
+                    // 月循环冻结锚点日，防 31→28 永久漂移（monthly → monthly:D）
+                    Recurrence = RecurrenceRule.FreezeMonthlyAnchor(
+                        completedTask.Deadline ?? next.Value, completedTask.Recurrence)
                 };
                 nextTask.Id = _db.InsertTask(nextTask);
             }

@@ -191,6 +191,9 @@ namespace TodoSidebar
 
                 // v5.4 保存重复规则（空串归一化为 null）
                 selectedRecurrence = RecurrenceRule.Normalize(RecurrenceCombo.SelectedValue as string);
+                // 月循环：保存时冻结锚点日（monthly → monthly:D），防止跨月漂移
+                if (selectedRecurrence == RecurrenceRule.Monthly && newDeadline.HasValue)
+                    selectedRecurrence = RecurrenceRule.FreezeMonthlyAnchor(newDeadline.Value, selectedRecurrence);
             }
 
             // ===== 全部确认通过，统一写回 =====

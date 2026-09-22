@@ -15,6 +15,8 @@ namespace TodoSidebar.Tests
         [InlineData("daily")]
         [InlineData("weekdays")]
         [InlineData("monthly")]
+        [InlineData("monthly_last")]
+        [InlineData("monthly:31")]
         [InlineData("weekly:1")]
         [InlineData("weekly:7")]
         public void IsValid_ValidRules_True(string? rule)
@@ -110,11 +112,51 @@ namespace TodoSidebar.Tests
         [Fact]
         public void NextDeadline_Monthly_ChainAnchorDriftsAfterClamp()
         {
-            // 文档化行为：1/31 → 2/28 后锚点收敛为 28 日，下一期 3/28（不再回 31 日）
+            // bare monthly 在派生链上仍会漂移——由 FreezeMonthlyAnchor 落库冻结为 monthly:D 解决
             var beforeJan = new DateTime(2026, 1, 10);
             var feb28 = RecurrenceRule.NextDeadline("monthly", new DateTime(2026, 1, 31), today: beforeJan);
             var mar28 = RecurrenceRule.NextDeadline("monthly", feb28!.Value, today: beforeJan);
             Assert.Equal(new DateTime(2026, 3, 28), mar28);
+        }
+
+        [Fact]
+        public void NextDeadline_Monthly31_RecoversAfterFebruary()
+        {
+            var beforeJan = new DateTime(2026, 1, 1);
+            var feb28 = RecurrenceRule.NextDeadline("monthly:31", new DateTime(2026, 1, 31), today: beforeJan);
+            Assert.Equal(new DateTime(2026, 2, 28), feb28);
+            var mar31 = RecurrenceRule.NextDeadline("monthly:31", feb28!.Value, today: beforeJan);
+            Assert.Equal(new DateTime(2026, 3, 31), mar31);
+        }
+
+        [Fact]
+        public void NextDeadline_MonthlyLast_AlwaysMonthEnd()
+        {
+            var beforeJan = new DateTime(2026, 1, 1);
+            var feb28 = RecurrenceRule.NextDeadline("monthly_last", new DateTime(2026, 1, 31), today: beforeJan);
+            Assert.Equal(new DateTime(2026, 2, 28), feb28);
+            var mar31 = RecurrenceRule.NextDeadline("monthly_last", feb28!.Value, today: beforeJan);
+            Assert.Equal(new DateTime(2026, 3, 31), mar31);
+            var apr30 = RecurrenceRule.NextDeadline("monthly_last", mar31!.Value, today: beforeJan);
+            Assert.Equal(new DateTime(2026, 4, 30), apr30);
+        }
+
+        [Fact]
+        public void FreezeMonthlyAnchor_UsesDeadlineDay()
+        {
+            Assert.Equal("monthly:31", RecurrenceRule.FreezeMonthlyAnchor(new DateTime(2026, 1, 31), "monthly"));
+            Assert.Equal("monthly:15", RecurrenceRule.FreezeMonthlyAnchor(new DateTime(2026, 1, 15), "monthly"));
+            Assert.Equal("monthly_last", RecurrenceRule.FreezeMonthlyAnchor(new DateTime(2026, 1, 31), "monthly_last"));
+            Assert.Equal("monthly:31", RecurrenceRule.FreezeMonthlyAnchor(new DateTime(2026, 1, 31), "monthly:31"));
+        }
+
+        [Fact]
+        public void SeriesKey_BareMonthly_MatchesFrozen()
+        {
+            var bare = RecurrenceRule.SeriesKey("monthly", new DateTime(2026, 1, 31));
+            var frozen = RecurrenceRule.SeriesKey("monthly:31", new DateTime(2026, 2, 28));
+            Assert.Equal(bare, frozen);
+            Assert.NotEqual(RecurrenceRule.SeriesKey("monthly_last", new DateTime(2026, 1, 31)), bare);
         }
 
         [Fact]
@@ -132,6 +174,8 @@ namespace TodoSidebar.Tests
             Assert.Equal("每天", RecurrenceRule.LabelOf("daily"));
             Assert.Equal("每周三", RecurrenceRule.LabelOf("weekly:3"));
             Assert.Equal("每月同一天", RecurrenceRule.LabelOf("monthly"));
+            Assert.Equal("每月最后一天", RecurrenceRule.LabelOf("monthly_last"));
+            Assert.Equal("每月 31 日", RecurrenceRule.LabelOf("monthly:31"));
         }
     }
 }

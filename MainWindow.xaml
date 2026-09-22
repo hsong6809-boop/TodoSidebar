@@ -159,6 +159,12 @@
                                 <TextBlock Text="{Binding TodayDoneText}"
                                            FontSize="16" FontWeight="Bold"
                                            Foreground="{DynamicResource TextBrush}" Margin="0,1"/>
+                                <!-- 今日焦点：有逾期先清尾巴 -->
+                                <TextBlock Text="{Binding OverdueFocusText}"
+                                           FontSize="10.5" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource WarningBrush}"
+                                           Visibility="{Binding OverdueFocusText, Converter={StaticResource EmptyToVis}}"
+                                           Margin="0,2,0,0"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
                                             Visibility="{Binding ComboDisplay, Converter={StaticResource EmptyToVis}}">
                                     <controls:AppIcon Glyph="{x:Static controls:Icons.FavoriteStar}"
