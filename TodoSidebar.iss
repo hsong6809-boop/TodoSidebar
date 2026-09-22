@@ -36,10 +36,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "开机自启动"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "bin\publish_sc\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "TodoSidebar.pdb"
-; M37：同步服务配置。发布前把 supabase.json 放进 bin\publish_sc 即会随包安装；
-; 文件不存在时跳过（此时安装后的程序启动会提示配置缺失）
-Source: "bin\publish_sc\supabase.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; 永不打包 supabase.json：真实 Anon Key 不得进入安装包/仓库。
+; 运行时配置：环境变量 SUPABASE_URL / SUPABASE_ANON_KEY，或用户目录 AppData 配置（见 Config/SupabaseConfig.cs）。
+Source: "bin\publish_sc\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "TodoSidebar.pdb,supabase.json"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

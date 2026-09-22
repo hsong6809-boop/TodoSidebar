@@ -32,7 +32,19 @@ namespace TodoSidebar
             Loaded += (_, _) => DwmBackdropHelper.ApplyMainShellAcrylic(this);
 
             // R71：关闭窗口后置位，供下方预检/登录的异步续体在写 UI 前判空
-            Closed += (_, _) => _closed = true;
+            Closed += (_, _) =>
+            {
+                _closed = true;
+                try
+                {
+                    PasswordRevealBox?.Clear();
+                    PasswordBox?.Clear();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"LoginWindow close clear error: {ex.Message}");
+                }
+            };
 
             // M37：进入登录页即后台预检同步服务器连通性（不阻塞 UI），
             // 网络不通时提前给出可行动提示，而不是等用户点登录后"卡住无反应"
@@ -99,6 +111,7 @@ namespace TodoSidebar
             else
             {
                 PasswordBox.Password = PasswordRevealBox.Text;
+                PasswordRevealBox.Clear();
                 PasswordRevealBox.Visibility = Visibility.Collapsed;
                 PasswordBox.Visibility = Visibility.Visible;
             }
@@ -110,17 +123,17 @@ namespace TodoSidebar
             {
                 var db = DatabaseService.Instance;
                 var savedEmail = db.GetSetting("SavedEmail");
-                var encryptedPassword = db.GetSetting("SavedPassword");
                 var rememberMe = db.GetSetting("RememberMe");
+                // 最小凭据：只记住邮箱。密码一律不落盘；登录态由 AuthService session 恢复。
+                // 升级清理：删除历史 SavedPassword。
+                if (!string.IsNullOrEmpty(db.GetSetting("SavedPassword")))
+                {
+                    db.SetSetting("SavedPassword", "");
+                }
 
                 if (rememberMe == "1" && !string.IsNullOrEmpty(savedEmail))
                 {
                     EmailTextBox.Text = savedEmail;
-                    if (!string.IsNullOrEmpty(encryptedPassword))
-                    {
-                        // 解密失败（换机器/旧明文数据）时置空，不展示错误凭据
-                        PasswordBox.Password = DataProtectionHelper.Unprotect(encryptedPassword) ?? "";
-                    }
                     RememberMeCheckBox.IsChecked = true;
                 }
             }
@@ -138,7 +151,7 @@ namespace TodoSidebar
                 if (RememberMeCheckBox.IsChecked == true)
                 {
                     db.SetSetting("SavedEmail", email);
-                    db.SetSetting("SavedPassword", DataProtectionHelper.Protect(password));
+                    db.SetSetting("SavedPassword", "");
                     db.SetSetting("RememberMe", "1");
                 }
                 else
