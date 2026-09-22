@@ -69,7 +69,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `每日任务-Setup-5.7.0.exe`
+2. 运行 `每日任务-Setup-5.8.0.exe`
 3. 按照向导完成安装
 
 ### 首次使用
@@ -193,10 +193,19 @@ public static string AnonKey { get; set; } = "your-anon-key";
 
 ### 数据库初始化
 
-云端表结构与 RLS 统一按根目录 **`SETUP.md`** 的脚本顺序初始化（`supabase_setup.sql` + `supabase_tasks_rls.sql` + `account_profile_setup.sql`）。旧版 `Database/init.sql` 已标记为历史遗留（含会覆盖客户端编辑时间的触发器），仅作存量迁移参考。
-v5.6.1 存量库修复请执行 `supabase_v560_cloud_migration.sql`（补 `deleted_at`/`recurrence` 列 + 触发器体检）。
+云端表结构与 RLS 统一按 **`SETUP.md`** 的脚本顺序初始化（`sql/supabase_setup.sql` + `sql/supabase_tasks_rls.sql` + `sql/account_profile_setup.sql`）。旧版 `Database/init.sql` 已标记为历史遗留（含会覆盖客户端编辑时间的触发器），仅作存量迁移参考。
+v5.6.1 存量库修复请执行 `sql/supabase_v560_cloud_migration.sql`（补 `deleted_at`/`recurrence` 列 + 触发器体检）。
 
 ## 📝 更新日志
+
+### v5.8.0 (2026-09-22)
+
+- 🗂 **工程整理**：云端 SQL 脚本归入 `sql/`，历史审查报告归入 `docs/reviews/`
+- 🔒 **安全与数据**：不再保存密码密文；安装包排除 `supabase.json`；导入去重、备份含成长数据、头像按用户隔离
+- ☁️ **同步加固**：真 keyset 分页、失败行游标下界、LWW UTC、预检/分片上传、绑定失败跳过
+- 🔁 **循环任务**：月锚点防漂移（1/31→2/28→3/31）、新增「每月最后一天」
+- 🎯 **今日体验**：侧边栏「先清尾巴」逾期提示；今日进度口径与统计页对齐
+- ✅ **测试**：单元测试 218 项全绿（含 NLP 半小时、打字 Peek、循环幂等等）
 
 ### v5.7.0 (2026-09-06)
 

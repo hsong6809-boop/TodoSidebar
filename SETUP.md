@@ -13,14 +13,14 @@
 
 | 顺序 | 脚本 | 作用 | 必选 |
 |---|---|---|---|
-| ① | `supabase_setup.sql` | 建 xp_log / pomodoro_session / user_profile + RLS | ✅ |
-| ② | `supabase_tasks_rls.sql` | 建 tasks 表（含 deleted_at、recurrence）+ RLS + 索引 | ✅ |
-| ③ | `account_profile_setup.sql` | 建 account_profile（账号中心） | ✅ |
-| ④ | `tasks_deleted_at_setup.sql` | 存量库补 deleted_at 列（②已含则跳过） | 仅旧库 |
-| ⑤ | `tasks_recurrence_setup.sql` | 存量库补 recurrence 列（②已含则跳过） | 仅旧库 |
+| ① | `sql/supabase_setup.sql` | 建 xp_log / pomodoro_session / user_profile + RLS | ✅ |
+| ② | `sql/supabase_tasks_rls.sql` | 建 tasks 表（含 deleted_at、recurrence）+ RLS + 索引 | ✅ |
+| ③ | `sql/account_profile_setup.sql` | 建 account_profile（账号中心） | ✅ |
+| ④ | `sql/tasks_deleted_at_setup.sql` | 存量库补 deleted_at 列（②已含则跳过） | 仅旧库 |
+| ⑤ | `sql/tasks_recurrence_setup.sql` | 存量库补 recurrence 列（②已含则跳过） | 仅旧库 |
 
 **存量库快速修复（客户端 v5.3+ 已在用、怀疑同步失灵）**：直接执行根目录
-`supabase_v560_cloud_migration.sql` 一个文件即可（补列 + 索引 + 触发器体检）。
+`sql/supabase_v560_cloud_migration.sql` 一个文件即可（补列 + 索引 + 触发器体检）。
 
 ## 2. 三个关键体检项
 
@@ -40,7 +40,7 @@ select tgname from pg_trigger where tgrelid='public.tasks'::regclass and not tgi
 
 ```sql
 -- d) 若 c 查出旧触发器：删除（旧版 Database/init.sql 遗留，会覆盖客户端真实编辑时间）。
---    或按 supabase_v560_cloud_migration.sql 内的替换语句改为"客户端携带更大值时保留客户端值"。
+--    或按 sql/supabase_v560_cloud_migration.sql 内的替换语句改为"客户端携带更大值时保留客户端值"。
 drop trigger if exists update_tasks_updated_at on public.tasks;
 ```
 
@@ -48,7 +48,7 @@ drop trigger if exists update_tasks_updated_at on public.tasks;
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 任务改了不上云、本地一直"待同步"，无报错 | 云端缺 deleted_at/recurrence 列，上传被 PostgREST 整批拒绝 | 执行 `supabase_v560_cloud_migration.sql` |
+| 任务改了不上云、本地一直"待同步"，无报错 | 云端缺 deleted_at/recurrence 列，上传被 PostgREST 整批拒绝 | 执行 `sql/supabase_v560_cloud_migration.sql` |
 | 登录/同步报错 `42703 / PGRST204 / column ... does not exist` | 同上；或客户端版本与云端 schema 不一致 | 对齐脚本 ② 后重跑 |
 | 其他设备收不到某任务的修改 | 云端 updated_at 被旧触发器改写，LWW 判定失真 | 执行 2-d 删除/替换触发器 |
 | 多账号数据串号 | RLS 未开或策略缺失 | 重跑 ② ，核对 2-b |
