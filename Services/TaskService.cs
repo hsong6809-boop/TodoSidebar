@@ -92,13 +92,16 @@ namespace TodoSidebar.Services
                     task.IsCompleted = true;
                     task.CompletedAt = DateTime.Now;
                     _db.UpdateTask(task);
+                    var firstGrant = !WasXpGranted(task.Id);
                     RewardTaskComplete(task);
 
                     // v5.5 审查修复：重复任务完成终身计数（成就"循环启程"口径，
-                    // 替代快照式 SQL 统计，不受已完成实例删除/清理影响）
-                    if (task.HasRecurrence)
+                    // 替代快照式 SQL 统计，不受已完成实例删除/清理影响）。
+                    // B5：仅在本实例首次发放奖励时递增，取消完成会回退。
+                    if (task.HasRecurrence && firstGrant && WasXpGranted(task.Id))
                     {
-                        try { _db.IncrementSettingCounter("RecurringCompletedLifetime"); } catch { }
+                        try { _db.IncrementSettingCounter("RecurringCompletedLifetime"); }
+                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Recurring counter inc failed: {ex.Message}"); }
                     }
 
                     // v5.4 重复任务：按规则生成下一期实例（新 Id，独立统计历史）
@@ -111,9 +114,19 @@ namespace TodoSidebar.Services
             }
         }
 
+        /// <summary>B5/B6：实例级 XP 发放标记键（Settings），取消完成回退后可再次发放。</summary>
+        private static string XpGrantedKey(int taskId) => $"XpGranted:{taskId}";
+
+        private bool WasXpGranted(int taskId)
+            => _db.GetSetting(XpGrantedKey(taskId)) == "1";
+
+        private void MarkXpGranted(int taskId, bool granted)
+            => _db.SetSetting(XpGrantedKey(taskId), granted ? "1" : "0");
+
         /// <summary>
         /// v5.4 重复任务：截止任务完成后按规则派生下一期。
         /// 失败仅记日志——下一期没生成不应让"本次完成"的奖励/状态回滚。
+        /// B4：派生前用 Title+Recurrence+nextDate 做存活幂等；取消完成时收回派生。
         /// </summary>
         private void SpawnNextRecurrence(TaskItem completedTask)
         {
@@ -129,10 +142,12 @@ namespace TodoSidebar.Services
                 // 「完成 → 取消完成 → 再完成」原先会无条件再生成一期，
                 // 导致列表出现同 Title/Deadline/Recurrence 的幽灵实例。
                 // R71（复审 N1）：改用带过滤的 GetTasks 重载，避免每次完成任务都全表加载+反序列化
+                // B4：存活（未删除）实例存在即不派生（含已完成的 next 也不再重复建）
                 var nextDate = next.Value.Date;
-                var exists = _db.GetTasks(TaskType.Deadline, completed: false).Any(t =>
-                    t.Title == completedTask.Title
-                    && t.Recurrence == completedTask.Recurrence
+                var exists = _db.GetTasks(TaskType.Deadline, completed: null).Any(t =>
+                    !t.IsDeleted
+                    && t.Title == completedTask.Title
+                    && RecurrenceRule.Normalize(t.Recurrence) == RecurrenceRule.Normalize(completedTask.Recurrence)
                     && t.Deadline.HasValue
                     && t.Deadline.Value.Date == nextDate);
                 if (exists) return;
@@ -159,29 +174,48 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
+        /// B4：取消完成时收回「当次派生且仍未完成」的下一期实例（软删进回收站）。
+        /// </summary>
+        private void RetractSpawnedNext(TaskItem task)
+        {
+            try
+            {
+                if (!task.HasRecurrence || !task.Deadline.HasValue) return;
+
+                var candidates = _db.GetTasks(TaskType.Deadline, completed: null)
+                    .Where(t => !t.IsDeleted)
+                    .Select(t => (t.Id, t.Title, t.Recurrence, t.Deadline, t.IsDeleted, t.IsCompleted))
+                    .ToList();
+                var retractIds = RecurrenceRule.FindSpawnsToRetract(
+                    task.Title, task.Recurrence, task.Deadline.Value, candidates);
+                foreach (var id in retractIds)
+                    _db.DeleteTask(id);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"RetractSpawnedNext error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 完成任务后发放经验（升级系统打点）：
         /// 每日 +10 / 截止 +15；按时完成 +5；高优先级 +5、中优先级 +3。
+        /// B5/B6：同实例只发一次 task_complete（Settings 标记），取消完成回退后可再发。
         /// </summary>
         private void RewardTaskComplete(TaskItem task)
         {
             try
             {
-                int xp = task.Type == TaskType.Deadline ? 15 : 10;
+                // B6：同实例不双发（跨日再次 Complete 也不再叠加）
+                if (WasXpGranted(task.Id)) return;
 
-                // 截止任务按时完成奖励
-                bool onTime = task.Type == TaskType.Deadline && task.Deadline.HasValue && DateTime.Now <= task.Deadline.Value;
-                if (onTime)
-                    xp += 5;
+                int xp = ComputeTaskCompleteXp(task);
 
-                // 优先级加成（Low 无加成）
-                xp += task.Priority switch
-                {
-                    TaskPriority.High => 5,
-                    TaskPriority.Medium => 3,
-                    _ => 0
-                };
+                // 截止任务按时完成奖励（挑战/成就口径用）
+                bool onTime = IsOnTime(task);
 
-                LevelService.Instance.Reward("task_complete", xp, task.Id);
+                LevelService.Instance.Reward("task_complete", xp, task.Id, dayDedup: false);
+                MarkXpGranted(task.Id, true);
 
                 // 每日挑战进度推进（每日任务 / 按时截止任务）
                 if (task.Type == TaskType.Daily)
@@ -199,6 +233,48 @@ namespace TodoSidebar.Services
             }
         }
 
+        /// <summary>B5/B6：task_complete 经验额（奖励/回退共用，保证对称）。</summary>
+        internal static int ComputeTaskCompleteXp(TaskItem task)
+        {
+            int xp = task.Type == TaskType.Deadline ? 15 : 10;
+            if (IsOnTime(task))
+                xp += 5;
+            xp += task.Priority switch
+            {
+                TaskPriority.High => 5,
+                TaskPriority.Medium => 3,
+                _ => 0
+            };
+            return xp;
+        }
+
+        private static bool IsOnTime(TaskItem task)
+            => task.Type == TaskType.Deadline && task.Deadline.HasValue && DateTime.Now <= task.Deadline.Value;
+
+        /// <summary>B5/B6：取消完成回退本实例已发的 XP 与循环终身计数（clamp ≥0）。</summary>
+        private void ReverseTaskComplete(TaskItem task)
+        {
+            try
+            {
+                if (!WasXpGranted(task.Id)) return;
+
+                int xp = ComputeTaskCompleteXp(task);
+                LevelService.Instance.Revert("task_complete", xp, task.Id);
+                MarkXpGranted(task.Id, false);
+
+                if (task.HasRecurrence)
+                {
+                    var current = int.TryParse(_db.GetSetting("RecurringCompletedLifetime"), out var v) ? v : 0;
+                    if (current > 0)
+                        _db.SetSetting("RecurringCompletedLifetime", (current - 1).ToString(CultureInfo.InvariantCulture));
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Reverse task reward failed: {ex.Message}");
+            }
+        }
+
         // 取消完成任务
         public void UncompleteTask(TaskItem task)
         {
@@ -211,6 +287,8 @@ namespace TodoSidebar.Services
                     _db.UnmarkDailyTaskCompleted(task.Id, today);
                     // R(review 修复 v5.6)：同 CompleteTask——本地每日完成状态不参与云同步，不置脏
                     task.IsTodayCompleted = false;
+                    // B5/B6：回退本实例 XP
+                    ReverseTaskComplete(task);
                 }
                 else
                 {
@@ -218,6 +296,10 @@ namespace TodoSidebar.Services
                     task.IsCompleted = false;
                     task.CompletedAt = null;
                     _db.UpdateTask(task);
+                    // B5/B6：回退 XP + RecurringCompletedLifetime
+                    ReverseTaskComplete(task);
+                    // B4：收回当次派生且仍未完成的下一期
+                    RetractSpawnedNext(task);
                 }
             }
             catch (Exception ex)

@@ -48,12 +48,13 @@ namespace TodoSidebar.Services
             new(@"(?<ap>凌晨|早上|上午|中午|下午|傍晚|晚上)?\s*(?<hh>\d{1,2})[点时:：]\s*(?<mm>半|\d{1,2})?", RegexOptions.Compiled);
 
         private static readonly Regex RelHoursRx =
-            new(@"(?<h>\d+(?:\.\d+)?)\s*(?:个)?小时后"
-                + @"|(?<halfnum>\d+(?:\.\d+)?)\s*个?半\s*小时后"
-                // R70 修复（审查 H6）：halfcn 此前只认「一」，「两个半小时后」会落到
-                // 末尾「半小时后」分支被算成 0.5 小时。现扩展为常见中文数字。
-                + @"|(?<halfcn>[一二两三四五六七八九十])个?半\s*小时后"
-                + @"|半小时后",
+            // B9：中文数字支持十一/十二…二十+；「后」可选（「十一个半小时」也可）
+            new(@"(?<h>\d+(?:\.\d+)?)\s*(?:个)?小时后?"
+                + @"|(?<halfnum>\d+(?:\.\d+)?)\s*个?半\s*小时后?"
+                // R70 修复（审查 H6）：halfcn 此前只认单字中文数字，「十一个半小时」会被切碎。
+                // B9：先匹配两位数整体（十一/二十/二十一…），避免在「十一」里只咬到「一」。
+                + @"|(?<halfcn>(?:二十|三十|四十|五十|六十|七十|八十|九十)[一二三四五六七八九]?|十[一二三四五六七八九]?|[一二两三四五六七八九])\s*个?\s*半\s*小时后?"
+                + @"|半小时后?",
                 RegexOptions.Compiled);
 
         private static readonly Regex RelMinutesRx =
@@ -104,14 +105,8 @@ namespace TodoSidebar.Services
                 else if (mh.Groups["halfcn"].Success)
                 {
                     // R70 修复（审查 H6）：中文数字 N 个半小时 = N + 0.5
-                    // 「一个半小时」=1.5，「两个半小时」=2.5，「三个半小时」=3.5
-                    var cn = mh.Groups["halfcn"].Value[0];
-                    var n = cn switch
-                    {
-                        '一' => 1, '二' => 2, '两' => 2, '三' => 3, '四' => 4,
-                        '五' => 5, '六' => 6, '七' => 7, '八' => 8, '九' => 9, '十' => 10,
-                        _ => 1
-                    };
+                    // 「一个半小时」=1.5，「两个半小时」=2.5，「十一个半小时」=11.5
+                    var n = ParseChineseNumber(mh.Groups["halfcn"].Value);
                     hours = n + 0.5;
                 }
                 else if (text.Contains("半小时") && mh.Groups["h"].Value.Length == 0) hours = 0.5;
@@ -223,6 +218,47 @@ namespace TodoSidebar.Services
             // ---- 清理标题 ----
             result.Title = SpaceCollapse.Replace(text, " ").Trim(' ', '　', '-', '—', '，', ',', '。', '.');
             return result;
+        }
+
+        /// <summary>B9：解析一~九十九的中文数字（支持 二十/二十一/十一 等）。</summary>
+        internal static int ParseChineseNumber(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return 1;
+            s = s.Trim().Replace('两', '二');
+            if (s.Length == 1)
+            {
+                return s[0] switch
+                {
+                    '一' => 1, '二' => 2, '三' => 3, '四' => 4, '五' => 5,
+                    '六' => 6, '七' => 7, '八' => 8, '九' => 9, '十' => 10,
+                    _ => 1
+                };
+            }
+
+            // 形如 [十|二十|三十…] + [一~九]，或 十一~十九
+            int tens = 0, ones = 0;
+            int i = 0;
+            if (s[0] == '十') { tens = 1; i = 1; }
+            else if (s.Length >= 2 && s[1] == '十')
+            {
+                tens = s[0] switch
+                {
+                    '一' => 1, '二' => 2, '三' => 3, '四' => 4, '五' => 5,
+                    '六' => 6, '七' => 7, '八' => 8, '九' => 9,
+                    _ => 1
+                };
+                i = 2;
+            }
+            if (i < s.Length)
+            {
+                ones = s[i] switch
+                {
+                    '一' => 1, '二' => 2, '三' => 3, '四' => 4, '五' => 5,
+                    '六' => 6, '七' => 7, '八' => 8, '九' => 9,
+                    _ => 0
+                };
+            }
+            return tens * 10 + ones;
         }
 
         private static DayOfWeek WeekdayToNumber(char c) => c switch

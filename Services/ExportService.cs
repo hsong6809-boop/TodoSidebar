@@ -31,7 +31,10 @@ namespace TodoSidebar.Services
                     // R71（审查 M6）：备份含回收站软删行——备份语义是"回到快照"，
                     // 排除软删行会导致恢复后回收站丢失、未上云墓碑缺失致云端存活行"复活"
                     Tasks = _dbService.GetTasksIncludingDeleted(),
-                    Settings = GetAllSettings()
+                    Settings = GetAllSettings(),
+                    // D3/T5：成长数据入快照——原先只备份任务+4 个设置，
+                    // 恢复时 CleanupOrphanRecords 会清掉 XP/番茄/完成，用户以为全量备份实际丢档
+                    Growth = _dbService.ExportGrowthSnapshot()
                 };
 
                 var options = new JsonSerializerOptions
@@ -153,6 +156,12 @@ namespace TodoSidebar.Services
             var parts = new List<string>();
             if (t.Type == TaskType.Deadline && t.Deadline.HasValue)
                 parts.Add($"截止 {t.Deadline.Value:MM-dd HH:mm}");
+            // D4/T5：循环规则与预估耗时也要进 MD，避免“已导出”却丢规则
+            var rec = RecurrenceRule.Normalize(t.Recurrence);
+            if (!string.IsNullOrEmpty(rec))
+                parts.Add(RecurrenceRule.LabelOf(rec));
+            if (t.EstimatedMinutes is > 0)
+                parts.Add($"预估 {t.EstimatedMinutes} 分钟");
             if (!string.IsNullOrWhiteSpace(t.Tags))
             {
                 var tags = string.Join(" ", t.Tags
@@ -200,7 +209,8 @@ namespace TodoSidebar.Services
                     using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
                     {
                         // 写入表头
-                        writer.WriteLine("Id,Title,Type,Priority,IsCompleted,CreatedAt,Deadline,CompletedAt,Tags");
+                        // D4/T5：补 Description/Recurrence/耗时/子任务——原先导出丢字段
+                        writer.WriteLine("Id,Title,Description,Type,Priority,IsCompleted,CreatedAt,Deadline,CompletedAt,Recurrence,EstimatedMinutes,ActualMinutes,Tags,SubTasksJson");
 
                         // 写入数据
                         foreach (var task in tasks)
@@ -208,13 +218,18 @@ namespace TodoSidebar.Services
                             writer.WriteLine(string.Join(",",
                                 task.Id,
                                 EscapeCsvField(task.Title),
+                                EscapeCsvField(task.Description ?? ""),
                                 task.Type switch { TaskType.Daily => "每日", TaskType.Deadline => "截止", _ => task.Type.ToString() },
                                 task.Priority switch { TaskPriority.High => "高", TaskPriority.Medium => "中", TaskPriority.Low => "低", _ => task.Priority.ToString() },
                                 task.IsCompleted,
                                 task.CreatedAt.ToString("O"),
                                 task.Deadline?.ToString("O") ?? "",
                                 task.CompletedAt?.ToString("O") ?? "",
-                                EscapeCsvField(task.Tags ?? "")
+                                EscapeCsvField(RecurrenceRule.Normalize(task.Recurrence) ?? ""),
+                                task.EstimatedMinutes?.ToString() ?? "",
+                                task.ActualMinutes?.ToString() ?? "",
+                                EscapeCsvField(task.Tags ?? ""),
+                                EscapeCsvField(task.SubTasksJson ?? "")
                             ));
                         }
                     }
@@ -222,7 +237,7 @@ namespace TodoSidebar.Services
                 }
                 finally
                 {
-                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch (Exception cleanupEx) { System.Diagnostics.Debug.WriteLine($"ExportService: 清理临时文件失败: {cleanupEx.Message}"); }
                 }
             }
             catch (Exception ex)
@@ -269,6 +284,9 @@ namespace TodoSidebar.Services
                 var validTasks = importData.Tasks
                     .Where(t => !string.IsNullOrWhiteSpace(t.Title))
                     .ToList();
+                // D12/T5：导入时规范化循环规则
+                foreach (var t in validTasks)
+                    t.Recurrence = RecurrenceRule.Normalize(t.Recurrence);
                 int importedCount = _dbService.ImportTasksUnique(validTasks);
 
                 // 导入设置（仅导入非敏感设置）
@@ -328,12 +346,22 @@ namespace TodoSidebar.Services
             if (importData?.Tasks == null)
                 throw new InvalidOperationException("备份文件格式无效或没有任务数据");
 
-            var tasks = importData.Tasks.Where(t => !string.IsNullOrWhiteSpace(t.Title)).ToList();
+            var tasks = importData.Tasks
+                .Where(t => !string.IsNullOrWhiteSpace(t.Title))
+                .ToList();
+            // D12/T5：导入时规范化循环规则，避免垃圾 Recurrence 落库
+            foreach (var t in tasks)
+                t.Recurrence = RecurrenceRule.Normalize(t.Recurrence);
+
             // S3 修复：保留备份中的原始 Id（ReplaceAllTasks 已改为物理删除 + 按 Id 插入，
             // 子表 TaskId 引用在同源恢复场景下保持有效）
+            // D3/T5：旧备份（无 Growth）按任务-only 恢复，禁止 orphan-purge 成长表
+            var hasGrowth = importData.Growth != null;
+            _dbService.ReplaceAllTasks(tasks, includeGrowthCleanup: hasGrowth);
 
-            // 2. 单事务替换：物理删除现有 + 按原始 Id 插入 + 清理子表孤儿
-            _dbService.ReplaceAllTasks(tasks);
+            // D3/T5：有成长快照则整体替换；无则保留现有成长数据
+            if (hasGrowth)
+                _dbService.ReplaceGrowthSnapshot(importData.Growth!);
 
             // 3. 导入设置（仅导入非敏感设置）
             if (importData.Settings != null)
@@ -441,6 +469,8 @@ namespace TodoSidebar.Services
         public DateTime ExportDate { get; set; }
         public List<TaskItem> Tasks { get; set; } = new();
         public Dictionary<string, string> Settings { get; set; } = new();
+        /// <summary>D3/T5：成长快照；旧备份无此字段时为 null（任务-only 恢复不清理成长表）。</summary>
+        public GrowthSnapshot? Growth { get; set; }
     }
 
     public class BackupInfo

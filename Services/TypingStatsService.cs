@@ -196,19 +196,25 @@ namespace TodoSidebar.Services
             }
         }
 
-        /// <summary>把当前累计增量按今日日期键落库，并同步抬高基线避免双重计算。失败静默。</summary>
+        /// <summary>
+        /// 把当前累计增量按今日日期键落库，并同步抬高基线避免双重计算。
+        /// B7 修复：先写库成功再 TakeDelta，失败保留内存增量不丢量（下次 Flush 重试）。
+        /// </summary>
         public void FlushNow()
         {
             try
             {
                 if (_todayKey == null && !IsEnabled) return; // 从未启用过：无事可做
                 EnsureBaseline();
-                var (keys, words) = _core.TakeDelta();
+                // Peek 无副作用：写库成功后才清零，失败时增量仍在内存
+                var (keys, words) = _core.Peek();
                 if (keys == 0 && words == 0) return;
                 DatabaseService.Instance.AddTypingStat(
                     _todayKey!,
                     checked((int)Math.Min(keys, int.MaxValue)),
                     checked((int)Math.Min(words, int.MaxValue)));
+                // 写库成功后再结算清零（TakeDelta 会再 Flush 尾段，与 Peek 估算一致）
+                _core.TakeDelta();
                 _baseKeys += keys;
                 _baseWords += words;
             }
@@ -316,8 +322,11 @@ namespace TodoSidebar.Services
             {
                 var hwnd = GetForegroundWindow();
                 if (hwnd == IntPtr.Zero) return false;
-                GetWindowThreadProcessId(hwnd, out uint pid);
-                var hkl = GetKeyboardLayout(pid);
+                // B2 修复：GetKeyboardLayout 要的是 thread id，不是 process id。
+                // 原实现误传 pid 会拿到错误 HKL → 中英分类错 → 字数口径错。
+                uint tid = GetWindowThreadProcessId(hwnd, out _);
+                if (tid == 0) return false;
+                var hkl = GetKeyboardLayout(tid);
                 return hkl != IntPtr.Zero && ImmIsIME(hkl);
             }
             catch

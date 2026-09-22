@@ -59,6 +59,23 @@ namespace TodoSidebar.Services
             _dbPath = Path.Combine(appFolder, "todo.db");
         }
 
+        /// <summary>
+        /// 测试专用：在指定路径创建独立实例（不进入单例），供数据层单测隔离使用。
+        /// </summary>
+        internal static DatabaseService CreateForTests(string dbPath)
+        {
+            var svc = new DatabaseService(dbPath);
+            svc.Initialize();
+            return svc;
+        }
+
+        private DatabaseService(string dbPath)
+        {
+            _dbPath = dbPath;
+            var dir = Path.GetDirectoryName(dbPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        }
+
         // 保留 Initialize 方法供首次调用
         public void Initialize()
         {
@@ -202,6 +219,45 @@ namespace TodoSidebar.Services
             // ===== 升级系统表 =====
             CreateGrowthTables();
             EnsureGrowthSyncColumns();
+
+            // D7/T6：热路径查询索引（本地库此前仅 SyncId 一个索引，热路径全表扫描）
+            CreateHotPathIndexes();
+        }
+
+        /// <summary>
+        /// D7：为热路径建索引（幂等）。列组合对应常见 WHERE/ORDER：回收站、脏行同步、
+        /// 完成统计日桶、XP/番茄按日聚合。
+        /// </summary>
+        private void CreateHotPathIndexes()
+        {
+            string[] ddl =
+            {
+                "CREATE INDEX IF NOT EXISTS idx_tasks_isdeleted_type ON Tasks(IsDeleted, Type)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_isdirty ON Tasks(IsDirty)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_type_completed_completedat ON Tasks(Type, IsCompleted, CompletedAt)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_isdeleted_deletedat ON Tasks(IsDeleted, DeletedAt)",
+                "CREATE INDEX IF NOT EXISTS idx_dtc_date ON DailyTaskCompletion(Date)",
+                "CREATE INDEX IF NOT EXISTS idx_dtc_taskid_date ON DailyTaskCompletion(TaskId, Date)",
+                "CREATE INDEX IF NOT EXISTS idx_xplog_date ON XpLog(Date)",
+                "CREATE INDEX IF NOT EXISTS idx_xplog_taskid ON XpLog(TaskId)",
+                "CREATE INDEX IF NOT EXISTS idx_xplog_isdirty ON XpLog(IsDirty)",
+                "CREATE INDEX IF NOT EXISTS idx_pomo_date ON PomodoroSession(Date)",
+                "CREATE INDEX IF NOT EXISTS idx_pomo_isdirty ON PomodoroSession(IsDirty)",
+                "CREATE INDEX IF NOT EXISTS idx_typing_date ON DailyTypingStat(Date)",
+            };
+            foreach (var sql in ddl)
+            {
+                try
+                {
+                    using var cmd = _connection!.CreateCommand();
+                    cmd.CommandText = sql;
+                    cmd.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DatabaseService] 创建热路径索引失败: {sql} → {ex.Message}");
+                }
+            }
         }
 
         /// <summary>
@@ -415,6 +471,74 @@ namespace TodoSidebar.Services
 
         // ==================== 任务 CRUD（全部加锁） ====================
 
+        /// <summary>
+        /// D6/T2：任务写路径共用列清单与参数绑定，避免各 INSERT/UPDATE 分叉漏列（C3 已中招）。
+        /// </summary>
+        internal static class TaskSql
+        {
+            /// <summary>业务字段列（INSERT 前半段；UPDATE 时去掉 CreatedId/Id）</summary>
+            public const string ContentColumns =
+                "Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence";
+
+            public const string ContentValues =
+                "@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence";
+
+            public const string SyncMetaColumns =
+                "SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt";
+
+            public const string SyncMetaValues =
+                "@syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt";
+
+            /// <summary>
+            /// 绑定业务字段参数。时间统一 InvariantCulture round-trip（"O"）。
+            /// Recurrence 写入前 Normalize，非法规则落 null。
+            /// </summary>
+            public static void BindTaskParameters(SqliteCommand cmd, TaskItem task)
+            {
+                cmd.Parameters.AddWithValue("@title", task.Title);
+                cmd.Parameters.AddWithValue("@type", (int)task.Type);
+                cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
+                cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
+                cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O", CultureInfo.InvariantCulture) ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O", CultureInfo.InvariantCulture) ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
+                cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@recurrence", RecurrenceRule.Normalize(task.Recurrence) ?? (object)DBNull.Value);
+            }
+
+            /// <summary>绑定同步元数据（导入/远端落库用）。</summary>
+            public static void BindSyncMeta(SqliteCommand cmd, TaskItem task, DateTime? localUpdatedAt, bool isDirty, DateTime? lastSyncedAt)
+            {
+                cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@isDirty", isDirty ? 1 : 0);
+                cmd.Parameters.AddWithValue("@lastSyncedAt", lastSyncedAt?.ToString("O", CultureInfo.InvariantCulture) ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
+                cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O", CultureInfo.InvariantCulture) ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@localUpdatedAt", localUpdatedAt?.ToString("O", CultureInfo.InvariantCulture) ?? DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            }
+
+            /// <summary>
+            /// D1：无 SyncId 导入行的稳定键（Title+CreatedAt+Deadline 哈希）。
+            /// 同一来源任务重复导入生成同一 SyncId，从而可去重、不再静默翻倍。
+            /// </summary>
+            public static string ComputeStableImportSyncId(TaskItem task)
+            {
+                var createdAt = task.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+                var deadline = task.Deadline.HasValue
+                    ? task.Deadline.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)
+                    : "";
+                var basis = $"{task.Title ?? ""}\n{createdAt}\n{deadline}";
+                using var md5 = System.Security.Cryptography.MD5.Create();
+                var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(basis));
+                return new Guid(hash).ToString();
+            }
+        }
+
         public int InsertTask(TaskItem task) => ExecuteLocked(() => InsertTaskCore(task));
 
         private int InsertTaskCore(TaskItem task)
@@ -426,26 +550,15 @@ namespace TodoSidebar.Services
             task.SyncId ??= Guid.NewGuid().ToString();
 
             using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = @"
-                INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LocalUpdatedAt)
-                VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, 1, @localUpdatedAt);
+            // D5/T2：补写 CompletedAt——完成态插入原先丢时间戳
+            cmd.CommandText = $@"
+                INSERT INTO Tasks ({TaskSql.ContentColumns}, SyncId, IsDirty, LocalUpdatedAt)
+                VALUES ({TaskSql.ContentValues}, @syncId, 1, @localUpdatedAt);
                 SELECT last_insert_rowid();
             ";
-            cmd.Parameters.AddWithValue("@title", task.Title);
-            cmd.Parameters.AddWithValue("@type", (int)task.Type);
-            cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
-            cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-            cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
-            cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
-            cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
+            TaskSql.BindTaskParameters(cmd, task);
             cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
@@ -456,6 +569,7 @@ namespace TodoSidebar.Services
         public void UpdateTask(TaskItem task) => ExecuteLocked(() =>
         {
             using var cmd = _connection!.CreateCommand();
+            // D6/T2：共用列绑定；CreatedAt/SyncId 不在 UPDATE 中改写
             cmd.CommandText = @"
                 UPDATE Tasks SET
                     Title = @title,
@@ -476,22 +590,8 @@ namespace TodoSidebar.Services
                 WHERE Id = @id
             ";
             cmd.Parameters.AddWithValue("@id", task.Id);
-            cmd.Parameters.AddWithValue("@title", task.Title);
-            // R71（审查 M9）：补写 Type——原 SET 列表漏了该列，每日↔截止切换写库被静默丢弃，
-            // 内存对象与库不一致、刷新后类型回跳
-            cmd.Parameters.AddWithValue("@type", (int)task.Type);
-            cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
-            cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-            cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
-            cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O"));
+            TaskSql.BindTaskParameters(cmd, task);
+            cmd.Parameters.AddWithValue("@localUpdatedAt", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
             cmd.ExecuteNonQuery();
         });
 
@@ -561,42 +661,17 @@ namespace TodoSidebar.Services
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); } catch (Exception rbEx) { System.Diagnostics.Debug.WriteLine($"[DatabaseService] PurgeTask 回滚失败: {rbEx.Message}"); }
                 throw;
             }
         });
 
         /// <summary>
         /// v5.3 回收站：清除超过保留期的软删除任务，并清理指向失效任务的子表孤儿记录。
+        /// D9/T6：与 PurgeDeletedTasks 共用 DeletedAt 口径（PurgeDeletedTasksCore）。
         /// 启动时调用。返回清除的任务数。
         /// </summary>
-        public int PurgeExpiredDeletedTasks() => ExecuteLocked(() =>
-        {
-            // R9 修复（审查 L5）：DeletedAt 已统一 UTC 存储，截线同步改用 UtcNow
-            var cutoff = DateTime.UtcNow.AddDays(-TrashRetentionDays).ToString("O");
-            using var transaction = _connection!.BeginTransaction();
-            try
-            {
-                int purged;
-                using (var cmd = _connection!.CreateCommand())
-                {
-                    cmd.Transaction = transaction;
-                    // IsDirty=0 守卫：未上云的删除墓碑不能本地清除，否则下次同步会"复活"
-                    cmd.CommandText = "DELETE FROM Tasks WHERE IsDeleted = 1 AND IsDirty = 0 AND DeletedAt IS NOT NULL AND DeletedAt < @cutoff";
-                    cmd.Parameters.AddWithValue("@cutoff", cutoff);
-                    purged = cmd.ExecuteNonQuery();
-                }
-                if (purged > 0)
-                    CleanupOrphanRecords(transaction);
-                transaction.Commit();
-                return purged;
-            }
-            catch
-            {
-                try { transaction.Rollback(); } catch { }
-                throw;
-            }
-        });
+        public int PurgeExpiredDeletedTasks() => ExecuteLocked(() => PurgeDeletedTasksCore(TrashRetentionDays));
 
         /// <summary>v5.3：清理子表中指向已不存在任务的孤儿记录（与导入恢复同口径）。</summary>
         private void CleanupOrphanRecords(SqliteTransaction transaction)
@@ -613,60 +688,62 @@ namespace TodoSidebar.Services
         /// <summary>
         /// 事务化导入任务（M4 修复）：单事务包裹整批插入（失败整体回滚），
         /// 且按 SyncId 去重——已存在同 SyncId 存活任务时跳过，防止重复导入产生整套重复数据。
-        /// 返回实际导入条数。
+        /// D1/T2：无 SyncId 行用稳定键（Title+CreatedAt+Deadline 哈希）生成 SyncId 后同样去重，
+        /// 禁止静默重复插入。返回实际导入条数（兼容旧签名）。
         /// </summary>
-        public int ImportTasksUnique(List<TaskItem> tasks) => ExecuteLocked(() =>
+        public int ImportTasksUnique(List<TaskItem> tasks) => ImportTasksUniqueDetailed(tasks).Imported;
+
+        /// <summary>导入结果：Imported=新插入条数，Skipped=去重/非法跳过条数。</summary>
+        public sealed class ImportTasksResult
+        {
+            public int Imported { get; init; }
+            public int Skipped { get; init; }
+            public int Total => Imported + Skipped;
+        }
+
+        /// <summary>与 ImportTasksUnique 相同，但返回导入/跳过计数（导入报告用）。</summary>
+        public ImportTasksResult ImportTasksUniqueDetailed(List<TaskItem> tasks) => ExecuteLocked(() =>
         {
             using var transaction = _connection!.BeginTransaction();
             try
             {
-                int imported = 0;
+                int imported = 0, skipped = 0;
                 foreach (var task in tasks)
                 {
+                    // D12/T5：导入前 Normalize Recurrence，非法规则落 null
+                    task.Recurrence = RecurrenceRule.Normalize(task.Recurrence);
+
+                    // D1：无 SyncId 行生成稳定键，与有 SyncId 行同规则去重
+                    if (string.IsNullOrEmpty(task.SyncId))
+                        task.SyncId = TaskSql.ComputeStableImportSyncId(task);
+
                     // SyncId 去重：已存在同 SyncId 的"存活"任务则跳过（R13：排除回收站软删行）
-                    if (!string.IsNullOrEmpty(task.SyncId) && GetTaskBySyncIdCore(task.SyncId, includeDeleted: false) != null)
+                    if (GetTaskBySyncIdCore(task.SyncId!, includeDeleted: false) != null)
+                    {
+                        skipped++;
+                        System.Diagnostics.Debug.WriteLine($"[DatabaseService] ImportTasksUnique 跳过重复 SyncId={task.SyncId} Title={task.Title}");
                         continue;
+                    }
 
                     using var cmd = _connection.CreateCommand();
                     cmd.Transaction = transaction;
-                    cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                        VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
+                    cmd.CommandText = $@"
+                        INSERT INTO Tasks ({TaskSql.ContentColumns}, {TaskSql.SyncMetaColumns})
+                        VALUES ({TaskSql.ContentValues}, {TaskSql.SyncMetaValues})
                     ";
-                    cmd.Parameters.AddWithValue("@title", task.Title);
-                    cmd.Parameters.AddWithValue("@type", (int)task.Type);
-                    cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
-                    cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-                    cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
-                    cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
-                    cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
-                    // R70 修复（审查 C3）：导入路径此前漏写 Recurrence，备份恢复后
-                    // daily/weekly/monthly 循环任务全部静默退化为一次性任务
-                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
-                    cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
-                    // R12 修复（审查 M2）：导入路径同样保留软删时间
-                    cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
+                    TaskSql.BindTaskParameters(cmd, task);
                     // R70 修复（审查 M1）：保留任务真实编辑时间，而非写死导入时刻——
                     // 写死会抬高 LWW 基线，多设备场景下用旧导入数据覆盖较新编辑
-                    cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
+                    TaskSql.BindSyncMeta(cmd, task, task.LocalUpdatedAt ?? DateTime.UtcNow, task.IsDirty, task.LastSyncedAt);
                     cmd.ExecuteNonQuery();
                     imported++;
                 }
                 transaction.Commit();
-                return imported;
+                return new ImportTasksResult { Imported = imported, Skipped = skipped };
             }
             catch
             {
-                try { transaction.Rollback(); } catch { /* 已回滚或连接异常 */ }
+                try { transaction.Rollback(); } catch (Exception rbEx) { System.Diagnostics.Debug.WriteLine($"[DatabaseService] ImportTasksUnique 回滚失败: {rbEx.Message}"); }
                 throw;
             }
         });
@@ -686,51 +763,42 @@ namespace TodoSidebar.Services
         });
 
         /// <summary>
-        /// 彻底删除已软删除且已同步的任务（定期清理用）
+        /// D9/T6：回收站清理统一走 PurgeDeletedTasksCore（以 DeletedAt 为准）。
+        /// daysOld 参数保留兼容；截线 = UtcNow.AddDays(-daysOld)。
         /// </summary>
-        public void PurgeDeletedTasks(int daysOld = 30) => ExecuteLocked(() =>
+        public void PurgeDeletedTasks(int daysOld = 30) => ExecuteLocked(() => PurgeDeletedTasksCore(daysOld));
+
+        /// <summary>
+        /// D9/T6：单一 purge 口径——仅清理 IsDeleted=1 且 IsDirty=0（墓碑已上云）
+        /// 且 DeletedAt &lt; cutoff 的行；DeletedAt 为 NULL 的历史行不硬删（避免误伤）。
+        /// </summary>
+        private int PurgeDeletedTasksCore(int daysOld)
         {
-            // L3 修复：在 C# 侧解析 LastSyncedAt 后比较时间，
-            // 避免历史数据混入本地偏移格式时 SQL 字符串比较失效导致漏删
-            var cutoff = DateTime.UtcNow.AddDays(-daysOld);
-            var ids = new List<int>();
-            using (var selectCmd = _connection!.CreateCommand())
-            {
-                selectCmd.CommandText = "SELECT Id, LastSyncedAt FROM Tasks WHERE IsDeleted = 1 AND IsDirty = 0 AND LastSyncedAt IS NOT NULL";
-                using var reader = selectCmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var synced = ReadDateTime(reader, "LastSyncedAt");
-                    if (synced.HasValue && synced.Value < cutoff)
-                        ids.Add(reader.GetInt32(0));
-                }
-            }
-
-            // R14 修复（审查 L1）：多条 DELETE 包进单事务，并在清理后回收子表孤儿记录，
-            // 与 PurgeExpiredDeletedTasks/PurgeTask 同口径；中途失败整体回滚不留半删状态
-            if (ids.Count == 0)
-                return;
-
+            // R9 修复（审查 L5）：DeletedAt 已统一 UTC 存储，截线同步改用 UtcNow
+            var cutoff = DateTime.UtcNow.AddDays(-daysOld).ToString("O", CultureInfo.InvariantCulture);
             using var transaction = _connection!.BeginTransaction();
             try
             {
-                foreach (var id in ids)
+                int purged;
+                using (var cmd = _connection!.CreateCommand())
                 {
-                    using var delCmd = _connection.CreateCommand();
-                    delCmd.Transaction = transaction;
-                    delCmd.CommandText = "DELETE FROM Tasks WHERE Id = @id";
-                    delCmd.Parameters.AddWithValue("@id", id);
-                    delCmd.ExecuteNonQuery();
+                    cmd.Transaction = transaction;
+                    // IsDirty=0 守卫：未上云的删除墓碑不能本地清除，否则下次同步会"复活"
+                    cmd.CommandText = "DELETE FROM Tasks WHERE IsDeleted = 1 AND IsDirty = 0 AND DeletedAt IS NOT NULL AND DeletedAt < @cutoff";
+                    cmd.Parameters.AddWithValue("@cutoff", cutoff);
+                    purged = cmd.ExecuteNonQuery();
                 }
-                CleanupOrphanRecords(transaction);
+                if (purged > 0)
+                    CleanupOrphanRecords(transaction);
                 transaction.Commit();
+                return purged;
             }
             catch
             {
-                try { transaction.Rollback(); } catch { }
+                try { transaction.Rollback(); } catch (Exception rbEx) { System.Diagnostics.Debug.WriteLine($"[DatabaseService] PurgeDeletedTasks 回滚失败: {rbEx.Message}"); }
                 throw;
             }
-        });
+        }
 
         public List<TaskItem> GetTasks(TaskType? type = null, bool? completed = null) => ExecuteLocked(() =>
         {
@@ -851,13 +919,24 @@ namespace TodoSidebar.Services
 
         /// <summary>
         /// v5.5：原子递增 Settings 中的整数计数器（成就行为统计用）。
+        /// D14/T6：单条 INSERT..ON CONFLICT UPDATE，避免读-改-写竞态。
         /// 键不存在视为 0；原值非整数时重置为 1。
         /// </summary>
         public int IncrementSettingCounter(string key) => ExecuteLocked(() =>
         {
-            var current = int.TryParse(GetSettingCore(key), out var v) ? v : 0;
-            var next = current + 1;
-            SetSettingCore(key, next.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO Settings (Key, Value) VALUES (@key, '1')
+                ON CONFLICT(Key) DO UPDATE SET
+                    Value = CASE
+                        WHEN CAST(Value AS INTEGER) <> 0 OR TRIM(CAST(Value AS TEXT)) IN ('0','+0','-0')
+                            THEN CAST(CAST(Value AS INTEGER) + 1 AS TEXT)
+                        ELSE '1'
+                    END
+            ";
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.ExecuteNonQuery();
+            var next = int.TryParse(GetSettingCore(key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 1;
             return next;
         });
 
@@ -1391,10 +1470,12 @@ namespace TodoSidebar.Services
                 }
 
                 using var clearCmd = _connection!.CreateCommand();
+                // D11/T2：@expected 非空时要求 LocalUpdatedAt 精确相等（NULL 视为不匹配），
+                // 不再让空时间戳跳过乐观锁
                 clearCmd.CommandText = @"
                     UPDATE Tasks SET IsDirty = 0
                     WHERE Id = @id
-                      AND (@expected IS NULL OR LocalUpdatedAt IS NULL OR LocalUpdatedAt = @expected)
+                      AND (@expected IS NULL OR LocalUpdatedAt = @expected)
                 ";
                 clearCmd.Parameters.AddWithValue("@id", localId);
                 clearCmd.Parameters.AddWithValue("@expected", expectedLocalUpdatedAt ?? (object)DBNull.Value);
@@ -1445,6 +1526,8 @@ namespace TodoSidebar.Services
                     // 更新现有任务
                     task.Id = existing.Id;
                     using var cmd = _connection!.CreateCommand();
+                    // D2/T2：UPDATE 必须 WHERE Id=@id——存活行+软删行可共享 SyncId，
+                    // 按 SyncId 整行更新会写穿回收站
                     cmd.CommandText = @"
                         UPDATE Tasks SET
                             Title = @title,
@@ -1466,10 +1549,10 @@ namespace TodoSidebar.Services
                             IsDirty = 0,
                             LastSyncedAt = @syncedAt,
                             LocalUpdatedAt = @localUpdatedAt
-                        WHERE SyncId = @syncId
-                          AND (@expected IS NULL OR LocalUpdatedAt IS NULL OR LocalUpdatedAt = @expected)
+                        WHERE Id = @id
+                          AND (@expected IS NULL OR LocalUpdatedAt = @expected)
                     ";
-                    cmd.Parameters.AddWithValue("@syncId", task.SyncId);
+                    cmd.Parameters.AddWithValue("@id", existing.Id);
                     cmd.Parameters.AddWithValue("@title", task.Title);
                     cmd.Parameters.AddWithValue("@type", (int)task.Type);
                     cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
@@ -1482,7 +1565,7 @@ namespace TodoSidebar.Services
                     // R71（审查 M20）：耗时字段随远端更新
                     cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@recurrence", RecurrenceRule.Normalize(task.Recurrence) ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncedAt", DateTime.UtcNow.ToString("O"));
@@ -1498,8 +1581,8 @@ namespace TodoSidebar.Services
                 {
                     // 插入新任务
                     using var cmd = _connection!.CreateCommand();
-                    cmd.CommandText = @"
-                        INSERT INTO Tasks (Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
+                    cmd.CommandText = $@"
+                        INSERT INTO Tasks ({TaskSql.ContentColumns}, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
                         VALUES (@title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, 0, @syncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
                     ";
                     cmd.Parameters.AddWithValue("@title", task.Title);
@@ -1514,7 +1597,7 @@ namespace TodoSidebar.Services
                     // R71（审查 M20）：耗时字段随远端下行
                     cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
+                    cmd.Parameters.AddWithValue("@recurrence", RecurrenceRule.Normalize(task.Recurrence) ?? (object)DBNull.Value);
                     cmd.Parameters.AddWithValue("@syncId", task.SyncId);
                     cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
                     cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
@@ -1556,10 +1639,12 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// 原子替换全部任务（备份恢复用）：单事务内物理删除现有任务 + 按原始 Id 插入恢复的任务
-        /// + 清理子表孤儿记录。任一步失败整体回滚，避免"先删光再导入失败"导致数据丢失。
+        /// 原子替换全部任务（备份恢复用）：单事务内物理删除现有任务 + 按原始 Id 插入恢复的任务。
+        /// D3/T5：includeGrowthCleanup=false 时（任务-only 备份恢复）不清理成长表孤儿——
+        /// 旧备份不含成长数据，恢复任务时不得连带 purge XP/番茄/完成记录。
+        /// 任一步失败整体回滚，避免"先删光再导入失败"导致数据丢失。
         /// </summary>
-        public void ReplaceAllTasks(List<TaskItem> tasks) => ExecuteLocked(() =>
+        public void ReplaceAllTasks(List<TaskItem> tasks, bool includeGrowthCleanup = true) => ExecuteLocked(() =>
         {
             using var transaction = _connection!.BeginTransaction();
             try
@@ -1579,52 +1664,38 @@ namespace TodoSidebar.Services
                 // 2. 插入恢复的任务（保留原始 Id 与 SyncId/IsDirty，避免云端重复）
                 foreach (var task in tasks)
                 {
+                    // D12/T5：导入前 Normalize Recurrence
+                    task.Recurrence = RecurrenceRule.Normalize(task.Recurrence);
                     using var cmd = _connection!.CreateCommand();
                     cmd.Transaction = transaction;
-                    cmd.CommandText = @"
-                        INSERT INTO Tasks (Id, Title, Type, Priority, IsCompleted, CreatedAt, Deadline, CompletedAt, Description, Tags, SortOrder, EstimatedMinutes, ActualMinutes, SubTasksJson, Recurrence, SyncId, IsDirty, LastSyncedAt, IsDeleted, DeletedAt, LocalUpdatedAt)
-                        VALUES (@id, @title, @type, @priority, @completed, @createdAt, @deadline, @completedAt, @description, @tags, @sortOrder, @estimatedMinutes, @actualMinutes, @subTasksJson, @recurrence, @syncId, @isDirty, @lastSyncedAt, @isDeleted, @deletedAt, @localUpdatedAt)
+                    cmd.CommandText = $@"
+                        INSERT INTO Tasks (Id, {TaskSql.ContentColumns}, {TaskSql.SyncMetaColumns})
+                        VALUES (@id, {TaskSql.ContentValues}, {TaskSql.SyncMetaValues})
                     ";
                     cmd.Parameters.AddWithValue("@id", task.Id);
-                    cmd.Parameters.AddWithValue("@title", task.Title);
-                    cmd.Parameters.AddWithValue("@type", (int)task.Type);
-                    cmd.Parameters.AddWithValue("@priority", (int)task.Priority);
-                    cmd.Parameters.AddWithValue("@completed", task.IsCompleted ? 1 : 0);
-                    cmd.Parameters.AddWithValue("@createdAt", task.CreatedAt.ToString("O"));
-                    cmd.Parameters.AddWithValue("@deadline", task.Deadline?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@completedAt", task.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@description", task.Description ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@tags", task.Tags ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@sortOrder", task.SortOrder);
-                    cmd.Parameters.AddWithValue("@estimatedMinutes", task.EstimatedMinutes ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@actualMinutes", task.ActualMinutes ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@subTasksJson", task.SubTasksJson ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@syncId", task.SyncId ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@isDirty", task.IsDirty ? 1 : 0);
-                    cmd.Parameters.AddWithValue("@lastSyncedAt", task.LastSyncedAt?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@isDeleted", task.IsDeleted ? 1 : 0);
-                    // R12 修复（审查 M2）：备份恢复路径同样保留软删时间
-                    cmd.Parameters.AddWithValue("@deletedAt", task.DeletedAt?.ToString("O") ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@recurrence", task.Recurrence ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@localUpdatedAt", task.LocalUpdatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O"));
+                    TaskSql.BindTaskParameters(cmd, task);
+                    TaskSql.BindSyncMeta(cmd, task, task.LocalUpdatedAt ?? DateTime.UtcNow, task.IsDirty, task.LastSyncedAt);
                     cmd.ExecuteNonQuery();
                 }
 
-                // 3. 清理子表中指向已不存在任务的孤儿记录（跨源恢复时旧 Id 可能失效），
-                //    避免污染连击结算与统计
-                foreach (var table in new[] { "DailyTaskCompletion", "XpLog", "PomodoroSession" })
+                // 3. 仅全量快照恢复时清理子表孤儿（跨源恢复时旧 Id 可能失效）。
+                //    任务-only 备份（includeGrowthCleanup=false）保留现有成长数据。
+                if (includeGrowthCleanup)
                 {
-                    using var cleanupCmd = _connection.CreateCommand();
-                    cleanupCmd.Transaction = transaction;
-                    cleanupCmd.CommandText = $"DELETE FROM {table} WHERE TaskId IS NOT NULL AND TaskId NOT IN (SELECT Id FROM Tasks)";
-                    cleanupCmd.ExecuteNonQuery();
+                    foreach (var table in new[] { "DailyTaskCompletion", "XpLog", "PomodoroSession" })
+                    {
+                        using var cleanupCmd = _connection.CreateCommand();
+                        cleanupCmd.Transaction = transaction;
+                        cleanupCmd.CommandText = $"DELETE FROM {table} WHERE TaskId IS NOT NULL AND TaskId NOT IN (SELECT Id FROM Tasks)";
+                        cleanupCmd.ExecuteNonQuery();
+                    }
                 }
 
                 transaction.Commit();
             }
             catch
             {
-                try { transaction.Rollback(); } catch { /* 已回滚或连接异常 */ }
+                try { transaction.Rollback(); } catch (Exception rbEx) { System.Diagnostics.Debug.WriteLine($"[DatabaseService] ReplaceAllTasks 回滚失败: {rbEx.Message}"); }
                 throw;
             }
         });
@@ -1696,6 +1767,14 @@ namespace TodoSidebar.Services
                         clearCounters.Transaction = transaction;
                         clearCounters.CommandText = "DELETE FROM Settings WHERE Key IN ('RecurringCompletedLifetime','TrashLifetimeCount','NlpUsedCount','QuickAddUsedCount')";
                         clearCounters.ExecuteNonQuery();
+                    }
+
+                    // S13/T4：清理全量对账游标与账号资料缓存（头像文件由账号层负责删除）
+                    using (var clearAccountKeys = _connection.CreateCommand())
+                    {
+                        clearAccountKeys.Transaction = transaction;
+                        clearAccountKeys.CommandText = "DELETE FROM Settings WHERE Key LIKE 'LastFullReconcileAt%' OR Key LIKE 'Acct%'";
+                        clearAccountKeys.ExecuteNonQuery();
                     }
 
                     // 记录当前用户
@@ -2125,6 +2204,227 @@ namespace TodoSidebar.Services
         });
 
         // ==================== 成长数据同步 ====================
+
+        /// <summary>D3/T5：导出成长相关表快照（备份 JSON 用）。</summary>
+        public GrowthSnapshot ExportGrowthSnapshot() => ExecuteLocked(() =>
+        {
+            var snap = new GrowthSnapshot();
+
+            using (var profileCmd = _connection!.CreateCommand())
+            {
+                profileCmd.CommandText = "SELECT Id, Level, Xp, TotalXp, ComboDays, BestComboDays, Title, LastXpDate, LastComboSettledDate FROM UserProfile WHERE Id = 1";
+                using var r = profileCmd.ExecuteReader();
+                if (r.Read())
+                {
+                    snap.UserProfile = new UserGrowth
+                    {
+                        Id = r.GetInt32(0),
+                        Level = r.GetInt32(1),
+                        Xp = r.GetInt32(2),
+                        TotalXp = r.GetInt32(3),
+                        ComboDays = r.GetInt32(4),
+                        BestComboDays = r.GetInt32(5),
+                        Title = r.GetString(6),
+                        LastXpDate = r.IsDBNull(7) ? null : r.GetString(7),
+                        LastComboSettledDate = r.IsDBNull(8) ? null : r.GetString(8)
+                    };
+                }
+            }
+
+            using (var dtcCmd = _connection.CreateCommand())
+            {
+                dtcCmd.CommandText = "SELECT TaskId, Date FROM DailyTaskCompletion ORDER BY TaskId, Date";
+                using var r = dtcCmd.ExecuteReader();
+                while (r.Read())
+                    snap.DailyTaskCompletions.Add(new DailyTaskCompletionRow { TaskId = r.GetInt32(0), Date = r.GetString(1) });
+            }
+
+            using (var xpCmd = _connection.CreateCommand())
+            {
+                xpCmd.CommandText = "SELECT Id, Source, Amount, TaskId, Date, CreatedAt FROM XpLog ORDER BY Id";
+                using var r = xpCmd.ExecuteReader();
+                while (r.Read())
+                {
+                    snap.XpLogs.Add(new XpLogEntry
+                    {
+                        Id = r.GetInt32(0),
+                        Source = r.GetString(1),
+                        Amount = r.GetInt32(2),
+                        TaskId = r.IsDBNull(3) ? null : r.GetInt32(3),
+                        Date = r.GetString(4),
+                        CreatedAt = ReadDateTime(r, "CreatedAt") ?? DateTime.UtcNow
+                    });
+                }
+            }
+
+            using (var pomoCmd = _connection.CreateCommand())
+            {
+                pomoCmd.CommandText = "SELECT Id, TaskId, StartTime, EndTime, DurationMinutes, Completed, Date FROM PomodoroSession ORDER BY Id";
+                using var r = pomoCmd.ExecuteReader();
+                while (r.Read())
+                {
+                    snap.PomodoroSessions.Add(new PomodoroSessionEntry
+                    {
+                        Id = r.GetInt32(0),
+                        TaskId = r.IsDBNull(1) ? null : r.GetInt32(1),
+                        StartTime = ReadDateTime(r, "StartTime") ?? DateTime.UtcNow,
+                        EndTime = ReadDateTime(r, "EndTime"),
+                        DurationMinutes = r.GetInt32(4),
+                        Completed = r.GetInt32(5) == 1,
+                        Date = r.GetString(6)
+                    });
+                }
+            }
+
+            using (var chCmd = _connection.CreateCommand())
+            {
+                chCmd.CommandText = "SELECT Date, ChallengeId, Progress, Target, Completed FROM DailyChallenge ORDER BY Date, ChallengeId";
+                using var r = chCmd.ExecuteReader();
+                while (r.Read())
+                {
+                    snap.DailyChallenges.Add(new DailyChallenge
+                    {
+                        Date = r.GetString(0),
+                        Type = r.GetString(1),
+                        Progress = r.GetInt32(2),
+                        Target = r.GetInt32(3),
+                        Completed = r.GetInt32(4) == 1
+                    });
+                }
+            }
+
+            using (var typeCmd = _connection.CreateCommand())
+            {
+                typeCmd.CommandText = "SELECT Date, KeyStrokes, WordChars, UpdatedAt FROM DailyTypingStat ORDER BY Date";
+                using var r = typeCmd.ExecuteReader();
+                while (r.Read())
+                {
+                    snap.DailyTypingStats.Add(new DailyTypingStatRow
+                    {
+                        Date = r.GetString(0),
+                        KeyStrokes = r.GetInt32(1),
+                        WordChars = r.GetInt32(2),
+                        UpdatedAtUtc = ReadDateTime(r, "UpdatedAt") ?? DateTime.UtcNow
+                    });
+                }
+            }
+
+            return snap;
+        });
+
+        /// <summary>D3/T5：整体替换成长相关表（全量备份恢复用）。</summary>
+        public void ReplaceGrowthSnapshot(GrowthSnapshot snap) => ExecuteLocked(() =>
+        {
+            using var transaction = _connection!.BeginTransaction();
+            try
+            {
+                foreach (var table in new[] { "DailyTaskCompletion", "XpLog", "PomodoroSession", "DailyChallenge", "DailyTypingStat", "UserProfile" })
+                {
+                    using var del = _connection.CreateCommand();
+                    del.Transaction = transaction;
+                    del.CommandText = $"DELETE FROM {table}";
+                    del.ExecuteNonQuery();
+                }
+
+                if (snap.UserProfile != null)
+                {
+                    using var p = _connection.CreateCommand();
+                    p.Transaction = transaction;
+                    p.CommandText = @"
+                        INSERT INTO UserProfile (Id, Level, Xp, TotalXp, ComboDays, BestComboDays, Title, LastXpDate, LastComboSettledDate)
+                        VALUES (@id, @level, @xp, @totalXp, @comboDays, @bestComboDays, @title, @lastXpDate, @lastComboSettledDate)";
+                    p.Parameters.AddWithValue("@id", 1);
+                    p.Parameters.AddWithValue("@level", snap.UserProfile.Level);
+                    p.Parameters.AddWithValue("@xp", snap.UserProfile.Xp);
+                    p.Parameters.AddWithValue("@totalXp", snap.UserProfile.TotalXp);
+                    p.Parameters.AddWithValue("@comboDays", snap.UserProfile.ComboDays);
+                    p.Parameters.AddWithValue("@bestComboDays", snap.UserProfile.BestComboDays);
+                    p.Parameters.AddWithValue("@title", snap.UserProfile.Title);
+                    p.Parameters.AddWithValue("@lastXpDate", (object?)snap.UserProfile.LastXpDate ?? DBNull.Value);
+                    p.Parameters.AddWithValue("@lastComboSettledDate", (object?)snap.UserProfile.LastComboSettledDate ?? DBNull.Value);
+                    p.ExecuteNonQuery();
+                }
+
+                foreach (var row in snap.DailyTaskCompletions)
+                {
+                    using var c = _connection.CreateCommand();
+                    c.Transaction = transaction;
+                    c.CommandText = "INSERT OR IGNORE INTO DailyTaskCompletion (TaskId, Date) VALUES (@taskId, @date)";
+                    c.Parameters.AddWithValue("@taskId", row.TaskId);
+                    c.Parameters.AddWithValue("@date", row.Date);
+                    c.ExecuteNonQuery();
+                }
+
+                foreach (var row in snap.XpLogs)
+                {
+                    using var c = _connection.CreateCommand();
+                    c.Transaction = transaction;
+                    c.CommandText = @"
+                        INSERT INTO XpLog (Id, Source, Amount, TaskId, Date, CreatedAt, IsDirty)
+                        VALUES (@id, @source, @amount, @taskId, @date, @createdAt, 0)";
+                    c.Parameters.AddWithValue("@id", row.Id);
+                    c.Parameters.AddWithValue("@source", row.Source);
+                    c.Parameters.AddWithValue("@amount", row.Amount);
+                    c.Parameters.AddWithValue("@taskId", (object?)row.TaskId ?? DBNull.Value);
+                    c.Parameters.AddWithValue("@date", row.Date);
+                    c.Parameters.AddWithValue("@createdAt", row.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
+                    c.ExecuteNonQuery();
+                }
+
+                foreach (var row in snap.PomodoroSessions)
+                {
+                    using var c = _connection.CreateCommand();
+                    c.Transaction = transaction;
+                    c.CommandText = @"
+                        INSERT INTO PomodoroSession (Id, TaskId, StartTime, EndTime, DurationMinutes, Completed, Date, IsDirty)
+                        VALUES (@id, @taskId, @start, @end, @dur, @completed, @date, 0)";
+                    c.Parameters.AddWithValue("@id", row.Id);
+                    c.Parameters.AddWithValue("@taskId", (object?)row.TaskId ?? DBNull.Value);
+                    c.Parameters.AddWithValue("@start", row.StartTime.ToString("O", CultureInfo.InvariantCulture));
+                    c.Parameters.AddWithValue("@end", row.EndTime?.ToString("O", CultureInfo.InvariantCulture) ?? (object)DBNull.Value);
+                    c.Parameters.AddWithValue("@dur", row.DurationMinutes);
+                    c.Parameters.AddWithValue("@completed", row.Completed ? 1 : 0);
+                    c.Parameters.AddWithValue("@date", row.Date);
+                    c.ExecuteNonQuery();
+                }
+
+                foreach (var row in snap.DailyChallenges)
+                {
+                    using var c = _connection.CreateCommand();
+                    c.Transaction = transaction;
+                    c.CommandText = @"
+                        INSERT INTO DailyChallenge (Date, ChallengeId, Progress, Target, Completed)
+                        VALUES (@date, @id, @progress, @target, @completed)";
+                    c.Parameters.AddWithValue("@date", row.Date);
+                    c.Parameters.AddWithValue("@id", row.Type);
+                    c.Parameters.AddWithValue("@progress", row.Progress);
+                    c.Parameters.AddWithValue("@target", row.Target);
+                    c.Parameters.AddWithValue("@completed", row.Completed ? 1 : 0);
+                    c.ExecuteNonQuery();
+                }
+
+                foreach (var row in snap.DailyTypingStats)
+                {
+                    using var c = _connection.CreateCommand();
+                    c.Transaction = transaction;
+                    c.CommandText = @"
+                        INSERT INTO DailyTypingStat (Date, KeyStrokes, WordChars, UpdatedAt)
+                        VALUES (@date, @k, @w, @u)";
+                    c.Parameters.AddWithValue("@date", row.Date);
+                    c.Parameters.AddWithValue("@k", row.KeyStrokes);
+                    c.Parameters.AddWithValue("@w", row.WordChars);
+                    c.Parameters.AddWithValue("@u", row.UpdatedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+                    c.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try { transaction.Rollback(); } catch (Exception rbEx) { System.Diagnostics.Debug.WriteLine($"[DatabaseService] ReplaceGrowthSnapshot 回滚失败: {rbEx.Message}"); }
+                throw;
+            }
+        });
 
         /// <summary>
         /// 确保升级系统表具备同步所需列（XpLog.IsDirty / PomodoroSession.IsDirty）。

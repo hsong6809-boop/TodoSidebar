@@ -198,9 +198,14 @@ namespace TodoSidebar.Services
         {
             // M15 修复：专注时长用计时器推导（TotalSeconds - RemainingSeconds），
             // 暂停期间计时器已停、RemainingSeconds 不变，天然排除暂停时长；
-            // 原实现按墙钟差计算，暂停 2 小时会把 145 分钟记成专注时长
+            // 原实现按墙钟差计算，暂停 2 小时会把 145 分钟记成专注时长。
+            // B12：中断且不足 1 分钟记 0 分钟（不再强记 1 分钟）；完成会话仍至少 1 分钟。
             var focusedSeconds = Math.Max(0, TotalSeconds - RemainingSeconds);
-            var minutes = Math.Max(1, (int)Math.Round(focusedSeconds / 60.0));
+            int minutes;
+            if (complete)
+                minutes = Math.Max(1, (int)Math.Round(focusedSeconds / 60.0));
+            else
+                minutes = focusedSeconds < 60 ? 0 : (int)Math.Round(focusedSeconds / 60.0);
             var date = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); // L7 修复：InvariantCulture 防区域差异
 
             _db.AddPomodoroSession(BoundTaskId, _sessionStart, DateTime.Now, minutes, complete, date);

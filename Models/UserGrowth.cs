@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace TodoSidebar.Models
 {
@@ -132,5 +133,34 @@ namespace TodoSidebar.Models
         public int DurationMinutes { get; set; }
         public bool Completed { get; set; }
         public string Date { get; set; } = "";
+    }
+
+    /// <summary>每日任务完成记录行（备份导出用）</summary>
+    public class DailyTaskCompletionRow
+    {
+        public int TaskId { get; set; }
+        public string Date { get; set; } = "";
+    }
+
+    /// <summary>每日打字统计行（备份导出用）</summary>
+    public class DailyTypingStatRow
+    {
+        public string Date { get; set; } = "";
+        public int KeyStrokes { get; set; }
+        public int WordChars { get; set; }
+        public DateTime UpdatedAtUtc { get; set; }
+    }
+
+    /// <summary>
+    /// D3/T5：成长相关表快照（备份 JSON 必须包含，避免恢复时丢失 XP/番茄/完成等）。
+    /// </summary>
+    public class GrowthSnapshot
+    {
+        public UserGrowth? UserProfile { get; set; }
+        public List<DailyTaskCompletionRow> DailyTaskCompletions { get; set; } = new();
+        public List<XpLogEntry> XpLogs { get; set; } = new();
+        public List<PomodoroSessionEntry> PomodoroSessions { get; set; } = new();
+        public List<DailyChallenge> DailyChallenges { get; set; } = new();
+        public List<DailyTypingStatRow> DailyTypingStats { get; set; } = new();
     }
 }

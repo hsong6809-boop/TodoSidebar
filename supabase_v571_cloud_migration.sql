@@ -18,6 +18,9 @@ alter table public.tasks drop constraint if exists tasks_user_id_not_null;
 alter table public.tasks add constraint tasks_user_id_not_null check (user_id is not null) not valid;
 
 -- 3. updated_at 触发器体检（同 v5.6 迁移；确保客户端真实编辑时间不被改写）
+-- D8/T6：必须 DROP 旧触发器——只替换函数时，历史 update_tasks_updated_at
+-- 仍会在每次 UPDATE 强制 now()，击穿客户端 LWW 的编辑时间。
+drop trigger if exists update_tasks_updated_at on public.tasks;
 create or replace function update_updated_at_column()
 returns trigger as $$
 begin

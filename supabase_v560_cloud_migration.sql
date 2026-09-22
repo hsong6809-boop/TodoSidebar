@@ -31,6 +31,8 @@ where tgrelid = 'public.tasks'::regclass and not tgisinternal;
 -- 使"客户端显式携带了更新的 updated_at"时保留客户端值（仅未携带/相同时才用 now 兜底）：
 -- R71 修复（审查 M3）：下方语句已默认启用（原为注释，导致多数部署漏执行、LWW 持续被击穿）。
 -- 若你的库本来就没有该触发器，本段为幂等 no-op，可安全执行。
+-- D8/T6：必须 DROP 旧触发器——只替换函数时历史 trigger 仍强制 now()，击穿 LWW。
+drop trigger if exists update_tasks_updated_at on public.tasks;
 create or replace function update_updated_at_column()
 returns trigger as $$
 begin

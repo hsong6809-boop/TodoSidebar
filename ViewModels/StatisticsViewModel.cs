@@ -366,21 +366,28 @@ namespace TodoSidebar.ViewModels
 
             // 今日统计（结合 DailyTaskCompletion 表）
             // 截止任务只统计今天完成的，避免把全部历史截止任务算进今天
-            var todayCompletedDeadlines = _dbService.GetCompletedTasks(today, today.AddDays(1))
-                .Count(t => t.Type == TaskType.Deadline);
-            // 分母：每日任务总数 + 尚未完成且今日到期的截止任务数
-            // R70 修复（审查 H5）：与侧边栏 MainViewModel.RefreshTodayProgress 口径对齐——
-            // 只计「今日到期」的未完成截止任务（== today），而非 >= today（含未来任务）。
-            // 原实现有下周到期的未完成任务时，统计页完成率与侧边栏数字矛盾。
+            var completedDeadlineToday = _dbService.GetCompletedTasks(today, today.AddDays(1))
+                .Where(t => t.Type == TaskType.Deadline)
+                .ToList();
+            var todayCompletedDeadlines = completedDeadlineToday.Count;
+            // B3：分母含「今日已完成的截止任务」；与侧边栏共用 TodayProgressCalculator。
+            // dueToday = 今日到期截止任务总数（未完成 + 今日已完成的到期项）
             var pendingValidDeadlines = allTasks.Count(t => t.Type == TaskType.Deadline
                 && t.Deadline.HasValue && t.Deadline.Value.Date == today && !t.IsCompleted);
-            TodayTotal = dailyCount + pendingValidDeadlines;
+            var completedDueTodayDeadlines = completedDeadlineToday.Count(t =>
+                t.Deadline.HasValue && t.Deadline.Value.Date == today);
             // R39（审查 M3/M12）：与写入端(TaskService L7)对齐 InvariantCulture
             var todayStr = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var todayCompletedDaily = dailyCompletionRecords.TryGetValue(todayStr, out var todaySet)
                 ? todaySet.Count : 0;
-            TodayCompleted = todayCompletedDaily + todayCompletedDeadlines;
-            TodayCompletionRate = TodayTotal > 0 ? (double)TodayCompleted / TodayTotal : 0;
+
+            var progress = TodayProgressCalculator.Calculate(
+                completedToday: todayCompletedDaily + todayCompletedDeadlines,
+                dailyTaskCount: dailyCount,
+                dueTodayCount: pendingValidDeadlines + completedDueTodayDeadlines);
+            TodayTotal = progress.Planned;
+            TodayCompleted = progress.Done;
+            TodayCompletionRate = progress.Rate;
 
             // 连续完成天数（M24：独立查询窗口 + 与连击结算口径对齐）
             StreakDays = CalculateStreakDays();

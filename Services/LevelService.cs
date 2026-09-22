@@ -109,12 +109,16 @@ namespace TodoSidebar.Services
         /// <param name="source">来源标识（task_complete / pomodoro / combo / challenge ...）</param>
         /// <param name="amount">经验值（≤0 直接忽略）</param>
         /// <param name="taskId">关联任务（可空，用于防重与追溯）</param>
-        public void Reward(string source, int amount, int? taskId = null)
+        /// <param name="dayDedup">
+        /// true（默认）：同源同任务同日只发一次。
+        /// B6：task_complete 改由调用方做实例级防重（取消完成回退后允许同日再发），传 false。
+        /// </param>
+        public void Reward(string source, int amount, int? taskId = null, bool dayDedup = true)
         {
             if (amount <= 0) return;
 
             var date = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); // L7 修复
-            var dedup = !RepeatableSources.Contains(source);
+            var dedup = dayDedup && !RepeatableSources.Contains(source);
 
             // M14 修复：查重、档案更新、流水写入在单锁单事务内原子完成，
             // 消除并发绕过与"档案已写/流水未写"的崩溃窗口
@@ -138,6 +142,34 @@ namespace TodoSidebar.Services
             if (leveledUp)
                 LevelUp?.Invoke(this, new LevelUpEventArgs(newLevel, newTitle));
             XpChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// B5/B6：回退已发经验（取消完成）。等级由 TotalXp 重算（诚实，不锁虚高等级）。
+        /// 流水写入负向条目便于审计；XP/TotalXp 下限 0。
+        /// </summary>
+        public void Revert(string source, int amount, int? taskId = null)
+        {
+            if (amount <= 0) return;
+            try
+            {
+                var date = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                var growth = GetGrowth();
+                growth.Xp = Math.Max(0, growth.Xp - amount);
+                growth.TotalXp = Math.Max(0, growth.TotalXp - amount);
+                // 由累计总量重推等级，避免回退后等级虚高
+                var (level, xp) = DeriveFromTotal(growth.TotalXp);
+                growth.Level = level;
+                growth.Xp = xp;
+                growth.Title = TitleForLevel(level);
+                _db.SaveUserGrowth(growth);
+                _db.AddXpLog(source + "_revert", -amount, taskId, date);
+                XpChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LevelService.Revert failed: {ex.Message}");
+            }
         }
 
         /// <summary>

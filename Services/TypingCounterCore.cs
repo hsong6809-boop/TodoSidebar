@@ -44,11 +44,18 @@ namespace TodoSidebar.Services
                 return;
             }
 
+            // B11：Direct↔Pinyin 双向切换都要先结算旧段，避免混合段被错误口径估字
             if (_kind == SegmentKind.Pinyin && !ime)
             {
                 // 组词途中输入法被关闭/上屏了部分文本：先按拼音结算旧段，再开直输新段
                 Flush();
                 _kind = SegmentKind.Direct;
+            }
+            else if (_kind == SegmentKind.Direct && ime)
+            {
+                // 直输中途切入输入法：旧英文段按词结算，再开拼音新段
+                Flush();
+                _kind = SegmentKind.Pinyin;
             }
 
             _buffer.Add(char.ToLowerInvariant(ch));
@@ -82,13 +89,19 @@ namespace TodoSidebar.Services
         }
 
         /// <summary>
-        /// R61 实时显示：只读窥视当前累计（不重置计数器）。
-        /// 尾段同样先行结算进总数，保证正在输入的词立即被统计。
+        /// R61 实时显示：只读窥视当前累计（不重置计数器、不结算段缓冲）。
+        /// B1 修复：原实现调用 Flush()，轮询 Peek 会把尾段反复计入 WordChars，
+        /// 造成实时显示系统性虚高。现把尾段按当前口径临时估算后累加返回，状态不变。
         /// </summary>
         public (long keys, long words) Peek()
         {
-            Flush();
-            return (KeyStrokes, WordChars);
+            long pendingWords = 0;
+            if (_buffer.Count > 0)
+            {
+                var s = string.Concat(_buffer);
+                pendingWords = _kind == SegmentKind.Pinyin ? SplitPinyin(s) : 1;
+            }
+            return (KeyStrokes, WordChars + pendingWords);
         }
 
         private void Flush()

@@ -70,6 +70,60 @@ namespace TodoSidebar.Models
         }
 
         /// <summary>
+        /// B4：循环派生幂等判定（纯函数）。
+        /// 存在任意存活（未删除）同系列实例落在 <paramref name="nextDeadline"/> 当天 → 不重复派生。
+        /// </summary>
+        /// <param name="seriesTitle">系列标题（与父实例 Title 相同）</param>
+        /// <param name="rule">重复规则</param>
+        /// <param name="nextDeadline">拟派生的下一期截止日</param>
+        /// <param name="existing">候选实例（同 Title+Recurrence 的行；传入前可先过滤）</param>
+        public static bool HasLiveSpawnFor(
+            string seriesTitle,
+            string? rule,
+            DateTime nextDeadline,
+            System.Collections.Generic.IEnumerable<(string Title, string? Recurrence, DateTime? Deadline, bool IsDeleted)> existing)
+        {
+            if (existing == null) return false;
+            var nextDate = nextDeadline.Date;
+            foreach (var t in existing)
+            {
+                if (t.IsDeleted) continue;
+                if (!string.Equals(t.Title, seriesTitle, StringComparison.Ordinal)) continue;
+                if (Normalize(t.Recurrence) != Normalize(rule)) continue;
+                if (t.Deadline.HasValue && t.Deadline.Value.Date == nextDate)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// B4：取消完成时应收回的派生实例 Id（仍存活且未完成的下一期）。
+        /// 用完成实例的 Deadline 重算 next 作为锚点；存在多个匹配时全部收回（幽灵清理）。
+        /// </summary>
+        public static System.Collections.Generic.List<int> FindSpawnsToRetract(
+            string seriesTitle,
+            string? rule,
+            DateTime completedDeadline,
+            System.Collections.Generic.IEnumerable<(int Id, string Title, string? Recurrence, DateTime? Deadline, bool IsDeleted, bool IsCompleted)> candidates,
+            DateTime? today = null)
+        {
+            var result = new System.Collections.Generic.List<int>();
+            var next = NextDeadline(rule, completedDeadline, today);
+            if (next == null) return result;
+            var nextDate = next.Value.Date;
+            if (candidates == null) return result;
+            foreach (var t in candidates)
+            {
+                if (t.IsDeleted || t.IsCompleted) continue;
+                if (!string.Equals(t.Title, seriesTitle, StringComparison.Ordinal)) continue;
+                if (Normalize(t.Recurrence) != Normalize(rule)) continue;
+                if (t.Deadline.HasValue && t.Deadline.Value.Date == nextDate)
+                    result.Add(t.Id);
+            }
+            return result;
+        }
+
+        /// <summary>
         /// 计算下一期截止日期。
         /// baseDate 为刚完成实例的截止日期（内部自动取 max(baseDate, today) 防连锁过期）。
         /// 无下一期（规则为空/非法）返回 null。

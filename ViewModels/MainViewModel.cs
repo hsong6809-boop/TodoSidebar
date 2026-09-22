@@ -80,26 +80,26 @@ namespace TodoSidebar.ViewModels
 
         /// <summary>集合变化时重算今日进度。
         /// R63 用户定义口径：「今日完成 N / M」中
-        ///   M = 当日计划量（未完成每日任务 + 已完成的每日任务 + 计划内完成的截止任务），
+        ///   M = 当日计划量（全部每日任务 + 今日到期截止任务，含已完成的到期任务），
         ///   即"今天本来该做的事"，不随额外完成而增长；
         ///   N = 今日全部完成数（含补做逾期、提前完成的截止任务）。
         /// R64 彩蛋：N 超出 M（✨ 超额完成），进度环转金色。
-        /// 实现要点：extraCount 是"不算进今日计划的完成"（截止日 ≠ 今天），
-        /// 必须从分母中扣除，否则补做会把分母同步抬高、永远看不到溢出。</summary>
+        /// B3：口径抽到 TodayProgressCalculator，与 StatisticsViewModel 共用；比率 clamp。</summary>
         private void RefreshTodayProgress()
         {
             var done = TodayCompletedTasks.Count;
             var today = DateTime.Today;
-            // 截止日不是今天的完成项 = 补做逾期 或 提前完成：只涨分子不占分母
-            var extraDone = TodayCompletedTasks.Count(t =>
-                t.Type == TaskType.Deadline && t.Deadline.HasValue && t.Deadline.Value.Date != today);
+            var completedDailies = TodayCompletedTasks.Count(t => t.Type == TaskType.Daily);
+            var completedDueToday = TodayCompletedTasks.Count(t =>
+                t.Type == TaskType.Deadline && t.Deadline.HasValue && t.Deadline.Value.Date == today);
+            // DailyTasks 已过滤「今日已完成」的每日任务，补回才是当日全部每日任务
+            var allDaily = DailyTasks.Count + completedDailies;
+            var dueTodayTotal = _dueTodayRemainingCount + completedDueToday;
 
-            var plannedTotal = DailyTasks.Count + _dueTodayRemainingCount + (done - extraDone);
-            TodayProgressRate = plannedTotal == 0 ? 0 : Math.Min((double)done / plannedTotal, 1);
-            IsOverachieving = done > plannedTotal;
-            TodayDoneText = IsOverachieving
-                ? $"{done} / {plannedTotal} ✨"
-                : $"{done} / {plannedTotal}";
+            var r = TodayProgressCalculator.Calculate(done, allDaily, dueTodayTotal);
+            TodayProgressRate = r.Rate;
+            IsOverachieving = r.IsOverachieving;
+            TodayDoneText = r.DoneText;
         }
 
         /// <summary>今日完成数已溢出当日计划量（补做逾期/提前完成），供进度环转金色彩蛋。</summary>
@@ -332,6 +332,9 @@ namespace TodoSidebar.ViewModels
             RestoreFromTrashCommand.NotifyCanExecuteChanged();
             PurgeFromTrashCommand.NotifyCanExecuteChanged();
             RestoreHistoryTaskCommand.NotifyCanExecuteChanged();
+            // B13
+            UndoDeleteCommand.NotifyCanExecuteChanged();
+            PurgeAllTrashCommand.NotifyCanExecuteChanged();
         }
 
         private void LoadDailyTasks()
@@ -491,6 +494,15 @@ namespace TodoSidebar.ViewModels
             if (parsed.Tags.Count > 0) PendingTags = parsed.Tags;
             var priority = parsed.Priority ?? NewTaskPriority;
 
+            // B8：每日任务不支持截止时间——解析出 DueDate 时明确提示，不再静默丢弃
+            if (parsed.DueDate.HasValue)
+            {
+                _messageService.ShowMessage(
+                    $"识别到时间「{ComposerDateChip(parsed.DueDate.Value)}」，但每日任务不含截止时间，日期未保存。\n" +
+                    "如需截止提醒，请改用「截止任务」。",
+                    "日期未写入");
+            }
+
             var task = _taskService.AddTask(NewTaskTitle, TaskType.Daily, null, priority);
             ApplyPendingTags(task);
             TrackNlpUsage(parsed, raw);
@@ -573,6 +585,7 @@ namespace TodoSidebar.ViewModels
         {
             _lastDeletedTaskId = taskId;
             UndoMessage = $"已删除「{title}」";
+            UndoDeleteCommand.NotifyCanExecuteChanged();
             _undoTimer?.Stop();
             _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             _undoTimer.Tick += (_, _) =>
@@ -583,7 +596,7 @@ namespace TodoSidebar.ViewModels
             _undoTimer.Start();
         }
 
-        [RelayCommand]
+        [RelayCommand(CanExecute = nameof(CanUndoDelete))]
         private void UndoDelete()
         {
             _undoTimer?.Stop();
@@ -594,8 +607,12 @@ namespace TodoSidebar.ViewModels
             }
             _lastDeletedTaskId = 0;
             UndoMessage = null;
+            UndoDeleteCommand.NotifyCanExecuteChanged();
             LoadData();
         }
+
+        // B13：无可撤销删除时禁用
+        private bool CanUndoDelete() => _lastDeletedTaskId > 0;
 
         /// <summary>v5.5 审查修复：撤销/恢复删除时回退"断舍离"计数（clamp ≥0），
         /// 防止反复删除-撤销刷成就。</summary>
@@ -620,6 +637,8 @@ namespace TodoSidebar.ViewModels
             var items = _taskService.GetDeletedTasks();
             DeletedTasks.Clear();
             foreach (var t in items) DeletedTasks.Add(t);
+            // B13：回收站为空时禁用「全部彻底删除」
+            PurgeAllTrashCommand.NotifyCanExecuteChanged();
         }
 
         [RelayCommand(CanExecute = nameof(CanActOnTask))]
@@ -647,7 +666,10 @@ namespace TodoSidebar.ViewModels
             LoadDeletedTasks();
         }
 
-        [RelayCommand]
+        // B13：回收站为空时禁用
+        private bool CanPurgeAllTrash() => DeletedTasks.Count > 0;
+
+        [RelayCommand(CanExecute = nameof(CanPurgeAllTrash))]
         private void PurgeAllTrash()
         {
             int failed = 0;

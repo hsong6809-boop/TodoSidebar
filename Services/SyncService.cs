@@ -898,7 +898,11 @@ namespace TodoSidebar.Services
                 && NullableDateEquals(local.CreatedAt, remote.CreatedAt)
                 // v5.4 审查修复：远端仅改重复规则时必须回写——
                 // 否则 A 改 daily→weekly:1 后 B 因其余字段全同被误判"内容一致"而永远收不到
-                && RecurrenceRule.Normalize(local.Recurrence) == RecurrenceRule.Normalize(remote.Recurrence);
+                && RecurrenceRule.Normalize(local.Recurrence) == RecurrenceRule.Normalize(remote.Recurrence)
+                // S7/T3：耗时与软删时间戳也是内容——遗漏会让远端仅改预估/实际耗时被回声跳过
+                && local.EstimatedMinutes == remote.EstimatedMinutes
+                && local.ActualMinutes == remote.ActualMinutes
+                && NullableDateEquals(local.DeletedAt, ParseRemoteDeletedAt(remote.DeletedAt));
         }
 
         /// <summary>M39：时间比较前归一化到 UTC（本地值可能是 Unspecified/Local 种类）。</summary>
