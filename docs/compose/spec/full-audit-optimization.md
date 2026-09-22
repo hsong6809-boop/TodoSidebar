@@ -3,7 +3,7 @@ feature: full-audit-optimization
 status: delivered
 updated: 2026-09-22
 branch: optimize/full-audit
-commits: 963a4f9..<head> # filled at delivery
+commits: 963a4f9..205e54f
 ---
 
 # 全维度审查与优化落地
