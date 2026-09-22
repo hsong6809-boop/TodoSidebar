@@ -31,6 +31,15 @@ namespace TodoSidebar
             _initialized = false; // L21 修复：初始化期间不记录变更
 
             InitializeComponent();
+            // U10/T9：Esc 关闭（IsCancel 已绑取消按钮）
+            PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Escape)
+                {
+                    DialogResult = false;
+                    Close();
+                }
+            };
             DataContext = this;
 
             // 初始化编辑区域

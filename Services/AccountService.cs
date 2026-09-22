@@ -25,10 +25,23 @@ namespace TodoSidebar.Services
         private const string KeyNick = "AcctNick";         // 账号昵称（云端权威）；旧 "Nickname" 键仅作迁移源
         private const string KeyKind = "AcctAvatarKind";
 
-        /// <summary>自定义头像本地缓存文件。</summary>
-        private static readonly string AvatarFilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TodoSidebar", "avatar.png");
+        /// <summary>头像缓存目录。</summary>
+        private static string AvatarDir =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TodoSidebar");
+
+        /// <summary>旧版全局头像文件（迁移/清理用）。</summary>
+        private static string LegacyAvatarPath => Path.Combine(AvatarDir, "avatar.png");
+
+        /// <summary>S4/T4：头像缓存按 userId 隔离，避免切号串图。</summary>
+        internal static string GetAvatarPathForUser(string userId)
+        {
+            var safe = string.Concat((userId ?? "").Where(char.IsLetterOrDigit));
+            if (safe.Length == 0) safe = "anon";
+            return Path.Combine(AvatarDir, $"avatar-{safe}.png");
+        }
+
+        private string CurrentAvatarPath =>
+            GetAvatarPathForUser(_ownerId ?? AuthService.Instance.CurrentUser?.Id ?? "anon");
 
         /// <summary>昵称最大长度（字符），超出截断。</summary>
         internal const int NicknameMaxLength = 24;
@@ -237,12 +250,13 @@ namespace TodoSidebar.Services
             var db = DatabaseService.Instance;
             if (!string.Equals(db.GetSetting(KeyOwner), userId, StringComparison.Ordinal))
             {
-                // 归属变更（切换账号 / 首次）：旧缓存自失效，等云端供给
+                // 归属变更（切换账号 / 首次）：旧缓存自失效，并删除他人头像文件
                 _ownerId = userId;
                 Uid = string.Empty;
                 Nickname = string.Empty;
                 AvatarKind = "d1";
                 _customAvatarBase64 = null;
+                CleanupForeignAvatars(userId);
                 return;
             }
 
@@ -251,7 +265,38 @@ namespace TodoSidebar.Services
             Nickname = CleanNickname(db.GetSetting(KeyNick));
             AvatarKind = NormalizeKind(db.GetSetting(KeyKind));
             if (AvatarKind == "custom")
-                _customAvatarBase64 = TryReadAvatarFile(out var b64) ? b64 : null;
+            {
+                // S17/T4：读缓存复用校验，拒绝被篡改/超限文件
+                if (TryReadAvatarFile(out var b64) && IsValidRemoteAvatar(b64))
+                    _customAvatarBase64 = b64;
+                else
+                {
+                    _customAvatarBase64 = null;
+                    AvatarKind = "d1";
+                }
+            }
+        }
+
+        /// <summary>S4/T4：删除非当前用户的头像缓存与旧版全局文件。</summary>
+        private static void CleanupForeignAvatars(string currentUserId)
+        {
+            try
+            {
+                if (!Directory.Exists(AvatarDir)) return;
+                var keep = Path.GetFileName(GetAvatarPathForUser(currentUserId));
+                foreach (var file in Directory.GetFiles(AvatarDir, "avatar*.png"))
+                {
+                    if (!string.Equals(Path.GetFileName(file), keep, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { File.Delete(file); }
+                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"AccountService: 清理头像 {file}: {ex.Message}"); }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"AccountService: CleanupForeignAvatars: {ex.Message}");
+            }
         }
 
         // ==================== 修改操作 ====================
@@ -297,7 +342,13 @@ namespace TodoSidebar.Services
         }
 
         public string? GetCustomAvatarPath()
-            => AvatarKind == "custom" && File.Exists(AvatarFilePath) ? AvatarFilePath : null;
+        {
+            // S4/T4：custom 且无有效数据时不得回落到他人/残留文件
+            if (AvatarKind != "custom") return null;
+            if (string.IsNullOrEmpty(_customAvatarBase64)) return null;
+            var path = CurrentAvatarPath;
+            return File.Exists(path) ? path : null;
+        }
 
         // ==================== 上传 ====================
 
@@ -345,24 +396,36 @@ namespace TodoSidebar.Services
             db.SetSetting(KeyKind, AvatarKind);
         }
 
-        private static bool TryReadAvatarFile(out string base64)
+        private bool TryReadAvatarFile(out string base64)
         {
             base64 = string.Empty;
             try
             {
-                if (!File.Exists(AvatarFilePath)) return false;
-                base64 = Convert.ToBase64String(File.ReadAllBytes(AvatarFilePath));
+                var path = CurrentAvatarPath;
+                if (!File.Exists(path))
+                {
+                    // 兼容旧版全局路径：读到则迁到当前用户文件
+                    if (File.Exists(LegacyAvatarPath))
+                    {
+                        File.Copy(LegacyAvatarPath, path, overwrite: true);
+                    }
+                    else return false;
+                }
+                base64 = Convert.ToBase64String(File.ReadAllBytes(path));
                 return true;
             }
             catch { return false; }
         }
 
-        private static void WriteAvatarFile(string base64)
+        private void WriteAvatarFile(string base64)
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(AvatarFilePath)!);
-                File.WriteAllBytes(AvatarFilePath, Convert.FromBase64String(base64));
+                var path = CurrentAvatarPath;
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllBytes(path, Convert.FromBase64String(base64));
+                // 写完即删旧版全局文件，避免切号残留
+                try { if (File.Exists(LegacyAvatarPath)) File.Delete(LegacyAvatarPath); } catch { }
             }
             catch (Exception ex)
             {

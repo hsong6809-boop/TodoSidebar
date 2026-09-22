@@ -35,6 +35,10 @@ namespace TodoSidebar.Services
         // 设置
         string? GetSetting(string key);
         void SetSetting(string key, string value);
+        List<TaskItem> GetTodayCompletedDailyTasks();
+        void MarkDailyTaskCompleted(int taskId, string date);
+        void UnmarkDailyTaskCompleted(int taskId, string date);
+        int IncrementSettingCounter(string key);
 
         // 批量操作
         void UpdateTaskOrder(List<(int id, int order)> orders);

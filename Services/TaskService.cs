@@ -8,10 +8,10 @@ namespace TodoSidebar.Services
 {
     public class TaskService : ITaskService
     {
-        private readonly DatabaseService _db;
+        private readonly IDatabaseService _db;
         private readonly IMessageService _messageService;
 
-        public TaskService(DatabaseService db, IMessageService? messageService = null)
+        public TaskService(IDatabaseService db, IMessageService? messageService = null)
         {
             _db = db;
             _messageService = messageService ?? new NullMessageService();

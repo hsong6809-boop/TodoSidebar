@@ -3,25 +3,26 @@ feature: full-audit-optimization
 status: delivered
 updated: 2026-09-22
 branch: optimize/full-audit
-commits: 963a4f9..0db5488
+commits: 963a4f9..<head> # filled at delivery
 ---
 
 # 全维度审查与优化落地
 
 ## Report
 
-**What was built** — 对 v5.7.0 做五路全维度审查，汇总 90 个可优化点（见 [S1]）。按优先级落地：P0 凭据/导入重复/Upsert 串行/备份丢档/分页漏同步，P1 写路径统一、同步 LWW/游标/预检/分片、成长备份、打字口径、今日进度共式、循环派生幂等、UI hook/主题/更新检查等。独立复审发现 2 个 critical（keyset 只拉边界导致漏更晚行；预检把「远端无此行」当成失败永久挡首传），已修复并回归。
+**What was built** — 对 v5.7.0 做五路全维度审查，汇总 90 个可优化点（见 [S1]）。按优先级落地 P0/P1 及大部分 P2：凭据与发布卫生、任务写路径统一、同步 keyset/游标/LWW/预检/分片、成长备份、打字口径、今日进度共式、循环派生幂等、UI hook/主题/更新检查/详情保存、头像按用户隔离、NetworkMonitor 探测、TaskService→IDatabaseService、README/start.bat 卫生。独立复审 2 个 critical（keyset 漏更晚行、预检永久挡首传）已修复。
 
-**Verification** — `dotnet build` Debug 0 error；`dotnet test` **209/209** 通过（基线 181，新增 28）。命令：`dotnet msbuild TodoSidebar.sln /t:Build /p:Configuration=Debug /m:1` + `dotnet test TodoSidebar.sln -c Debug --no-build`。
+**Verification** — `dotnet build` Debug 0 error；`dotnet test` **212/212** 通过（基线 181）。
 
 **Journey log**
-1. 本机 NuGet 因缺失 `ProgramFiles(x86)` 等标准环境变量在 `XPlatMachineWideSetting` 抛 `path1 null`；补环境变量 + `MSBUILDDISABLENODEREUSE=1` 后 restore 可用。
-2. 四路并行实现代理被进程重启打断，工作区留有未提交半成品；先编译/测试收口再补齐，避免直接覆盖。
-3. PostgREST C# 客户端 `Or(string)` 不可用；keyset 用「`(updated_at>A)` 查询 ∪ `(updated_at=A AND id>B)` 边界查询」合并实现，不要只拉边界。
-4. 上传预检必须区分「In 查询成功但远端无行」（可首传）与「分片查询失败」（本轮跳过）；Insert 已预绑 SyncId，按 map 缺失跳过会永久挡新任务。
-5. NLP 中文数字 `十一` 不可被 `[一..十]` 子串咬成 `一`；两位整体优先。纯小时数字分支保留强制「后」，避免「需要3小时」误解析。
+1. 本机 NuGet 因缺失 `ProgramFiles(x86)` 等环境变量在 `XPlatMachineWideSetting` 抛 `path1 null`；补环境变量 + `MSBUILDDISABLENODEREUSE=1` 后 restore 可用。
+2. 四路并行实现代理被进程重启打断；先编译/测试收口半成品再补齐，避免直接覆盖。
+3. PostgREST `Or(string)` 不可用；keyset 用「`(updated_at>A)` ∪ `(updated_at=A AND id>B)`」两路合并，不要只拉边界。
+4. 预检须区分「In 成功但远端无行」（可首传）与「分片失败」（本轮跳过）；Insert 已预绑 SyncId。
+5. NLP `十一` 不可被 `[一..十]` 咬成 `一`；纯小时数字分支强制「后」。
+6. UseWindowsForms 不能删：`MainWindow` 用了 `System.Windows.Forms.Screen`。
 
-**遗留（未勾选任务）** — T4 头像按用户隔离（AccountService 仍全局 `avatar.png`）；T10 NetworkMonitor 探测/avatar_data CHECK/Dispose 确认/账号 IO 取消；T9 残留（SoundService 空 catch、Esc/IsCancel、U5–U15）；T12 完整数据层回归网；T13 README/UseWindowsForms/空 catch/工程卫生；T14 其余 P2/P3；T15 TaskService→IDatabaseService 与 DI 去 Singleton。
+**遗留** — T12 完整数据层回归网仍偏薄；T14 其余 P2/P3（Dispatcher.BeginInvoke 全量、虚拟化、无障碍、依赖升级、安装器 GUID 等）；T15 完整 DI 去 Singleton / 双 Window 合并。
 
 ## [S1] Problem
 
@@ -206,15 +207,15 @@ commits: 963a4f9..0db5488
 - [x] T1: 凭据与发布卫生 — acceptance: `.gitignore` 含 `bin/publish_sc/`；安装脚本不打包真实 supabase.json；登录不再写入 `SavedPassword` 且升级清除旧键；密码显示框关闭时清空 (covers: A1,S6,S5,U16,S19)
 - [x] T2: 任务写路径统一与导入/更新正确性 — acceptance: 共用列绑定；Insert 含 CompletedAt；无 SyncId 导入不重复；Upsert UPDATE 按 Id；MarkTaskSynced 精确守卫 (covers: D1,D2,D5,D6,D11; depends: T1)
 - [x] T3: 同步 keyset/游标/LWW/内容比较 — acceptance: 真 keyset 条件；失败行游标下界；LWW/比较 ToUtc；TaskContentEquals 含耗时与 DeletedAt；Bind 失败跳过；预检不全不传；Upsert 分片；Delay 可取消；游标解析 Invariant (covers: S1,S2,S3,S7,S8,S9,S11,S12,S16; depends: T2)
-- [ ] T4: 头像与账号隔离 — acceptance: 头像按 userId；切号清理；custom 无数据返回 null；读缓存校验；EnsureUserScope 清 LastFullReconcile/Acct/头像 (covers: S4,S13,S17; depends: T1)
+- [x] T4: 头像与账号隔离 — acceptance: 头像按 userId；切号清理；custom 无数据返回 null；读缓存校验；EnsureUserScope 清 LastFullReconcile/Acct/头像 (covers: S4,S13,S17; depends: T1)
 - [x] T5: 备份与导出完整性 — acceptance: JSON 备份含成长表或明确任务-only 且不 purge 成长；CSV/MD 字段全；导入 Normalize Recurrence；导出 InvariantCulture (covers: D3,D4,D12; depends: T2)
 - [x] T6: SQLite 索引、清理口径与迁移 DROP TRIGGER — acceptance: 热路径索引存在；单一 purge 口径；v560/v571 脚本含 DROP TRIGGER (covers: D7,D8,D9,D10)
 - [x] T7: 打字统计口径与持久化 — acceptance: Peek 无副作用；IME 用 tid；Flush 失败不丢量；Direct↔Pinyin 双向切换 (covers: B1,B2,B7,B11; depends: T2)
 - [x] T8: 今日进度/循环派生/XP 诚实性 — acceptance: 共享 TodayProgress 且分母一致；循环幂等且取消完成收回派生；计数器/XP 不双发 (covers: B3,B4,B5,B6; depends: T2)
-- [ ] T9: UI 生命周期与异常外壳 — acceptance: hook/主题/音效/定时器对称释放；CheckUpdate 有 try/catch；Dispatcher 尽量 BeginInvoke；FindResource→TryFindResource；Esc/IsCancel (covers: U1,U2,U3,U5,U7,U8,U4,U10)
-- [ ] T10: 同步加固余量与网络探测 — acceptance: NetworkMonitor 轻量探测；avatar_data 长度 CHECK；Dispose 确认；绑定失败与账号 IO 取消 (covers: S10,S14,S15,S9; depends: T3)
+- [x] T9: UI 生命周期与异常外壳 — acceptance: hook/主题/音效/定时器对称释放；CheckUpdate 有 try/catch；Dispatcher 尽量 BeginInvoke；FindResource→TryFindResource；Esc/IsCancel (covers: U1,U2,U3,U5,U7,U8,U4,U10)
+- [x] T10: 同步加固余量与网络探测 — acceptance: NetworkMonitor 轻量探测；avatar_data 长度 CHECK；Dispose 确认；绑定失败与账号 IO 取消 (covers: S10,S14,S15,S9; depends: T3)
 - [x] T11: NLP 与每日任务入口 — acceptance: 十一/十二个半小时；每日任务不静默丢 DueDate；剩余 CanExecute 补齐 (covers: B8,B9,B13)
 - [ ] T12: 核心回归测试网 — acceptance: 覆盖 T2/T3/T7/T8 关键纯逻辑与导入/Upsert/守卫；既有 181 测试仍绿 (covers: D13,B10,S20,A6; depends: T2,T3,T7,T8)
-- [ ] T13: 工程卫生与文档对齐 — acceptance: README 版本/结构/发布路径正确；UseWindowsForms 核实后移除或注明；空 catch 至少打日志；start.bat 相对路径 (covers: A8,A9,A12,A13,A18; depends: T1)
+- [x] T13: 工程卫生与文档对齐 — acceptance: README 版本/结构/发布路径正确；UseWindowsForms 核实后移除或注明；空 catch 至少打日志；start.bat 相对路径 (covers: A8,A9,A12,A13,A18; depends: T1)
 - [ ] T14: 中低优先级批量收尾 — acceptance: D14–D20、U6/U11–U15、B12/B14–B20、A7 批量 API/SELECT 列、A14–A17 可落地项完成或明确标为遗留 (covers: P2/P3 余量; depends: T2)
-- [ ] T15: 结构债增量切片 — acceptance: TaskSql/Bind 绑定器、TaskService→IDatabaseService、禁止新双写点；完整拆分记 Journey 不在本轮 (covers: A2–A5 增量; depends: T2)
+- [x] T15: 结构债增量切片 — acceptance: TaskSql/Bind 绑定器、TaskService→IDatabaseService、禁止新双写点；完整拆分记 Journey 不在本轮 (covers: A2–A5 增量; depends: T2)

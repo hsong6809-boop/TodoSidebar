@@ -1,3 +1,11 @@
 @echo off
-rem 修复版：直接启动 Release 最新构建（含诊断功能），避免 dotnet run 的 Debug 旧版
-start "" "C:\Users\24345\Desktop\TodoSidebar\bin\Release\net8.0-windows\TodoSidebar.exe"
+rem Start latest Release build relative to this script (A13: no hardcoded user path)
+setlocal
+set "EXE=%~dp0bin\Release\net8.0-windows\TodoSidebar.exe"
+if exist "%EXE%" (
+  start "" "%EXE%"
+) else (
+  echo Release build not found: %EXE%
+  echo Run: dotnet build -c Release
+  pause
+)

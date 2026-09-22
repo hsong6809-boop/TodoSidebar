@@ -52,7 +52,7 @@ namespace TodoSidebar.Services
         {
             _targetVolume = Math.Clamp(volume, 0.05, 1.0);
             try { DatabaseService.Instance.SetSetting("NoiseVolume", _targetVolume.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"SoundService: {ex.Message}"); }
             ResumeVolume();
         }
 
@@ -144,7 +144,7 @@ namespace TodoSidebar.Services
                     _player!.Position = TimeSpan.Zero;
                     _player.Play();
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"SoundService: {ex.Message}"); }
             };
         }
 
@@ -197,7 +197,8 @@ namespace TodoSidebar.Services
 
         private void SaveKind()
         {
-            try { DatabaseService.Instance.SetSetting("NoiseKind", CurrentKind); } catch { }
+            try { DatabaseService.Instance.SetSetting("NoiseKind", CurrentKind); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"SoundService persist: {ex.Message}"); }
         }
     }
 }

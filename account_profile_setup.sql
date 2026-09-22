@@ -16,6 +16,8 @@ create table if not exists public.account_profile (
     nickname    text not null default '',
     avatar_kind text not null default 'd1',
     avatar_data text,
+    -- S14/T10：服务端限制 base64 长度（~512KB 解码前），防超大文本入库
+    constraint account_profile_avatar_data_len check (avatar_data is null or length(avatar_data) <= 700000)
     updated_at  timestamptz not null default now()
 );
 

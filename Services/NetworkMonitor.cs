@@ -1,6 +1,7 @@
 using System;
 using System.Net.NetworkInformation;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace TodoSidebar.Services
 {
@@ -70,6 +71,27 @@ namespace TodoSidebar.Services
             }
 
             ConnectivityChanged?.Invoke(this, online);
+        }
+
+        /// <summary>
+        /// S10/T10：轻量可达性探测（TCP 443，短超时）。
+        /// 网卡可用 ≠ 能连上后端；同步前可调用，避免假在线狂打请求。
+        /// </summary>
+        public async Task<bool> ProbeReachabilityAsync(string host = "api.nuget.org", int timeoutMs = 1500, CancellationToken ct = default)
+        {
+            try
+            {
+                using var client = new System.Net.Sockets.TcpClient();
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(timeoutMs);
+                await client.ConnectAsync(host, 443, timeout.Token);
+                return client.Connected;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[NetworkMonitor] probe {host} failed: {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>

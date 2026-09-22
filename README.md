@@ -28,7 +28,7 @@
 - **记住登录**：勾选"记住我"后自动保存账号密码
 - **离线支持**：断网时正常使用，联网后自动同步
 
-### 🎮 升级系统（v4.2.2 全新）
+### 🎮 升级系统（v5.x）
 - ⚡ **等级与经验**：完成任务/番茄钟/每日挑战赚取经验，经验条实时增长，升级获得称号（初出茅庐 → 传说冒险者）
 - 🎉 **升级特效**：升级瞬间粒子爆炸 + 横幅提示新称号
 - 🍅 **番茄钟**：侧边栏迷你番茄 + 完整模式专注页（25 分钟专注、任务绑定、专注统计）
@@ -69,7 +69,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `TodoSidebar-Setup-v4.2.2.exe`
+2. 运行 `每日任务-Setup-5.7.0.exe`
 3. 按照向导完成安装
 
 ### 首次使用
@@ -112,7 +112,7 @@ TodoSidebar/
 │   └── TaskItem.cs           # 任务模型
 ├── Interfaces/                # 服务接口定义
 ├── Helpers/
-│   └── BlurHelper.cs         # 毛玻璃效果辅助
+│   └── DwmBackdropHelper.cs  # 毛玻璃/亚克力效果辅助
 ├── Services/
 │   ├── AuthService.cs        # 认证服务
 │   ├── DatabaseService.cs    # 数据库服务（WAL 模式 + 并发锁）
