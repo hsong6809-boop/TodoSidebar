@@ -193,7 +193,7 @@ namespace TodoSidebar
                 Title = newTitle,
                 Priority = newPriority,
                 Deadline = (_task.Type == TaskType.Deadline) ? newDeadline : _task.Deadline,
-                Recurrence = selectedRecurrence,
+                Recurrence = (_task.Type == TaskType.Deadline) ? selectedRecurrence : _task.Recurrence,
                 Description = _task.Description,
                 Tags = _task.Tags,
                 SortOrder = _task.SortOrder,
@@ -216,7 +216,6 @@ namespace TodoSidebar
             _task.Deadline = staged.Deadline;
             _task.Recurrence = staged.Recurrence;
             _task.SubTasksJson = staged.SubTasksJson;
-            _hasChanges = true;
 
             DialogResult = true;
             Close();

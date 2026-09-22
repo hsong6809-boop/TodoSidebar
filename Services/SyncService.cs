@@ -413,34 +413,38 @@ namespace TodoSidebar.Services
         /// </summary>
         /// <summary>
         /// R71（审查 M9）：批量拉取给定 SyncId 对应的远端 updated_at（分片 In 查询），
-        /// 替代上传预检的逐任务 GET。查询失败时降级返回已取到的部分
-        /// （等价于"预检失败不阻断上传"的原语义，下一轮自动重试）。
+        /// 替代上传预检的逐任务 GET。
+        /// S11/T3：返回 (map, verified)。verified = 本轮 In 查询成功的 ID 集合；
+        /// 「查询成功但不在 map」= 远端无此行（可安全首传）；「不在 verified」= 该分片失败，本轮不传。
         /// </summary>
-        private async Task<Dictionary<Guid, DateTime>> FetchRemoteUpdatedAtAsync(List<Guid> ids)
+        private async Task<(Dictionary<Guid, DateTime> map, HashSet<Guid> verified)> FetchRemoteUpdatedAtAsync(List<Guid> ids)
         {
             var result = new Dictionary<Guid, DateTime>();
-            if (ids.Count == 0) return result;
+            var verified = new HashSet<Guid>();
+            if (ids.Count == 0) return (result, verified);
 
             var client = SupabaseClientService.Client;
             const int chunkSize = 100;
             for (int i = 0; i < ids.Count; i += chunkSize)
             {
-                var chunk = ids.Skip(i).Take(chunkSize).Select(g => (object)g.ToString()).ToList();
+                var chunk = ids.Skip(i).Take(chunkSize).ToList();
+                var chunkObjs = chunk.Select(g => (object)g.ToString()).ToList();
                 try
                 {
                     var resp = await client.From<SyncTask>()
-                        .Filter("id", Supabase.Postgrest.Constants.Operator.In, chunk)
+                        .Filter("id", Supabase.Postgrest.Constants.Operator.In, chunkObjs)
                         .Get(SyncToken);
+                    foreach (var id in chunk) verified.Add(id);
                     foreach (var row in resp.Models ?? new List<SyncTask>())
                         result[row.Id] = row.UpdatedAt;
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Batch pre-check error (offset {i}): {ex.Message}");
-                    return result;
+                    // 该分片 ID 不进 verified，上层跳过本轮上传
                 }
             }
-            return result;
+            return (result, verified);
         }
 
         public async Task<int> UploadLocalChangesAsync()
@@ -470,9 +474,7 @@ namespace TodoSidebar.Services
                     .Select(s => Guid.Parse(s!))
                     .Distinct()
                     .ToList();
-                var remoteUpdatedAt = await FetchRemoteUpdatedAtAsync(validIds);
-                // S11/T3：预检不完整（分片失败导致字典缺 ID）时，未验证 ID 本轮不传，防盲覆盖
-                var precheckIncomplete = validIds.Any(id => !remoteUpdatedAt.ContainsKey(id));
+                var (remoteUpdatedAt, precheckVerified) = await FetchRemoteUpdatedAtAsync(validIds);
 
                 foreach (var task in dirtyTasks)
                 {
@@ -484,14 +486,16 @@ namespace TodoSidebar.Services
                     Guid syncId;
                     if (!string.IsNullOrEmpty(task.SyncId) && Guid.TryParse(task.SyncId, out syncId))
                     {
-                        if (precheckIncomplete && !remoteUpdatedAt.ContainsKey(syncId))
+                        // S11/T3：仅当该 ID 所在预检分片失败（不在 verified）时跳过；
+                        // 「查询成功但远端无此行」= 首传，必须允许上传（否则新任务永远传不上去）
+                        if (!precheckVerified.Contains(syncId))
                         {
                             skipped++;
                             _syncLog.Log(new SyncLogEntry
                             {
                                 Action = "upload",
                                 Success = false,
-                                Details = $"跳过任务#{task.Id}：预检未完成，本轮不上传以免盲覆盖"
+                                Details = $"跳过任务#{task.Id}：预检分片失败，本轮不上传以免盲覆盖"
                             });
                             continue;
                         }
@@ -670,36 +674,48 @@ namespace TodoSidebar.Services
                 int pageLoops = 0;
                 while (true)
                 {
-                    var query = client.From<SyncTask>().Where(x => x.UserId == userId);
-                    // S1/T3：真 keyset 续拉——(updated_at,id) > (cursor_at,cursor_id)
-                    // 边界时间戳挤满一页时，仅 UpdatedAt>=cursor 会反复拉到已见行而 progress 失败
-                    if (atCursor.HasValue)
+                    // S1/T3 真 keyset：(updated_at,id) > (cursor_at,cursor_id)
+                    // = (updated_at > A) ∪ (updated_at = A AND id > B)
+                    // 复审：不能只用 (updated_at=A AND id>B)，否则第 2 页起更晚时间戳全部丢失
+                    List<SyncTask> page;
+                    if (atCursor.HasValue && !string.IsNullOrEmpty(idCursor) && Guid.TryParse(idCursor, out var idCurGuid))
                     {
-                        if (!string.IsNullOrEmpty(idCursor) && Guid.TryParse(idCursor, out var idCurGuid))
-                        {
-                            // S1/T3：边界续拉——同一 updated_at 已见 id 之后的行
-                            // (updated_at = A AND id > B)，避免 Range(0,N) 反复拉到已见行
-                            query = query
-                                .Filter("updated_at", Supabase.Postgrest.Constants.Operator.Equals, atCursor.Value)
-                                .Filter("id", Supabase.Postgrest.Constants.Operator.GreaterThan, idCurGuid);
-                        }
-                        else
-                        {
-                            query = query.Where(x => x.UpdatedAt >= atCursor.Value);
-                        }
+                        var newer = await client.From<SyncTask>()
+                            .Where(x => x.UserId == userId && x.UpdatedAt > atCursor.Value)
+                            .Order("updated_at", Supabase.Postgrest.Constants.Ordering.Ascending, Supabase.Postgrest.Constants.NullPosition.Last)
+                            .Order("id", Supabase.Postgrest.Constants.Ordering.Ascending, Supabase.Postgrest.Constants.NullPosition.Last)
+                            .Range(0, PageSize - 1)
+                            .Get(SyncToken);
+                        var boundary = await client.From<SyncTask>()
+                            .Where(x => x.UserId == userId)
+                            .Filter("updated_at", Supabase.Postgrest.Constants.Operator.Equals, atCursor.Value)
+                            .Filter("id", Supabase.Postgrest.Constants.Operator.GreaterThan, idCurGuid)
+                            .Order("id", Supabase.Postgrest.Constants.Ordering.Ascending, Supabase.Postgrest.Constants.NullPosition.Last)
+                            .Range(0, PageSize - 1)
+                            .Get(SyncToken);
+                        page = (newer.Models ?? new List<SyncTask>())
+                            .Concat(boundary.Models ?? new List<SyncTask>())
+                            .GroupBy(t => t.Id).Select(g => g.First())
+                            .OrderBy(t => t.UpdatedAt)
+                            .ThenBy(t => t.Id.ToString(), StringComparer.Ordinal)
+                            .Take(PageSize)
+                            .ToList();
                     }
-
-                    // 稳定排序：updated_at 主序 + id 决胜，保证并列时间戳页间顺序一致
-                    query = query
-                        .Order("updated_at",
-                            Supabase.Postgrest.Constants.Ordering.Ascending,
-                            Supabase.Postgrest.Constants.NullPosition.Last)
-                        .Order("id",
-                            Supabase.Postgrest.Constants.Ordering.Ascending,
-                            Supabase.Postgrest.Constants.NullPosition.Last);
-
-                    var response = await query.Range(0, PageSize - 1).Get(SyncToken);
-                    var page = response.Models ?? new List<SyncTask>();
+                    else
+                    {
+                        var query = client.From<SyncTask>().Where(x => x.UserId == userId);
+                        if (atCursor.HasValue)
+                            query = query.Where(x => x.UpdatedAt >= atCursor.Value);
+                        query = query
+                            .Order("updated_at",
+                                Supabase.Postgrest.Constants.Ordering.Ascending,
+                                Supabase.Postgrest.Constants.NullPosition.Last)
+                            .Order("id",
+                                Supabase.Postgrest.Constants.Ordering.Ascending,
+                                Supabase.Postgrest.Constants.NullPosition.Last);
+                        var response = await query.Range(0, PageSize - 1).Get(SyncToken);
+                        page = response.Models ?? new List<SyncTask>();
+                    }
 
                     // 丢弃落在游标内（<= 已处理边界）的重复行（服务端 Or 后仍保险过滤）
                     foreach (var t in page)
