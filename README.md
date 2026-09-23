@@ -69,7 +69,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `TodoSidebar-Setup-5.8.1.exe`（Release 资产；本地构建产物仍为 `每日任务-Setup-5.8.1.exe`）
+2. 运行 `TodoSidebar-Setup-5.8.2.exe`（Release 资产；本地构建产物仍为 `每日任务-Setup-5.8.2.exe`）
 3. 按照向导完成安装
 
 ### 首次使用
@@ -198,6 +198,11 @@ v5.6.1 存量库修复请执行 `sql/supabase_v560_cloud_migration.sql`（补 `d
 v5.7.1+ 需补 `sql/supabase_v571_cloud_migration.sql`（`estimated_minutes`/`actual_minutes`）；未执行时 v5.8.1 客户端会自动降级上传任务本体。
 
 ## 📝 更新日志
+
+### v5.8.2 (2026-09-23)
+
+- 🗓 **截止日期日历修复**：任务详情/新建栏点日期弹出月历（原自定义 DatePicker 缺 `PART_Popup` 导致点不开）；点选某天 = 当天 24:00 截止
+- ⏱ **准时判定对齐**：完成加成按「截止日当天 24 点」计，不再把白天完成误判成逾期
 
 ### v5.8.1 (2026-09-22)
 

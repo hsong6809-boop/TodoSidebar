@@ -1184,6 +1184,8 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DatePicker">
+                    <!-- 必须包含 PART_TextBox / PART_Button / PART_Popup（内嵌 Calendar）：
+                         缺 PART_Popup 时 DatePicker.OnApplyTemplate 挂不上弹层，点按钮永远不出日历 -->
                     <Grid x:Name="PART_Root">
                         <Border x:Name="DpRoot"
                                 Background="{TemplateBinding Background}"
@@ -1198,9 +1200,23 @@
                                 Margin="0,0,3,0"
                                 Style="{StaticResource ModernCalNavButton}"
                                 Foreground="{DynamicResource TextSecondaryBrush}"
-                                Focusable="False">
+                                Focusable="False"
+                                ToolTip="选择截止日期">
                             <controls:AppIcon Glyph="{x:Static controls:Icons.Calendar}" FontSize="13"/>
                         </Button>
+                        <Popup x:Name="PART_Popup"
+                               Placement="Bottom"
+                               PlacementTarget="{Binding ElementName=DpRoot}"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade"
+                               StaysOpen="False"
+                               IsOpen="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <Calendar x:Name="PART_Calendar"
+                                      Style="{StaticResource ModernCalendarStyle}"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Focusable="True"/>
+                        </Popup>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">

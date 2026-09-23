@@ -252,7 +252,9 @@ namespace TodoSidebar.Services
         }
 
         private static bool IsOnTime(TaskItem task)
-            => task.Type == TaskType.Deadline && task.Deadline.HasValue && DateTime.Now <= task.Deadline.Value;
+            // 截止语义 = 截止日当天 24 点（与 DeadlineEndOfDay / 列表倒计时一致），
+            // 不是 DatePicker 写入的当日 00:00，否则当天白天完成也会被算成逾期
+            => task.Type == TaskType.Deadline && task.Deadline.HasValue && DateTime.Now <= task.DeadlineEndOfDay;
 
         /// <summary>B5/B6：取消完成回退本实例已发的 XP 与循环终身计数（clamp ≥0）。</summary>
         private void ReverseTaskComplete(TaskItem task)

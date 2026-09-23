@@ -22,7 +22,8 @@ namespace TodoSidebar.Tests
             {
                 Type = TaskType.Deadline,
                 Priority = TaskPriority.High,
-                Deadline = System.DateTime.Now.AddHours(2)
+                // 截止日 = 今天：DeadlineEndOfDay 为明天 0 点，此刻必准时
+                Deadline = System.DateTime.Today
             };
             // 15 + 5 on-time + 5 high = 25
             Assert.Equal(25, TaskService.ComputeTaskCompleteXp(t));
@@ -35,7 +36,8 @@ namespace TodoSidebar.Tests
             {
                 Type = TaskType.Deadline,
                 Priority = TaskPriority.Low,
-                Deadline = System.DateTime.Now.AddHours(-2)
+                // 截止日 = 昨天：DeadlineEndOfDay 为今天 0 点，此刻必逾期
+                Deadline = System.DateTime.Today.AddDays(-1)
             };
             Assert.Equal(15, TaskService.ComputeTaskCompleteXp(t));
         }

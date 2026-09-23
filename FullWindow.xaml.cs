@@ -31,6 +31,9 @@ namespace TodoSidebar
             InitializeComponent();
             DataContext = App.SharedViewModel;
 
+            // 点击截止日期框任意位置弹出日历（与任务详情对话框一致）
+            DeadlinePicker.PreviewMouseLeftButtonDown += DeadlinePicker_PreviewMouseLeftButtonDown;
+
             // P2：真实亚克力背板（失败静默降级为半透明纯色）+ V2.1 顶栏个性化
             Loaded += (_, _) =>
             {
@@ -1176,6 +1179,14 @@ namespace TodoSidebar
         /// <summary>Composer 类型分段切换（每日/截止）：仅控制截止日期选择器可见性，无需额外逻辑。</summary>
         private void SegmentType_Checked(object sender, RoutedEventArgs e)
         {
+        }
+
+        private void DeadlinePicker_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not DatePicker picker || picker.IsDropDownOpen) return;
+            if (picker.IsKeyboardFocusWithin) return;
+            picker.IsDropDownOpen = true;
+            e.Handled = true;
         }
 
         private void Priority_Checked(object sender, RoutedEventArgs e)

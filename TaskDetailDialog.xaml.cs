@@ -65,6 +65,9 @@ namespace TodoSidebar
                 DeadlinePicker.SelectedDate = task.Deadline.Value;
             }
 
+            // 点击日期框任意位置直接弹出日历（WPF 默认只有右侧按钮能开）
+            DeadlinePicker.PreviewMouseLeftButtonDown += DeadlinePicker_PreviewMouseLeftButtonDown;
+
             // 如果是每日任务，隐藏截止日期面板
             if (task.Type == TaskType.Daily)
             {
@@ -174,9 +177,8 @@ namespace TodoSidebar
             string? selectedRecurrence = null;
             if (_task.Type == TaskType.Deadline)
             {
-                // R49 修复（审查 L3）：DatePicker.SelectedDate 恒为当日 00:00，
-                // 统一按 .Date 口径取值与比较——原实现遇到带时间成分的 Deadline
-                // （导入/自然语言解析产生）时每次"打开→保存"都会把时间抹成 00:00 并误标有修改
+                // 存「所选日 00:00」；业务上截止时刻 = DeadlineEndOfDay（当天 24 点），
+                // 与列表倒计时/逾期判定同一口径。选 8/29 → 8/29 全天可做，8/30 0 点起逾期。
                 newDeadline = DeadlinePicker.SelectedDate?.Date;
 
                 // L21 修复：编辑后的截止日期早于今天时二次确认（取消则不保存），
@@ -255,6 +257,15 @@ namespace TodoSidebar
             {
                 System.Diagnostics.Debug.WriteLine($"Header drag error: {ex.Message}");
             }
+        }
+
+        private void DeadlinePicker_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not DatePicker picker || picker.IsDropDownOpen) return;
+            // 已在编辑文本时保留光标定位，不抢焦点去弹日历
+            if (picker.IsKeyboardFocusWithin) return;
+            picker.IsDropDownOpen = true;
+            e.Handled = true;
         }
     }
 }
