@@ -69,7 +69,7 @@
 ### 安装方式
 
 1. 下载最新版本的安装包：[Releases](https://github.com/hsong6809-boop/TodoSidebar/releases)
-2. 运行 `每日任务-Setup-5.8.1.exe`
+2. 运行 `TodoSidebar-Setup-5.8.1.exe`（Release 资产；本地构建产物仍为 `每日任务-Setup-5.8.1.exe`）
 3. 按照向导完成安装
 
 ### 首次使用
